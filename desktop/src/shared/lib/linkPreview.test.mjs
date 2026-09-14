@@ -87,7 +87,7 @@ test("parseSupportedLinkPreview ignores unsupported GitHub URLs", () => {
 const BUZZ_OWNER =
   "71d67180ba17e749ee825fc8819c9c6ee7003617e1c126504f9b658070ab9224";
 
-test("parseSupportedLinkPreview parses Buzz relay git clone URLs", () => {
+test("parseSupportedLinkPreview parses Hypha relay git clone URLs", () => {
   // Must pass the active relay origin for host validation.
   assert.deepEqual(
     parseSupportedLinkPreview(
@@ -97,7 +97,7 @@ test("parseSupportedLinkPreview parses Buzz relay git clone URLs", () => {
     {
       kind: "buzz-repository",
       href: `buzz://repo?owner=${BUZZ_OWNER}&d=buzz-world-galaxy`,
-      provider: "Buzz",
+      provider: "Hypha",
       title: "buzz-world-galaxy",
       typeLabel: "repo",
     },
@@ -120,14 +120,14 @@ test("parseSupportedLinkPreview strips .git suffix from clone URLs", () => {
     {
       kind: "buzz-repository",
       href: `buzz://repo?owner=${BUZZ_OWNER}&d=buzz-world`,
-      provider: "Buzz",
+      provider: "Hypha",
       title: "buzz-world",
       typeLabel: "repo",
     },
   );
 });
 
-test("parseSupportedLinkPreview rejects malformed Buzz git URLs", () => {
+test("parseSupportedLinkPreview rejects malformed Hypha git URLs", () => {
   for (const href of [
     // Owner segment must be a 64-char lowercase hex pubkey.
     "https://relay.example/git/not-a-pubkey/repo",
@@ -157,7 +157,7 @@ test("parseSupportedLinkPreview rejects clone URLs from non-relay hosts", () => 
     )?.kind,
     "generic-link",
   );
-  // github.com sharing the path shape must never become a Buzz repo card.
+  // github.com sharing the path shape must never become a Hypha repo card.
   assert.equal(
     parseSupportedLinkPreview(
       `https://github.com/git/${BUZZ_OWNER}/my-repo`,
@@ -186,7 +186,7 @@ test("parseSupportedLinkPreview parses buzz:// PR and issue deep links", () => {
     {
       kind: "buzz-pull-request",
       href: `buzz://pr?id=${BUZZ_EVENT_ID}&owner=${BUZZ_OWNER}&d=buzz-world`,
-      provider: "Buzz",
+      provider: "Hypha",
       title: "buzz-world #c3b589fa",
       typeLabel: "Review",
     },
@@ -202,7 +202,7 @@ test("parseSupportedLinkPreview parses buzz:// PR and issue deep links", () => {
     {
       kind: "buzz-repository",
       href: `buzz://repo?owner=${BUZZ_OWNER}&d=buzz-world`,
-      provider: "Buzz",
+      provider: "Hypha",
       title: "buzz-world",
       typeLabel: "repo",
     },
@@ -217,7 +217,7 @@ test("parseSupportedLinkPreview parses buzz:// project deep links", () => {
     {
       kind: "buzz-project",
       href: `buzz://project?owner=${BUZZ_OWNER}&d=buzz-world`,
-      provider: "Buzz",
+      provider: "Hypha",
       title: "buzz-world",
       typeLabel: "project",
     },
@@ -236,7 +236,7 @@ test("parseSupportedLinkPreview rejects malformed buzz:// entity links", () => {
   }
 });
 
-test("extractSupportedLinkPreviews excludes Buzz entity links while keeping external links", () => {
+test("extractSupportedLinkPreviews excludes Hypha entity links while keeping external links", () => {
   const entityLinks = [
     `buzz://project?owner=${BUZZ_OWNER}&d=buzz-world`,
     `buzz://repo?owner=${BUZZ_OWNER}&d=buzz-world`,
@@ -252,7 +252,7 @@ test("extractSupportedLinkPreviews excludes Buzz entity links while keeping exte
   );
 });
 
-test("extractSupportedLinkPreviews excludes markdown-labeled Buzz entity links", () => {
+test("extractSupportedLinkPreviews excludes markdown-labeled Hypha entity links", () => {
   assert.deepEqual(
     extractSupportedLinkPreviews(
       `[Project](buzz://project?owner=${BUZZ_OWNER}&d=buzz-world)`,
@@ -322,7 +322,7 @@ test("extractSupportedLinkPreviews returns unique supported links in order", () 
   );
 });
 
-test("extractSupportedLinkPreviews excludes same-relay Buzz clone URLs", () => {
+test("extractSupportedLinkPreviews excludes same-relay Hypha clone URLs", () => {
   assert.deepEqual(
     extractSupportedLinkPreviews(
       `master pushed; clone: https://buzz.block.builderlab.xyz/git/${BUZZ_OWNER}/buzz-world-galaxy and review please.`,
@@ -339,10 +339,10 @@ test("extractSupportedLinkPreviews excludes same-relay Buzz clone URLs", () => {
   );
 });
 
-test("extractSupportedLinkPreviews excludes markdown-labeled Buzz clone URLs", () => {
+test("extractSupportedLinkPreviews excludes markdown-labeled Hypha clone URLs", () => {
   assert.deepEqual(
     extractSupportedLinkPreviews(
-      `[Buzz World](https://relay.example/git/${BUZZ_OWNER}/buzz-world-galaxy)`,
+      `[Hypha World](https://relay.example/git/${BUZZ_OWNER}/buzz-world-galaxy)`,
       "https://relay.example",
     ),
     [],

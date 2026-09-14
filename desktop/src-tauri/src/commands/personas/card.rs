@@ -47,7 +47,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-/// The Buzz card frame template — Tyler's gold-honeycomb base. Generation
+/// The Hypha card frame template — Tyler's gold-honeycomb base. Generation
 /// input only: it never participates in the snapshot manifest, PNG chunk,
 /// import decoder, or attachment validation. Embedded at compile time for
 /// deterministic packaging (see `card_template_decodes` test).
@@ -226,7 +226,7 @@ pub fn list_agent_cards(app: AppHandle) -> Result<Vec<ArchivedCardMeta>, String>
         let Ok(meta) = serde_json::from_str::<ArchivedCardMeta>(&content) else {
             // A malformed sidecar hides one card, never the archive.
             eprintln!(
-                "buzz-desktop: card-archive: skipping malformed sidecar {}",
+                "hypha-desktop: card-archive: skipping malformed sidecar {}",
                 path.display()
             );
             continue;
@@ -343,9 +343,9 @@ pub(crate) fn build_card_instructions(
         )
     };
     format!(
-        r#"You are designing one premium collectible trading card for the Buzz agent "{agent_name}".
+        r#"You are designing one premium collectible trading card for the Hypha agent "{agent_name}".
 
-Input image 1 is the official Buzz card frame template (gold honeycomb border, dark interior, name banner top, hex badge top-right, text box lower third). Input image 2 is the agent's avatar — study its exact art style: medium, pixel grid if any, palette, shading, background motifs.
+Input image 1 is the official Hypha card frame template (gold honeycomb border, dark interior, name banner top, hex badge top-right, text box lower third). Input image 2 is the agent's avatar — study its exact art style: medium, pixel grid if any, palette, shading, background motifs.
 
 Persona notes for the card copy:
 {persona_notes}
@@ -847,7 +847,7 @@ pub async fn mint_agent_card(
     // Archive best-effort: the mint is already paid for and verified, so a
     // failed archive write logs and continues — it never fails the mint.
     if let Err(e) = archive_minted_card(&app, &id, &display_name, &minted, &final_bytes) {
-        eprintln!("buzz-desktop: card-archive: failed to archive minted card: {e}");
+        eprintln!("hypha-desktop: card-archive: failed to archive minted card: {e}");
     }
 
     Ok(minted)

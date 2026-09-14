@@ -55,7 +55,7 @@ export function projectRepoHostForRepository(
 /**
  * Human-readable location of a repository's git data — "github.com/block/buzz"
  * for external repos (host + path, `.git` stripped), or "owner/repo" for
- * Buzz-hosted ones (the relay host and full owner pubkey carry no signal;
+ * Hypha-hosted ones (the relay host and full owner pubkey carry no signal;
  * `ownerLabel` should be the resolved profile name, falling back to a
  * shortened pubkey). Returns `null` when no clone URL can be resolved.
  */

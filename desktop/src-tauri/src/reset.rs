@@ -134,7 +134,7 @@ pub(crate) fn run_boot_reset(app_data_dir: &Path) -> ResetOutcome {
     let demo_config_dir = match crate::build_identity::demo_config_home() {
         Ok(dir) => dir,
         Err(error) => {
-            eprintln!("buzz-desktop reset: {error}");
+            eprintln!("hypha-desktop reset: {error}");
             return ResetOutcome {
                 completed: false,
                 failed: true,
@@ -186,7 +186,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
     // An unknown demo credential root is not evidence of an absent root. Refuse
     // before any destructive work and retain reset intent for the next boot.
     if ctx.is_demo && ctx.demo_config_dir.is_none() {
-        eprintln!("buzz-desktop reset: cannot resolve demo credential directory");
+        eprintln!("hypha-desktop reset: cannot resolve demo credential directory");
         return ResetOutcome {
             completed: false,
             failed: true,
@@ -199,7 +199,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
 
     if app_data_dir.exists() {
         if let Err(e) = rename_to_trash(app_data_dir) {
-            eprintln!("buzz-desktop reset: {e}");
+            eprintln!("hypha-desktop reset: {e}");
             return ResetOutcome {
                 completed: false,
                 failed: true,
@@ -212,7 +212,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
     if let Some(ref legacy) = ctx.legacy_app_data_dir {
         if legacy.exists() {
             if let Err(e) = rename_to_trash(legacy) {
-                eprintln!("buzz-desktop reset: {e}");
+                eprintln!("hypha-desktop reset: {e}");
                 // Non-fatal for legacy dir — continue
             }
         }
@@ -228,7 +228,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
         let tw = trash_path(&webkit_dir);
         if webkit_dir.exists() {
             if let Err(e) = rename_to_trash(&webkit_dir) {
-                eprintln!("buzz-desktop reset: {e}");
+                eprintln!("hypha-desktop reset: {e}");
                 // Non-fatal — continue
             }
         }
@@ -254,7 +254,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
                 Err(error) => {
                     eprintln!(
-                        "buzz-desktop reset: remove demo config {}: {error}",
+                        "hypha-desktop reset: remove demo config {}: {error}",
                         path.display()
                     );
                     false
@@ -271,7 +271,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
 
     // ── Step 4: keychain — LAST so we can read keys before deleting ──────────
     if let Err(e) = ctx.keychain.delete_all_with_legacy() {
-        eprintln!("buzz-desktop reset: keychain delete: {e}");
+        eprintln!("hypha-desktop reset: keychain delete: {e}");
         // Keychain failure is fatal: keep sentinel, signal failure.
         // Restore all three dirs so the app returns to a coherent pre-reset state.
         if trash_app.exists() {
@@ -340,7 +340,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
         || !trash_webkit_gone
     {
         eprintln!(
-            "buzz-desktop reset: verification failed (keychain_wiped={keychain_ok}, \
+            "hypha-desktop reset: verification failed (keychain_wiped={keychain_ok}, \
              app_data_gone={app_data_gone}, legacy_gone={legacy_gone}, nest_gone={nest_gone}, \
              demo_config_removed={demo_config_removed}, demo_config_gone={demo_config_gone}, \
              trash_app_gone={trash_app_gone}, trash_legacy_gone={trash_legacy_gone}, \
@@ -354,7 +354,7 @@ pub(crate) fn run_boot_reset_with_keychain(ctx: ResetContext<'_>) -> ResetOutcom
 
     // ── Step 7: delete sentinel → success ────────────────────────────────────
     if let Err(e) = delete_sentinel(app_data_dir) {
-        eprintln!("buzz-desktop reset: delete sentinel: {e}");
+        eprintln!("hypha-desktop reset: delete sentinel: {e}");
         // Sentinel not deleted — keep failed=false so the app boots into
         // onboarding, but on next boot the reset will retry (idempotent).
     }

@@ -34,8 +34,10 @@ function isEmptySharedComputeError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("shared compute status is not published") ||
-    normalized.includes("no buzz shared compute serving members") ||
-    normalized.includes("no live buzz shared compute models") ||
+    // Brand-agnostic: the Rust side emits "no Hypha shared compute …" today
+    // and older builds emitted "no Buzz shared compute …".
+    /no (?:hypha|buzz) shared compute serving members/.test(normalized) ||
+    /no live (?:hypha|buzz) shared compute models/.test(normalized) ||
     normalized.includes("no live member is serving") ||
     normalized.includes("requires a live serving member")
   );
@@ -52,7 +54,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("waiting for the current member roster")) {
       return {
         message:
-          "Buzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+          "Hypha is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
         tone: "warning",
       };
     }
@@ -68,7 +70,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute is not available in this build")) {
       return {
         message:
-          "This version of Buzz cannot use shared compute. Update Buzz or choose another provider.",
+          "This version of Hypha cannot use shared compute. Update Hypha or choose another provider.",
         tone: "warning",
       };
     }
@@ -76,14 +78,14 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute status is malformed")) {
       return {
         message:
-          "Buzz received an invalid shared compute status. Check the member machine, then try again.",
+          "Hypha received an invalid shared compute status. Check the member machine, then try again.",
         tone: "warning",
       };
     }
 
     return {
       message:
-        "Buzz couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Hypha couldn't check shared compute through the relay. Check your relay connection and try again.",
       tone: "warning",
     };
   }

@@ -12,7 +12,7 @@ import {
   AttachmentTrigger,
 } from "@/shared/ui/attachment";
 import { LinkPreviewControls } from "@/shared/ui/link-preview-controls";
-import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
+import { HyphaMark } from "@/shared/ui/hypha-logo/HyphaMark";
 import { useSmoothCorners } from "@/shared/ui/smoothCorners";
 
 function getHostname(preview: ResolvedLinkPreview): string {
@@ -141,7 +141,7 @@ export function CompactLinkPreviewAttachment({
                 className="flex size-3 shrink-0 items-center text-foreground/70"
                 data-link-preview-hostname-buzz-mark=""
               >
-                <BuzzMark className="h-auto w-full" />
+                <HyphaMark className="h-auto w-full" />
               </span>
             ) : preview.faviconDataUrl ? (
               <img

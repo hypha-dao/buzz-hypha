@@ -82,7 +82,7 @@ function viewWith(initialText) {
   return view;
 }
 
-/** Clipboard HTML in the shape a Buzz copy writes. */
+/** Clipboard HTML in the shape a Hypha copy writes. */
 function clipboardHtml(label, pubkey, body) {
   return (
     '<span data-buzz-copy="markdown">' +

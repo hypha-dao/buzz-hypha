@@ -464,7 +464,7 @@ fn stt_worker(
     let model_path = model_dir.join("model.int8.onnx");
     if !tokens_path.exists() || !model_path.exists() {
         eprintln!(
-            "buzz-desktop: STT model not found at {} — STT disabled",
+            "hypha-desktop: STT model not found at {} — STT disabled",
             model_dir.display()
         );
         drain_until_shutdown(audio_rx, &shutdown);
@@ -482,7 +482,7 @@ fn stt_worker(
     let recognizer = match OfflineRecognizer::create(&cfg) {
         Some(r) => r,
         None => {
-            eprintln!("buzz-desktop: OfflineRecognizer::create returned None — STT disabled");
+            eprintln!("hypha-desktop: OfflineRecognizer::create returned None — STT disabled");
             drain_until_shutdown(audio_rx, &shutdown);
             return;
         }
@@ -494,14 +494,14 @@ fn stt_worker(
     let mut local_stream = match SttStreamState::new() {
         Ok(stream) => stream,
         Err(error) => {
-            eprintln!("buzz-desktop: {error}");
+            eprintln!("hypha-desktop: {error}");
             return;
         }
     };
     let mut remote_stream = match SttStreamState::new() {
         Ok(stream) => stream,
         Err(error) => {
-            eprintln!("buzz-desktop: {error}");
+            eprintln!("hypha-desktop: {error}");
             return;
         }
     };
@@ -629,7 +629,7 @@ fn resample_chunk(resampler: &mut rubato::Fft<f32>, chunk_48k: &[f32]) -> Vec<f3
     let input = match InterleavedSlice::new(chunk_48k, 1, chunk_48k.len()) {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("buzz-desktop: STT resample input error: {e}");
+            eprintln!("hypha-desktop: STT resample input error: {e}");
             return Vec::new();
         }
     };
@@ -637,7 +637,7 @@ fn resample_chunk(resampler: &mut rubato::Fft<f32>, chunk_48k: &[f32]) -> Vec<f3
     match resampler.process(&input, 0, None) {
         Ok(out) => out.take_data(),
         Err(e) => {
-            eprintln!("buzz-desktop: STT resample error: {e}");
+            eprintln!("hypha-desktop: STT resample error: {e}");
             Vec::new()
         }
     }
@@ -782,7 +782,7 @@ fn flush_to_stt(
     }
     if !has_enough_voiced_audio(voiced_frames) {
         eprintln!(
-            "buzz-desktop: STT dropped short VAD segment ({voiced_frames}/{MIN_VOICED_FRAMES} voiced frames)"
+            "hypha-desktop: STT dropped short VAD segment ({voiced_frames}/{MIN_VOICED_FRAMES} voiced frames)"
         );
         return;
     }
@@ -804,7 +804,7 @@ fn decode_speech(recognizer: &sherpa_onnx::OfflineRecognizer, speech_buf: &[f32]
 fn send_transcript(text: String, text_tx: &tokio_mpsc::Sender<String>) {
     if !text.is_empty() {
         if let Err(e) = text_tx.blocking_send(text) {
-            eprintln!("buzz-desktop: STT text channel closed: {e}");
+            eprintln!("hypha-desktop: STT text channel closed: {e}");
         }
     }
 }

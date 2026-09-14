@@ -7,6 +7,11 @@ mod cli_tests;
 
 #[test]
 fn appimage_binary_matches_truncated_linux_comm_name() {
+    // `hypha-desktop.bin` truncated to /proc/<pid>/comm's 15 visible bytes.
+    assert!(super::is_desktop_binary("hypha-desktop.b"));
+    assert!(super::is_desktop_binary("hypha-desktop"));
+    assert!(super::is_desktop_binary("Hypha"));
+    // Legacy Buzz binaries are still recognised.
     assert!(super::is_desktop_binary("buzz-desktop.bi"));
 }
 
@@ -1025,7 +1030,7 @@ fn invalid_pubkey_resolves_no_pair_key() {
 
 #[test]
 fn kill_stale_custom_harness_with_marker_is_terminated() {
-    // A record with a PID not in the live runtime map and with the Buzz marker
+    // A record with a PID not in the live runtime map and with the Hypha marker
     // should be terminated even though the binary name is not in KNOWN_AGENT_BINARIES.
     let mut record = minimal_record("pubkey-custom");
     record.runtime_pid = Some(9001);

@@ -729,7 +729,7 @@ test("fresh existing-identity path leads with private-key recovery", async ({
     page.getByRole("heading", { name: "Enter your private key" }),
   ).toBeVisible();
   await expect(
-    page.getByText("Paste your private key to sign in to Buzz."),
+    page.getByText("Paste your private key to sign in to Hypha."),
   ).toBeVisible();
   await expect(page.getByTestId("nostr-import-card")).toBeVisible();
   await expect(page.getByTestId("nostr-import-file-button")).toHaveText(
@@ -802,7 +802,7 @@ test("fresh existing-identity path leads with private-key recovery", async ({
   const phoneDialog = page.getByTestId("phone-recovery-dialog");
   await expect(phoneDialog).toBeVisible();
   await expect(
-    phoneDialog.getByRole("heading", { name: "Use your Buzz identity" }),
+    phoneDialog.getByRole("heading", { name: "Use your Hypha identity" }),
   ).toBeVisible();
   await expect(phoneDialog.getByTestId("identity-recovery-qr")).toBeVisible();
   await expect(page.getByTestId("nostr-import-card")).toBeVisible();
@@ -1277,7 +1277,7 @@ test("first-community owner can create and connect a hosted community", async ({
   await page.getByTestId("community-choice-create").click();
   await page.getByRole("button", { name: "Sign in to continue" }).click();
   await expect(
-    page.getByRole("heading", { name: "Finish connecting Buzz" }),
+    page.getByRole("heading", { name: "Finish connecting Hypha" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Connect and continue" }).click();
   const createSurface = page.getByTestId("hosted-community-create-surface");
@@ -1353,7 +1353,7 @@ test("hosted community address line stays within the card for a long name", asyn
   await page.getByTestId("community-choice-create").click();
   await page.getByRole("button", { name: "Sign in to continue" }).click();
   await expect(
-    page.getByRole("heading", { name: "Finish connecting Buzz" }),
+    page.getByRole("heading", { name: "Finish connecting Hypha" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Connect and continue" }).click();
 
@@ -1500,7 +1500,7 @@ test("first-community owner can replace a mismatched account identity", async ({
   await page.getByTestId("community-choice-create").click();
   await expect(
     page.getByRole("heading", {
-      name: "This account uses a different Buzz identity",
+      name: "This account uses a different Hypha identity",
     }),
   ).toBeVisible();
   // The account row must show the authoritative bound key's npub, never the
@@ -1575,7 +1575,7 @@ test("first-community owner recovers from an npub-only account identity", async 
   // account: the mismatch recovery modal drives the flow instead.
   await expect(
     page.getByRole("heading", {
-      name: "This account uses a different Buzz identity",
+      name: "This account uses a different Hypha identity",
     }),
   ).toBeVisible();
   await expect(
@@ -1658,7 +1658,7 @@ test("first-community owner never rebinds over a same-key spelling in the hex fi
   await page.getByTestId("community-choice-create").click();
   await expect(
     page.getByRole("heading", {
-      name: "This account uses a different Buzz identity",
+      name: "This account uses a different Hypha identity",
     }),
   ).toBeVisible();
   await expect(page.getByText("Account: Unavailable")).toBeVisible();
@@ -1708,7 +1708,7 @@ test("first-community owner with a padded same-key hex is ready, not mismatched"
   await page.getByTestId("community-choice-create").click();
   await expect(
     page.getByRole("heading", {
-      name: "This account uses a different Buzz identity",
+      name: "This account uses a different Hypha identity",
     }),
   ).toHaveCount(0);
   await expect(
@@ -1750,11 +1750,11 @@ test("first-community explains when the local identity belongs to another accoun
     .click();
   await expect(
     page.getByText(
-      "This device's Buzz identity belongs to a different Builderlab account and can't be moved from here. Sign out, then sign in with the account that already owns this identity.",
+      "This device's Hypha identity belongs to a different Builderlab account and can't be moved from here. Sign out, then sign in with the account that already owns this identity.",
     ),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Finish connecting Buzz" }),
+    page.getByRole("heading", { name: "Finish connecting Hypha" }),
   ).toBeVisible();
 });
 
@@ -3445,13 +3445,13 @@ test("first-run onboarding posts the live Fizz kickoff", async ({ page }) => {
     "offline",
   ]);
   await expect(page.getByTestId("message-timeline")).not.toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Buzz.",
+    "Hi Morty QA, I'm Fizz. Welcome to Hypha.",
   );
   await publishWelcomeTeamPresence(page);
   // Greeted by the name typed above — the @mention pill also files the opener
   // into the new user's Inbox mentions feed.
   await expect(page.getByTestId("message-timeline")).toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Buzz.",
+    "Hi Morty QA, I'm Fizz. Welcome to Hypha.",
   );
   await expect(page.getByTestId("message-timeline")).toContainText(
     "Honey and Pollen, introduce yourselves",
@@ -3476,7 +3476,7 @@ test("first-run onboarding lands before Welcome team bootstrap completes", async
   await expect(page.getByTestId("app-loading-gate")).toHaveCount(0);
   await publishWelcomeTeamPresence(page);
   await expect(page.getByTestId("message-timeline")).toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Buzz.",
+    "Hi Morty QA, I'm Fizz. Welcome to Hypha.",
   );
   await page.waitForTimeout(1_500);
   expect(await commandCount(page, "create_managed_agent")).toBe(3);
@@ -4342,7 +4342,7 @@ test("denied on relay A then paste relay B invite URL switches community to B", 
   await expect(page.getByText("I am 18 years of age or older.")).toBeVisible();
   await page.getByLabel("I am 18 years of age or older.").check();
   await page
-    .getByLabel("I agree to the Buzz Terms of Service and Privacy Policy.")
+    .getByLabel("I agree to the Hypha Terms of Service and Privacy Policy.")
     .check();
   await page.getByTestId("invite-redeem-submit").click();
 

@@ -20,14 +20,14 @@ function pastePlainText(view: EditorView, text: string): void {
 }
 
 /**
- * Paste clipboard HTML that carries Buzz mention markers.
+ * Paste clipboard HTML that carries Hypha mention markers.
  *
  * Content follows the flavor the copy declared:
  *
  * - `markdown` — the copy's plain flavor *is* the Markdown source, so insert
  *   it through the text pipeline and TipTap parses `**bold**` exactly as it
  *   does for any other plain paste.
- * - `rich` (or legacy Buzz HTML with no marker) — keep the HTML path, with
+ * - `rich` (or legacy Hypha HTML with no marker) — keep the HTML path, with
  *   chip wrappers flattened to sigil-bearing text.
  *
  * Identity rides along: binding the records is what makes a pasted multi-word

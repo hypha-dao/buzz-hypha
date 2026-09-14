@@ -154,7 +154,7 @@ export function ProjectsView() {
     [projectReadModels],
   );
   const projectsWorkItemsQuery = useProjectsWorkItemsQuery(workItemProjects);
-  // One blobless clone per primary Buzz repository, only while the overview
+  // One blobless clone per primary Hypha repository, only while the overview
   // header is visible.
   const snapshotProjects = React.useMemo(
     () =>

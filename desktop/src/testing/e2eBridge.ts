@@ -2373,7 +2373,7 @@ function buildMockConfigSurface(pubkey: string): {
   };
 
   // Mixed-provenance showcase — top-level rows carry different origins so the
-  // panel witnesses distinct provenance labels in one frame: "Set in Buzz",
+  // panel witnesses distinct provenance labels in one frame: "Set in Hypha",
   // "Inherited from template", "From config file (...)" and
   // "From environment variable (...)".
   const multiOriginSurface = {
@@ -2435,7 +2435,7 @@ function buildMockConfigSurface(pubkey: string): {
   const buzzAgentSurface = {
     ...gooseSurface,
     runtimeId: "buzz-agent",
-    runtimeLabel: "Buzz Agent",
+    runtimeLabel: "Hypha Agent",
     advanced: [],
     extensions: [],
     sources: {
@@ -2876,7 +2876,7 @@ const mockChannels: MockChannel[] = [
     name: "buzz",
     channel_type: "stream",
     visibility: "open",
-    description: "Project home for the Buzz community platform.",
+    description: "Project home for the Hypha community platform.",
     topic: null,
     purpose: null,
     last_message_at: null,
@@ -6138,7 +6138,7 @@ const MOCK_PROJECT_SEEDS = [
     dtag: "buzz",
     name: "buzz",
     description:
-      "Relay, desktop, and mobile clients for the Buzz community platform.",
+      "Relay, desktop, and mobile clients for the Hypha community platform.",
     cloneUrl: `${DEFAULT_RELAY_HTTP_URL}/git/${MOCK_IDENTITY_PUBKEY}/buzz`,
     webUrl: null,
     owner: MOCK_IDENTITY_PUBKEY,
@@ -6353,7 +6353,7 @@ function buildMockProjectEvents(): RelayEvent[] {
         [
           ["d", "buzz"],
           ["name", "buzz"],
-          ["description", "The complete Buzz community platform."],
+          ["description", "The complete Hypha community platform."],
           ["a", `${KIND_REPO_ANNOUNCEMENT}:${projectOwner}:buzz`],
           ["a", `${KIND_REPO_ANNOUNCEMENT}:${ALICE_PUBKEY}:relay-tools`],
           [
@@ -8542,14 +8542,14 @@ async function handleDiscoverAcpRuntimes(
     },
     {
       id: "buzz-agent",
-      label: "Buzz Agent",
+      label: "Hypha Agent",
       avatar_url: "",
       availability: "available",
       command: "buzz-agent",
       binary_path: "/usr/local/bin/buzz-agent",
       default_args: [],
       mcp_command: "buzz-dev-mcp",
-      install_hint: "Ships with the Buzz desktop app.",
+      install_hint: "Ships with the Hypha desktop app.",
       install_instructions_url: "https://github.com/block/buzz",
       can_auto_install: false,
       requires_external_cli: false,
@@ -9755,7 +9755,7 @@ async function handleStartManagedAgent(
         mockMeshState.models.some((model) => model.id === modelId));
     if (!hasLiveTarget) {
       throw new Error(
-        "Buzz shared compute cannot start because no live member is serving this model.",
+        "Hypha shared compute cannot start because no live member is serving this model.",
       );
     }
   }
@@ -12507,7 +12507,7 @@ export function maybeInstallE2eTauriMocks() {
               name: "Gemma-4-E4B-it-Q4_K_M",
               size: "3.5GB",
               sizeGb: 3.5,
-              description: "Buzz-curated local agent model",
+              description: "Hypha-curated local agent model",
               fit: "comfortable",
               installed: true,
               recommended: true,
@@ -12947,7 +12947,7 @@ export function maybeInstallE2eTauriMocks() {
               kind: "blob",
               size: 33120,
               preview_content:
-                "// Smart HTTP git transport\n// Handles upload-pack and receive-pack for Buzz git repos.\n",
+                "// Smart HTTP git transport\n// Handles upload-pack and receive-pack for Hypha git repos.\n",
             },
           ],
         };
@@ -12967,7 +12967,7 @@ export function maybeInstallE2eTauriMocks() {
           commit_body: [
             "See the [project guide](https://example.com/project-guide).",
             "",
-            "![Architecture](/buzz.svg)",
+            "![Architecture](/hypha.svg)",
             "",
             "![Demo](https://example.com/project-demo.mp4)",
           ].join("\n"),
@@ -14097,7 +14097,7 @@ export function maybeInstallE2eTauriMocks() {
           }
           if (mockMeshState.models.length === 0) {
             throw new Error(
-              "no Buzz shared compute serving members are available",
+              "no Hypha shared compute serving members are available",
             );
           }
         }

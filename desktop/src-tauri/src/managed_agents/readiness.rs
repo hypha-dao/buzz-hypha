@@ -283,7 +283,7 @@ fn resolve_effective_agent_env_with_def(
         &baked_build_env(),
     );
 
-    // Buzz shared compute is a native Buzz provider. Translate it to buzz-agent's
+    // Hypha shared compute is a native Hypha provider. Translate it to buzz-agent's
     // OpenAI-compatible transport only in the effective runtime environment.
     #[cfg(feature = "mesh-llm")]
     super::apply_relay_mesh_env(
@@ -559,7 +559,7 @@ fn buzz_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
 ///
 /// File-config tier: goose reads `~/.config/goose/config.yaml` at startup.
 /// Requirements already satisfied there are silenced — we don't need to
-/// require them from Buzz's env layer.  The file layer only *silences*
+/// require them from Hypha's env layer.  The file layer only *silences*
 /// requirements; it never injects values into the spawn env.
 ///
 /// `file_cfg` is injected by the caller (read once at `collect_missing_requirements`)
@@ -1312,7 +1312,7 @@ mod tests {
         let (dir, orig) = setup_temp_codex_acp("#!/bin/sh\nexit 1\n");
         let exe = present_binary_str();
         // Use the fixture's absolute adapter path here. Bare `codex-acp`
-        // intentionally prefers Buzz's managed npm shim when it exists, which
+        // intentionally prefers Hypha's managed npm shim when it exists, which
         // would make this version-gate regression test depend on machine state.
         let rt = make_codex_runtime(
             leaked_adapter_commands(&dir.path().join("codex-acp")),

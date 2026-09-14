@@ -1,6 +1,6 @@
-# Buzz Nest
+# Hypha Nest
 
-Your persistent workspace. Created once by the Buzz desktop app. The static content above the managed-section markers is regenerated on upgrades — add custom notes below the markers or in separate files.
+Your persistent workspace. Created once by the Hypha desktop app. The static content above the managed-section markers is regenerated on upgrades — add custom notes below the markers or in separate files.
 
 ## Directory Layout
 
@@ -60,6 +60,6 @@ A repository may require an accountable human as author and the implementing age
 <!-- BEGIN BUZZ MANAGED — regenerated automatically, do not edit below -->
 ## Active Agents
 
-*(No agents deployed yet. Add agents in the Buzz desktop app.)*
+*(No agents deployed yet. Add agents in the Hypha desktop app.)*
 
 <!-- END BUZZ MANAGED -->

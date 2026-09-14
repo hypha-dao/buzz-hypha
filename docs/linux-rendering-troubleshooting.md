@@ -78,7 +78,7 @@ FONTCONFIG_FILE=~/.config/buzz-fontconfig/fonts.conf ./Buzz_*.AppImage
 ```bash
 ./Buzz_*.AppImage --safe-rendering
 # or for a native install:
-buzz-desktop --safe-rendering
+hypha-desktop --safe-rendering
 ```
 
 `--safe-rendering` is a per-launch flag — it is not remembered between runs. If it fixes your issue, you can make it permanent by setting the env vars yourself:
@@ -106,7 +106,7 @@ export WEBKIT_DMABUF_RENDERER_FORCE_SHM=1
 export WEBKIT_SKIA_ENABLE_CPU_RENDERING=1
 ./Buzz_*.AppImage
 # or for native:
-buzz-desktop
+hypha-desktop
 ```
 
 - `WEBKIT_SKIA_ENABLE_CPU_RENDERING=1` forces Skia to use CPU rendering, bypassing the RDNA4 Skia/radv paint failure.

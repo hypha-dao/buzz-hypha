@@ -181,7 +181,7 @@ pub fn run() {
                             .is_err()
                             {
                                 eprintln!(
-                                    "buzz-desktop: initial render did not commit before reveal timeout"
+                                    "hypha-desktop: initial render did not commit before reveal timeout"
                                 );
                             }
 
@@ -284,7 +284,7 @@ pub fn run() {
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
-                eprintln!("buzz-desktop: fatal: identity resolution failed: {e}");
+                eprintln!("hypha-desktop: fatal: identity resolution failed: {e}");
                 std::process::exit(1);
             }
 
@@ -307,7 +307,7 @@ pub fn run() {
             // snapshot. Synchronous and best-effort — a failure here must not
             // block launch, but a missing persona is logged loudly inside.
             if let Err(e) = backfill_persona_snapshots(&app_handle) {
-                eprintln!("buzz-desktop: persona-snapshot backfill failed: {e}");
+                eprintln!("hypha-desktop: persona-snapshot backfill failed: {e}");
             }
 
             // Warm the loaded-harness registry BEFORE restore so cold-launch
@@ -367,12 +367,12 @@ pub fn run() {
                     .store(port, std::sync::atomic::Ordering::Relaxed);
             });
 
-            // Create the Buzz nest (~/.buzz or ~/.buzz-dev for dev builds) before
+            // Create the Hypha nest (~/.buzz or ~/.buzz-dev for dev builds) before
             // agents are restored, so default_agent_workdir() resolves to the
             // nest directory. Non-fatal: agents fall back to $HOME if nest
             // creation fails.
             if let Err(error) = ensure_nest() {
-                eprintln!("buzz-desktop: failed to create nest: {error}");
+                eprintln!("hypha-desktop: failed to create nest: {error}");
             }
             archive::spawn_warm_init(app_handle.clone());
 
@@ -423,7 +423,7 @@ pub fn run() {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(parent) = exe.parent() {
                     if let Err(error) = managed_agents::ensure_cli_symlink(parent, is_dev_nest) {
-                        eprintln!("buzz-desktop: failed to create CLI symlink: {error}");
+                        eprintln!("hypha-desktop: failed to create CLI symlink: {error}");
                     }
                 }
             }
@@ -512,7 +512,7 @@ pub fn run() {
                         )
                         .await
                         {
-                            eprintln!("buzz-desktop: event-flush: {e}");
+                            eprintln!("hypha-desktop: event-flush: {e}");
                         }
                         tokio::time::sleep(Duration::from_secs(30)).await;
                     }
@@ -890,11 +890,11 @@ pub fn run() {
             event: WindowEvent::CloseRequested { api, .. },
             ..
         } if label == "main" => {
-            // Keep the webview alive so Buzz can be reopened from its tray menu.
+            // Keep the webview alive so Hypha can be reopened from its tray menu.
             api.prevent_close();
             if let Some(window) = app_handle.get_webview_window("main") {
                 if let Err(error) = window.hide() {
-                    eprintln!("buzz-desktop: failed to hide main window: {error}");
+                    eprintln!("hypha-desktop: failed to hide main window: {error}");
                 }
             }
         }
@@ -917,7 +917,7 @@ pub fn run() {
                     });
             if is_active_huddle_window {
                 if let Err(error) = app_handle.emit("huddle-companion-returned", ()) {
-                    eprintln!("buzz-desktop: failed to restore huddle drawer: {error}");
+                    eprintln!("hypha-desktop: failed to restore huddle drawer: {error}");
                 }
             }
         }
@@ -938,7 +938,7 @@ pub fn run() {
             // AppKit terminates through libc exit(), which runs C++ static
             // destructors. The embedded ggml/Metal runtime currently aborts in
             // that destructor phase even after its node has stopped cleanly.
-            // End the process only after Buzz and Mesh shutdown above, while
+            // End the process only after Hypha and Mesh shutdown above, while
             // deliberately skipping those native global destructors.
             #[cfg(all(feature = "mesh-llm", target_os = "macos"))]
             hard_exit_after_mesh_shutdown();

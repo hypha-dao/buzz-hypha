@@ -9,7 +9,7 @@ import {
 
 const SHOTS = "test-results/entity-link-recipient-cards";
 
-// Regression coverage for Buzz-native entity links after standalone cards were
+// Regression coverage for Hypha-native entity links after standalone cards were
 // removed. Raw and authored entity links keep their inline navigation and
 // relay-backed metadata tooltips, while external sender snapshots still render.
 
@@ -25,7 +25,7 @@ const EXTERNAL_HREF = "https://example.com/entity-chip-control";
 const RELAY_ORIGIN = "http://localhost:3000";
 const CLONE_HREF = `${RELAY_ORIGIN}/git/${ALICE_PUBKEY}/relay-tools.git`;
 
-test("agent-style Buzz links stay chip-only with metadata tooltips", async ({
+test("agent-style Hypha links stay chip-only with metadata tooltips", async ({
   page,
 }) => {
   await page.addInitScript(
@@ -399,10 +399,10 @@ test("entity tooltip uses project context while relay metadata is delayed", asyn
     page
       .getByRole("tooltip")
       .locator('[data-buzz-tooltip-metadata-content=""]'),
-  ).toHaveText("buzz · The complete Buzz community platform.");
+  ).toHaveText("buzz · The complete Hypha community platform.");
 });
 
-test("desktop composer and sent message keep Buzz entities chip-only", async ({
+test("desktop composer and sent message keep Hypha entities chip-only", async ({
   page,
 }) => {
   await installMockBridge(page);
@@ -413,7 +413,7 @@ test("desktop composer and sent message keep Buzz entities chip-only", async ({
   const repoLink = `buzz://repo?owner=${ALICE_PUBKEY}&d=relay-tools`;
   await page.getByTestId("message-input").fill(`Check out ${repoLink}`);
 
-  // Buzz-native links do not enter the standalone composer-preview surface.
+  // Hypha-native links do not enter the standalone composer-preview surface.
   await expect(page.locator("[data-composer-link-previews]")).toHaveCount(0);
 
   await waitForAnimations(page);

@@ -46,7 +46,7 @@ function field(model, kind) {
   return model.fields.find((candidate) => candidate.kind === kind);
 }
 
-test("Buzz Agent exposes provider, model, and Buzz-owned effort", () => {
+test("Hypha Agent exposes provider, model, and Hypha-owned effort", () => {
   const model = deriveAgentConfigFieldModel({
     config,
     runtime: runtime("buzz-agent", {

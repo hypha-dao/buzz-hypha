@@ -88,7 +88,7 @@ fn project_scoped_team_sharing(scope: Result<RetentionScope, String>, teams: &mu
     });
     if let Err(error) = projected {
         eprintln!(
-            "buzz-desktop: team-share-projection unavailable, reporting every team as unshared: {error}"
+            "hypha-desktop: team-share-projection unavailable, reporting every team as unshared: {error}"
         );
         for team in teams {
             team.shared = false;
@@ -207,7 +207,7 @@ pub(super) fn tombstone_team_catalog_pending<R: tauri::Runtime>(
         tombstone_team_catalog_at(&scope.db_path, &scope.owner_keys, d_tag)
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-catalog-tombstone: {e}");
+        eprintln!("hypha-desktop: team-catalog-tombstone: {e}");
     }
 }
 
@@ -241,13 +241,13 @@ pub(super) fn refresh_shared_team_catalog_head_resolving<R: tauri::Runtime>(
     match result {
         Ok(RefreshOrRetractOutcome::RemovalQueued { ref reason }) => {
             eprintln!(
-                "buzz-desktop: team-catalog-refresh: retracting '{}' — {reason}",
+                "hypha-desktop: team-catalog-refresh: retracting '{}' — {reason}",
                 team.name
             );
             emit_team_catalog_auto_retracted(app, &team.name, reason);
         }
         Err(ref e) => {
-            eprintln!("buzz-desktop: team-catalog-refresh: '{}' — {e}", team.name);
+            eprintln!("hypha-desktop: team-catalog-refresh: '{}' — {e}", team.name);
         }
         _ => {}
     }
@@ -416,14 +416,14 @@ pub(super) fn refresh_shared_team_catalog_heads_for_persona<R: tauri::Runtime>(
             match outcome {
                 Ok(RefreshOrRetractOutcome::RemovalQueued { ref reason }) => {
                     eprintln!(
-                        "buzz-desktop: team-catalog-refresh: retracting '{}' after persona edit — {reason}",
+                        "hypha-desktop: team-catalog-refresh: retracting '{}' after persona edit — {reason}",
                         team.name
                     );
                     emit_team_catalog_auto_retracted(app, &team.name, reason);
                 }
                 Err(ref e) => {
                     eprintln!(
-                        "buzz-desktop: team-catalog-refresh: '{}' after persona edit — {e}",
+                        "hypha-desktop: team-catalog-refresh: '{}' after persona edit — {e}",
                         team.name
                     );
                 }
@@ -433,7 +433,7 @@ pub(super) fn refresh_shared_team_catalog_heads_for_persona<R: tauri::Runtime>(
         Ok(())
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-catalog-refresh-for-persona: {e}");
+        eprintln!("hypha-desktop: team-catalog-refresh-for-persona: {e}");
     }
 }
 
@@ -492,7 +492,7 @@ fn emit_team_catalog_auto_retracted<R: tauri::Runtime>(
         "team-catalog-auto-retracted",
         TeamCatalogAutoRetractedPayload { team_name, reason },
     ) {
-        eprintln!("buzz-desktop: team-catalog-auto-retracted: failed to emit notice: {e}");
+        eprintln!("hypha-desktop: team-catalog-auto-retracted: failed to emit notice: {e}");
     }
 }
 

@@ -1,11 +1,18 @@
 ---
 title: 'Intelligent Org — Exploration'
 date: 2026-08-26
-status: draft
+status: historical
 tags: [product, intelligent-org]
 ---
 
 # Intelligent Org — Exploration
+
+> **Historical (2026-09-14).** The note that settled the foundation question: build on Buzz.
+> That decision stands and everything else in this folder now assumes it. The _model_ sketched
+> below — a single org brief, mandates with pots, keeping money on Hypha — was replaced on
+> 11 September by [What it is](./intelligent-org-features.md) (four direction artifacts, one work
+> tree, five proposal kinds, money decided by proposal and settled outside Buzz). Read this for
+> how we got here, not for what to build.
 
 A short note on what we are trying to build, and which foundation to use.
 

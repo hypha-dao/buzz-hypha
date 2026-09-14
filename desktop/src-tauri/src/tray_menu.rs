@@ -1,7 +1,7 @@
 //! Native system-tray menu for the desktop app.
 //!
 //! The webview owns the live agent-turn state. It sends the small display
-//! projection here so the native menu can remain useful while Buzz is hidden.
+//! projection here so the native menu can remain useful while Hypha is hidden.
 
 // Mouse back/forward (X1/X2 buttons and swipe) is also macOS-only native I/O;
 // group it here so both platform-layer init paths share one call site in lib.rs.
@@ -104,81 +104,93 @@ fn format_elapsed(elapsed: Duration) -> String {
     format!("{hours}h {minutes}m {seconds}s")
 }
 
-/// Builds the standalone Buzz bee as a transparent, macOS template image.
+/// Builds the standalone Hypha mark as a transparent, macOS template image.
 ///
 /// The app icon includes a rounded square, which is useful for the Dock but
-/// looks out of place beside the monochrome menu-bar icons. Keeping this
-/// vector-derived mask here also lets macOS tint it correctly in light and
-/// dark menu bars without a separate bitmap asset.
-fn tray_bee_icon() -> Image<'static> {
-    const WIDTH: u32 = 64;
-    const HEIGHT: u32 = 43;
+/// looks out of place beside the monochrome menu-bar icons. The mark is
+/// embedded as an alpha-only PNG (`icons/tray-mark.png`, rasterized from the
+/// official Hypha logo) so macOS can tint it correctly in light and dark menu
+/// bars without a separate bitmap per appearance.
+fn tray_mark_icon() -> Image<'static> {
+    const TRAY_MARK_PNG: &[u8] = include_bytes!("../icons/tray-mark.png");
+
+    match decode_rgba_png(TRAY_MARK_PNG) {
+        Ok((rgba, width, height)) => Image::new_owned(rgba, width, height),
+        Err(error) => {
+            // The asset is compiled in, so this only fires if the file is
+            // corrupted at build time. Fall back to a plain disc so the tray
+            // still has a visible, clickable icon.
+            eprintln!("hypha-desktop: tray icon decode failed: {error}");
+            fallback_tray_disc()
+        }
+    }
+}
+
+/// Decodes a PNG into tightly packed 8-bit RGBA pixels.
+fn decode_rgba_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| format!("invalid PNG: {error}"))?;
+    let buffer_size = reader
+        .output_buffer_size()
+        .ok_or_else(|| "PNG output buffer size unavailable".to_string())?;
+    let mut buffer = vec![0u8; buffer_size];
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|error| format!("failed to read PNG frame: {error}"))?;
+    buffer.truncate(info.buffer_size());
+
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buffer,
+        png::ColorType::Rgb => buffer
+            .chunks_exact(3)
+            .flat_map(|px| [px[0], px[1], px[2], u8::MAX])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => buffer
+            .chunks_exact(2)
+            .flat_map(|px| [px[0], px[0], px[0], px[1]])
+            .collect(),
+        png::ColorType::Grayscale => buffer
+            .iter()
+            .flat_map(|&value| [value, value, value, u8::MAX])
+            .collect(),
+        other => return Err(format!("unsupported PNG color type {other:?}")),
+    };
+
+    Ok((rgba, info.width, info.height))
+}
+
+/// A 64×64 anti-aliased filled disc: the last-resort tray glyph.
+fn fallback_tray_disc() -> Image<'static> {
+    const SIZE: u32 = 64;
     const SAMPLES_PER_AXIS: u32 = 4;
-    const BEE_WIDTH: f32 = 466.0;
-    const BEE_HEIGHT: f32 = 309.0;
-
-    fn circle_contains(x: f32, y: f32, center_x: f32, center_y: f32, radius: f32) -> bool {
-        let delta_x = x - center_x;
-        let delta_y = y - center_y;
-        delta_x * delta_x + delta_y * delta_y <= radius * radius
-    }
-
-    fn rounded_rect_contains(
-        x: f32,
-        y: f32,
-        left: f32,
-        top: f32,
-        width: f32,
-        height: f32,
-        radius: f32,
-    ) -> bool {
-        let right = left + width;
-        let bottom = top + height;
-        let closest_x = x.clamp(left + radius, right - radius);
-        let closest_y = y.clamp(top + radius, bottom - radius);
-        let delta_x = x - closest_x;
-        let delta_y = y - closest_y;
-        delta_x * delta_x + delta_y * delta_y <= radius * radius
-    }
-
-    fn bee_contains(x: f32, y: f32) -> bool {
-        let silhouette = circle_contains(x, y, 91.7, 154.5, 91.7)
-            || circle_contains(x, y, 374.3, 154.5, 91.7)
-            || rounded_rect_contains(x, y, 128.0, 0.0, 210.0, 309.0, 34.0);
-        let cutout = circle_contains(x, y, 193.3, 84.4, 27.0)
-            || circle_contains(x, y, 276.0, 84.4, 27.0)
-            || rounded_rect_contains(x, y, 166.3, 157.2, 136.9, 38.3, 5.0)
-            || rounded_rect_contains(x, y, 166.9, 235.1, 136.2, 37.6, 5.0);
-
-        silhouette && !cutout
-    }
-
-    let mut rgba = vec![0; (WIDTH * HEIGHT * 4) as usize];
+    let center = SIZE as f32 / 2.0;
+    let radius = center - 2.0;
     let samples = SAMPLES_PER_AXIS * SAMPLES_PER_AXIS;
+    let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
 
-    for pixel_y in 0..HEIGHT {
-        for pixel_x in 0..WIDTH {
-            let mut covered_samples = 0;
+    for pixel_y in 0..SIZE {
+        for pixel_x in 0..SIZE {
+            let mut covered = 0;
             for sample_y in 0..SAMPLES_PER_AXIS {
                 for sample_x in 0..SAMPLES_PER_AXIS {
-                    let x = (pixel_x as f32 + (sample_x as f32 + 0.5) / SAMPLES_PER_AXIS as f32)
-                        / WIDTH as f32
-                        * BEE_WIDTH;
-                    let y = (pixel_y as f32 + (sample_y as f32 + 0.5) / SAMPLES_PER_AXIS as f32)
-                        / HEIGHT as f32
-                        * BEE_HEIGHT;
-                    if bee_contains(x, y) {
-                        covered_samples += 1;
+                    let x = pixel_x as f32 + (sample_x as f32 + 0.5) / SAMPLES_PER_AXIS as f32;
+                    let y = pixel_y as f32 + (sample_y as f32 + 0.5) / SAMPLES_PER_AXIS as f32;
+                    let dx = x - center;
+                    let dy = y - center;
+                    if dx * dx + dy * dy <= radius * radius {
+                        covered += 1;
                     }
                 }
             }
-
-            let index = ((pixel_y * WIDTH + pixel_x) * 4) as usize;
-            rgba[index + 3] = (covered_samples * u8::MAX as u32 / samples) as u8;
+            let index = ((pixel_y * SIZE + pixel_x) * 4) as usize;
+            rgba[index + 3] = (covered * u8::MAX as u32 / samples) as u8;
         }
     }
 
-    Image::new_owned(rgba, WIDTH, HEIGHT)
+    Image::new_owned(rgba, SIZE, SIZE)
 }
 
 /// A running agent and its current channel.
@@ -225,22 +237,22 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     if let Err(error) = window.unminimize() {
-        eprintln!("buzz-desktop: failed to restore main window from tray: {error}");
+        eprintln!("hypha-desktop: failed to restore main window from tray: {error}");
         return;
     }
     if let Err(error) = window.show() {
-        eprintln!("buzz-desktop: failed to show main window from tray: {error}");
+        eprintln!("hypha-desktop: failed to show main window from tray: {error}");
         return;
     }
     if let Err(error) = window.set_focus() {
-        eprintln!("buzz-desktop: failed to focus main window from tray: {error}");
+        eprintln!("hypha-desktop: failed to focus main window from tray: {error}");
     }
 }
 
 fn queue_tray_action<R: Runtime>(app: &AppHandle<R>, mut action: TrayAction) {
     let state = app.state::<TrayMenuState<R>>();
     let Ok(mut queue) = state.action_queue.lock() else {
-        eprintln!("buzz-desktop: tray action queue is unavailable");
+        eprintln!("hypha-desktop: tray action queue is unavailable");
         return;
     };
     if let TrayAction::OpenChannel {
@@ -254,7 +266,7 @@ fn queue_tray_action<R: Runtime>(app: &AppHandle<R>, mut action: TrayAction) {
     drop(queue);
 
     if let Err(error) = app.emit("tray-action-available", ()) {
-        eprintln!("buzz-desktop: failed to notify frontend of tray action: {error}");
+        eprintln!("hypha-desktop: failed to notify frontend of tray action: {error}");
     }
 }
 
@@ -336,7 +348,7 @@ fn build_menu<R: Runtime>(
     menu.append(&MenuItem::with_id(
         app,
         OPEN_BUZZ_ID,
-        "Open Buzz",
+        "Open Hypha",
         true,
         None::<&str>,
     )?)?;
@@ -344,7 +356,7 @@ fn build_menu<R: Runtime>(
     menu.append(&MenuItem::with_id(
         app,
         QUIT_ID,
-        "Quit Buzz",
+        "Quit Hypha",
         true,
         None::<&str>,
     )?)?;
@@ -472,7 +484,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
-/// Installs the persistent Buzz tray icon with the initial empty activity menu.
+/// Installs the persistent Hypha tray icon with the initial empty activity menu.
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let preview_activities = preview_activities();
     let preview_recent_activities = preview_recent_activities();
@@ -488,12 +500,12 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     });
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .icon(tray_bee_icon())
+        .icon(tray_mark_icon())
         .icon_as_template(true)
         .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()))
         .build(app)?;
     if let Err(error) = apply_activity_presentation(&tray, activities, recent_activities) {
-        eprintln!("buzz-desktop: failed to apply tray menu presentation: {error}");
+        eprintln!("hypha-desktop: failed to apply tray menu presentation: {error}");
     }
     mouse_nav::init(app);
     Ok(())
@@ -506,7 +518,7 @@ pub fn take_tray_actions<R: Runtime>(app: AppHandle<R>) -> Result<Vec<TrayAction
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Hypha tray action queue is unavailable".to_string())?;
     Ok(std::mem::take(&mut queue.pending_actions))
 }
 
@@ -533,7 +545,7 @@ pub fn requeue_tray_actions<R: Runtime>(
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Hypha tray action queue is unavailable".to_string())?;
     requeue_actions(&mut queue, actions);
     drop(queue);
     app.emit("tray-action-available", ())
@@ -548,7 +560,7 @@ pub fn clear_tray_agent_activity<R: Runtime>(app: AppHandle<R>) -> Result<(), St
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Hypha tray action queue is unavailable".to_string())?;
     queue.community_generation = queue.community_generation.wrapping_add(1);
     queue
         .pending_actions
@@ -575,7 +587,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
     let mut activity_items = state
         .activity_items
         .lock()
-        .map_err(|_| "Buzz tray menu state is unavailable".to_string())?;
+        .map_err(|_| "Hypha tray menu state is unavailable".to_string())?;
 
     if activity_items.len() == activities.len().saturating_add(recent_activities.len())
         && activity_items
@@ -595,7 +607,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
         }
         let tray = app
             .tray_by_id(TRAY_ID)
-            .ok_or_else(|| "Buzz tray icon is not available".to_string())?;
+            .ok_or_else(|| "Hypha tray icon is not available".to_string())?;
         apply_activity_presentation(&tray, activities, recent_activities)?;
         return Ok(());
     }
@@ -604,7 +616,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
         build_menu(&app, activities, recent_activities).map_err(|error| error.to_string())?;
     let tray = app
         .tray_by_id(TRAY_ID)
-        .ok_or_else(|| "Buzz tray icon is not available".to_string())?;
+        .ok_or_else(|| "Hypha tray icon is not available".to_string())?;
     tray.set_menu(Some(menu))
         .map_err(|error| error.to_string())?;
     apply_activity_presentation(&tray, activities, recent_activities)?;

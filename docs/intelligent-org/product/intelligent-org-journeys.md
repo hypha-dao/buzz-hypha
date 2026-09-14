@@ -1,16 +1,21 @@
 ---
 title: 'The Intelligent Organization — User Journeys'
-date: 2026-09-11
-status: draft
-tags: [product, intelligent-org, journeys, hypha]
+date: 2026-09-14
+status: current
+tags: [product, intelligent-org, journeys, buzz]
 ---
 
 # The Intelligent Organization — User Journeys
 
-Step-by-step flows through the app, by role — three human roles and the
-org agent. Companion to [What it is](./intelligent-org-features.md) (the
+Step-by-step flows through the Buzz desktop, by role — three human roles and
+the org agent. Companion to [What it is](./intelligent-org-features.md) (the
 features) and [Design](../architecture/intelligent-org-design.md) (how they
-are built).
+are built on the relay). Where the two disagree, What it is wins.
+
+Vocabulary used below, in Buzz terms: the **org** is a community; the
+**Personal Assistant** is your DM with the org agent; the **Shapers room**
+is the private `#shapers` channel; **rooms** are channels; the **Work** door
+is the org's board (earlier drafts called it _Projects_).
 
 Roles are relationships, not titles. One person can be all three. A member
 becomes a DRI by accepting a piece of work. A Shaper is flagged by the org.
@@ -29,17 +34,19 @@ cards.
 
 ## The doors
 
-Everyone sees the same left menu. Only the contents change.
+Everyone sees the same sidebar. Only the contents change. The five org
+doors sit beside Buzz's own surfaces (Home, channels, Forum, DMs, Agents,
+Workflows, Search).
 
-| Door            | What it answers                                                            |
-| --------------- | -------------------------------------------------------------------------- |
-| **Overview**    | Who are we — mission, vision, objectives, strategy, people, glance numbers |
-| **Projects**    | The whole tree — every project and what sits under it                      |
-| **Decisions**   | Four filters: **Projects** (approval and **project DRI**), **Money** (out only), **Direction**, **Join** (people only). Shapers vote; anyone can read. |
-| **My Work**     | What needs _my_ yes or no — including AI cards — what I hold, and what I offered |
-| **My Profile**  | Who I am across orgs — health, balances, current work, earlier work, recent decisions    |
-| **DMs**         | Personal Assistant, then one-to-one chats                                  |
-| **Group chats** | Rooms per project or team, plus the Shapers room                           |
+| Door           | What it answers                                                            |
+| -------------- | -------------------------------------------------------------------------- |
+| **Overview**   | Who are we — mission, vision, objectives, strategy, people, glance numbers |
+| **Work**       | The whole tree — every project and what sits under it; each project page carries the agent's health read |
+| **Decisions**  | Four filters: **Work** (approval and **project DRI**), **Money** (out only), **Direction**, **Join** (people only). Shapers vote; anyone can read. |
+| **My Work**    | What needs _my_ yes or no — including AI cards — what I hold, and what I offered |
+| **My Profile** | Who I am in this community — balances, current work, earlier work, recent decisions |
+| **DMs**        | The org agent (Personal Assistant), then people                            |
+| **Channels**   | Rooms per project or team, plus the private Shapers room                   |
 
 ---
 
@@ -59,7 +66,9 @@ In the prototype: River — **Lea** (ticket), **Sam** (project); Energy —
      (someone)** means it named them and you confirm or offer. After
      direction is agreed, AI suggests projects (Shapers can also suggest
      their own). After a project is created, it suggests a DRI. After a
-     ticket is assigned, if it needs pieces, it drafts those subtickets.
+     ticket is accepted, if it needs pieces, it drafts those subtickets.
+   - a **done card** — the last piece under something you hold just
+     closed; confirm the parent done, or say not yet
    - a **ticket draft** under your project (project DRI only) — confirm / discard
    - a **"work finished" nudge** (project DRI only) — a ticket under you is done;
      ask the assistant for the pay proposal
@@ -69,24 +78,26 @@ In the prototype: River — **Lea** (ticket), **Sam** (project); Energy —
    sits in **Needs your answer**, not here. Accepted-by-others is not **You hold**.
 5. Click a card → the ticket page: draft, children, who is waiting. The
    agent always names who should do it. You can change the person.
-6. Optional: open **Projects** to see the parent and what sits beside you.
+6. Optional: open **Work** to see the parent and what sits beside you.
 
 ### 1.2 Report done — via the Personal Assistant
 
-1. Open **DMs → Personal Assistant**.
+1. Open **DMs → the org agent**.
 2. Type: “Found both covers — done.”
 3. Agent marks your ticket done and replies with the receipt (your message).
-4. Ticket shows done on My Work and Projects.
+4. Ticket shows done on My Work and Work.
 
 Only the DRI can close their own ticket this way. Someone else saying it in
-chat changes nothing.
+chat changes nothing. A done said **on a call** is not a close either: the
+agent asks you in your DM — “you said covers is done — mark it?” — and your
+reply is the confirm.
 
-### 1.3 Report done — via the group chat
+### 1.3 Report done — via the channel
 
-1. Open **Group chats → the project room** (e.g. “Saturday stall”).
+1. Open **Channels → the project room** (e.g. `#saturday-stall`).
 2. Type the same sentence: “Found both covers — done.”
 3. Agent marks your ticket done and posts the receipt in the room.
-4. Ticket shows done on My Work and Projects.
+4. Ticket shows done on My Work and Work.
 
 ### 1.4 Report done — on the ticket
 
@@ -100,7 +111,9 @@ chat changes nothing.
 2. Agent / ticket says: “Jun holds the rota under your ticket — yours
    cannot close until his piece does.”
 3. Wait for the child’s done, or take the piece back.
-4. Mark your own done afterwards. Done moves up the tree, never down.
+4. When the last piece closes, a **done card** for your ticket lands on
+   **Needs your answer**: **Mark done** or **Not yet**. Nothing closes by
+   itself; done moves up the tree only through your tap.
 
 ### 1.6 Split your ticket and offer a piece
 
@@ -116,7 +129,7 @@ Two ways a piece appears under a ticket you hold.
 6. The piece lands on **My Work → You offered**: _waiting on Jun → Jun holds it
    → Finished_. The parent ticket stays in **You hold**.
 
-**The agent drafts it when the ticket is assigned**
+**The agent drafts it when the ticket is accepted**
 
 After you accept a ticket, if its description names pieces nobody covers,
 those drafts land on **Needs your answer** (kicker **Drafted by the agent**).
@@ -135,8 +148,10 @@ the Shapers**, whatever the sum and wherever the ticket sits in the tree.
 3. Type: “draft a proposal for the Shapers for my work — 150 USDC”.
 4. Agent shows a **payment draft** card: the sum, the ticket, the done receipt.
 5. Click **Open as a proposal**.
-6. Proposal appears under **Decisions → Waiting on the Shapers**.
-7. When it passes, the payment shows on **My Profile → Paid to you**.
+6. Proposal appears under **Decisions → Money**, waiting on the Shapers.
+7. When it passes, a Shaper pays you outside Buzz and marks the proposal
+   **settled** with a reference. The payment then shows on **My Profile →
+   Paid to you**, with the proposal and the settlement as receipts.
 
 ### 1.8 Agree pay in chat — _future, not MVP_
 
@@ -180,14 +195,15 @@ can propose themselves, or someone else. The Shapers decide.
    setup (River); Carbon credits, the load test (Energy).
 4. Pick **Myself**, or **Someone else** and a name.
 5. Agent shows a **DRI draft** card. Click **Open as a proposal**.
-6. Proposal appears under **Decisions → Projects**, tagged **project DRI**.
+6. Proposal appears under **Decisions → Work**, tagged **project DRI**.
    When the Shapers agree, that person holds it. That is stronger than an
-   offer on a card (2.5) — a vote names them.
+   offer on a card (2.5) — a vote names them. It is the one place work is
+   put on someone without their accept, and it takes a Shaper vote to do it.
 
 ### 1.12 Create a ticket from Personal Assistant
 
-1. Open **DMs → Personal Assistant**. The header names the org
-   (`Personal Assistant (River Commons)` / `(Hypha Energy)`).
+1. Open **DMs → the org agent**. The DM lives inside the community, so it
+   is always this org's agent.
 2. Pick **Create a ticket** from the help card, or type it.
 3. Choose **Myself** or **Someone else**.
 4. Name the piece. Agent drafts it.
@@ -241,11 +257,13 @@ In the prototype: **Maya** and **Sam** (River); **Alex, Edgar, Zekeriya** (Energ
 
 ### 2.2 Set direction for the first time — one Shaper
 
-You founded the space; you are the only Shaper. No room to open.
+You created the community; you are its owner and the only Shaper. No room
+to open.
 
-1. Open **DMs → Personal Assistant**.
-2. Agent: “From what you told me at creation, here is a first **mission**
-   and **vision**. Confirm, or tell me what is off.” Two draft cards.
+1. Open **DMs → the org agent**.
+2. Agent: “From the community description and what you told me, here is a
+   first **mission** and **vision**. Confirm, or tell me what is off.” Two
+   draft cards.
 3. Correct in plain words if needed: “Less about the hall, more about the
    river.” New draft.
 4. Click **Agree** on each (or **Decline**). Overview shows Mission v1 and
@@ -261,14 +279,16 @@ You founded the space; you are the only Shaper. No room to open.
 
 ### 2.3 Update direction — several Shapers
 
-1. Open **Group chats → Shapers**.
+1. Open **Channels → #shapers**.
 2. Talk: “We do not take the brand sponsorship. Not this year.”
    (or drop a call / document).
 3. Agent posts a **strategy draft** card — v5, one line added, the diff
-   shown. If you said it in your Personal Assistant instead, the card
+   shown. If you said it in your DM with the agent instead, the card
    still lands here so the other Shapers see it.
 4. Click **Agree** or **Decline**. The voted sentence is the title — not
-   “Confirm v5”. Other Shapers are notified.
+   “Confirm v5”. One Shaper's Agree confirms a direction version — but not
+   the Shaper who proposed it when there is more than one; the others are
+   notified either way.
 5. Overview shows Strategy v5. Everything the agent drafts now reads from it.
 
 Mission and vision change the same way; they just change less often. The
@@ -295,7 +315,7 @@ shows it was the wrong one.
 A live project may have **no DRI**. Approving it is not the same as naming
 who holds it (2.5 / 2.5a).
 
-1. Open **Decisions → Projects**, or **My Work → Needs your answer**.
+1. Open **Decisions → Work**, or **My Work → Needs your answer**.
 2. Click the **project approval** card. It came either from talk (someone
    asked for it) or from the agent after direction was agreed (4.4). Same
    decision either way.
@@ -304,7 +324,7 @@ who holds it (2.5 / 2.5a).
    serves no objective, so you can approve it anyway, or redraw the
    objectives first).
 4. Click **Agree — approve it** (or **Decline**).
-5. When the Shapers agree, the project is live under **Projects**. If
+5. When the Shapers agree, the project is live under **Work**. If
    nobody is named yet, it stays open until someone is offered (2.5) or
    named by a **project DRI** vote (2.5a).
 
@@ -319,12 +339,12 @@ who holds it (2.5 / 2.5a).
 
 Same gap as 1.11, from the room. Anyone can start it; Shapers vote it.
 
-1. Open **Group chats → Shapers**.
+1. Open **Channels → #shapers**.
 2. Talk: “Weekday hall still has no one. Name Rafi.” (Energy: “Carbon
    credits is still a draft. Name Rowan.”)
 3. Agent posts a **DRI draft** card. Click **Open as a proposal**.
-4. All Shapers vote on **Decisions → Projects** (tag **project DRI**).
-   When it passes, they hold it.
+4. Shapers vote on **Decisions → Work** (tag **project DRI**). When it
+   passes, they hold it.
 
 ### 2.6 Approve a payment
 
@@ -336,7 +356,10 @@ strategy, 2.3).
 2. Click the **money movement** card.
 3. Read: the sum, the ticket, the done receipt, opened by.
 4. Click **Agree — pay it** (or **Decline**).
-5. When every Shaper agrees, the sum moves; it appears on the payee’s profile.
+5. When the Shapers agree (a majority by default — the threshold is a
+   community setting), the proposal passes. A Shaper pays outside Buzz and
+   marks it **settled** with a reference; it then appears on the payee's
+   profile. Buzz never holds or moves the money.
 
 ### 2.7 Reject a proposal
 
@@ -373,15 +396,16 @@ Ahead of the date the agent writes the brief and says which.
 4. Click **Open the follow-up** or **Nothing more**. The project closes on
    its date either way — the buttons are only about what comes next.
    Opening the follow-up _is_ the project approval: it goes live under
-   **Projects** with the suggested DRI offered, and is recorded under
+   **Work** with the suggested DRI offered, and is recorded under
    **Decisions → Decided** like any other approval. No second vote.
 5. Override is available but not the default: **Keep it open until …** sets a
-   new end date instead. A Shaper taps; the agent never closes, extends, or
-   opens a project on its own.
+   new end date instead. The close on the date is the relay's rule, running
+   on a date a Shaper set; the agent never closes, extends, or opens a
+   project on its own.
 6. If several Shapers, the card collects their taps — it shows who has
-   answered, and the follow-up goes live when enough have agreed. Still one
-   decision, in one place.
-7. Overview timeline and Projects update: the project shows closed, the
+   answered, and the follow-up goes live at the same threshold as any
+   project approval. Still one decision, in one place.
+7. Overview timeline and Work update: the project shows closed, the
    follow-up shows live (or offered, until the DRI accepts). The decision and what followed
    go into decision memory, so the next recommendation for a similar
    project is better.
@@ -393,10 +417,11 @@ Ahead of the date the agent writes the brief and says which.
 Join is **people only**. Orgs do not request to join as members. The card
 has no Recipient row.
 
-1. Open **Decisions → Join** (or **My Work → Needs your answer** — the
-   same join card).
+1. Someone asks to join the community (Buzz's join request). It shows as a
+   card on **Decisions → Join** (and **My Work → Needs your answer**).
 2. Click **Agree** (or **Decline**).
-3. They appear on Overview; nothing lands on them until they accept work.
+3. When it passes, the relay adds them to the community. They appear on
+   Overview; nothing lands on them until they accept work.
    In the preview: River has Rafi open and Priya passed.
 
 ### 2.10 Ask the org anything
@@ -412,18 +437,18 @@ has no Recipient row.
 Joined; holds nothing until they accept a piece.
 In the prototype: **You**, first login.
 
-### 3.1 Join the space
+### 3.1 Join the community
 
-1. First login → talk to the assistant.
+1. You are invited (or your join request passed, 2.9) and open the
+   community for the first time. The org agent DMs you.
 2. Profile cards fill as you speak; **Confirm** each one.
-3. Pick a suggested space, or land in the one you were invited to.
-4. Assistant: “I’ll let the others know your skills and that you’re available.”
-5. You are a **member**. No work queue on day one.
+3. Assistant: “I’ll let the others know your skills and that you’re available.”
+4. You are a **member**. No work queue on day one.
 
 ### 3.2 Look around
 
 1. Open **Overview** — mission, vision, objectives, strategy, who shapes, who holds what.
-2. Open **Projects** — every project, its DRI, what is open.
+2. Open **Work** — every project, its DRI, what is open.
 3. Open **Decisions** — you can read every decision; you cannot vote.
 4. Open **My Work**. You may already see a **human offer** or an **AI
    card** (**AI is asking you**). Empty is also honest: _Nothing needs you._
@@ -456,7 +481,7 @@ In the prototype: **You**, first login.
 
 ### 3.6 Say something the org should hear
 
-1. Open **Group chats → a room**.
+1. Open **Channels → a room**.
 2. Type a need: “Who signs the hall licence?”
 3. Agent drafts a ticket or project from it — with whoever holds the piece
    above, not with you.
@@ -478,18 +503,21 @@ In the prototype: **You**, first login.
 
 ## 4. The org agent
 
-Not a role, not a chatbot. One agent per org, running the loop
-_hear → remember → offer → watch → revise_ server-side. It has no door of
-its own: it shows up as cards on My Work, drafts in rooms, replies in the
-Personal Assistant, and lines on Overview and Decisions.
+Not a role, not a chatbot. One agent per org — a Buzz member with its own
+key, deployed like any managed agent — running the loop
+_hear → remember → offer → watch → revise_. It has no door of its own: it
+shows up as cards on My Work, drafts in rooms, replies in your DM with it,
+the health read on a project page, and lines on Overview and Decisions.
+Every draft it publishes is signed by it, so provenance is never in doubt.
 
 Two rules it never breaks: it **drafts, never decides**; it **offers, never
 assigns**. Every flow below ends with a human tap or with nothing.
 
 ### 4.1 Hear
 
-1. A message lands in a room, a DM with the assistant, or a call transcript
-   is ingested. The agent stores it as an event with author, room, time.
+1. A message lands in a channel or in a DM with the agent, or a call
+   transcript is published. It is already a signed event on the relay with
+   author, room, and time — the agent subscribes; it stores nothing itself.
 2. A cheap rule decides whether the batch is worth thinking about: a
    mention of open work or its DRI, a question to the room, a commitment
    verb, a spike of activity, a transcript, or anything a Shaper says in
@@ -619,6 +647,9 @@ sentence stops being read.
    reason (“Jun holds the rota under your ticket”).
 4. Otherwise marks done and posts the receipt — the DRI's own message. Done
    moves up the tree, never down.
+5. If that was the last open child of its parent, a **done card** for the
+   parent lands on the parent holder's **Needs your answer** (1.5). The
+   holder taps; the agent never closes the parent for them.
 
 ### 4.8 Nudge the person above
 
@@ -655,8 +686,9 @@ sentence stops being read.
    work** with the reasoning. One line of why, with receipts.
 4. Routes the review card to the Shapers (My Work, and the Shapers room if
    several).
-5. On the date, closes the project — the same scheduled rule — unless a
-   Shaper set a new end date.
+5. On the date the project closes — the relay's scheduled rule, not the
+   agent — unless a Shaper set a new end date. The agent only reads the
+   close as a trigger (4.11).
 6. Records what the Shapers chose against what it recommended: accepted,
    amended, rejected. That is what makes the next brief sharper (4.13).
 
@@ -681,6 +713,19 @@ sentence stops being read.
 3. Every claim links to its receipt — a message, a proposal, a project.
    Live numbers (treasury) are fetched at question time, never remembered.
 
+### 4.12a Read a project's health
+
+1. Every Friday, and whenever a project's ledger changes, a rule computes
+   the project's **band** — struggling / wobbly / healthy — from the ledger:
+   done against elapsed time, overdue pieces, offers past their window,
+   weeks of silence, pieces with no holder, whether its objective moved.
+2. Agent writes the paragraph: one sentence per factor, each with the
+   ledger rows behind it; a sentence with no rows is dropped. The last
+   sentence names the one factor most pulling the band down.
+3. Publishes it as the project's health read. It shows on the project page
+   under **Work**, never as a card, and changes no state.
+4. Shapers rate the band blind each week; agreement is kept (4.13).
+
 ### 4.13 Learn from outcomes
 
 1. Every decision and what followed it is kept: offer → accepted or
@@ -694,12 +739,11 @@ sentence stops being read.
 
 ### 4.14 Welcome a newcomer
 
-1. First login: talks the person through their profile; each card is
-   confirmed by them.
-2. No space in mind → suggests spaces from the profile and the spaces' own
-   direction. Invited → lands them in that space as a member.
-3. Tells the space: skills, availability. Adds them to the pool it draws
-   suggested holders from (4.3 step 4).
+1. First login in the community: DMs the person and talks them through
+   their profile; each card is confirmed by them.
+2. Tells the community: skills, availability. Adds them to the pool it
+   draws suggested holders from (4.3 step 4). (Suggesting communities to a
+   person with none in mind needs a directory and comes later.)
 4. Puts nothing on their My Work on day one. Offers come later — from a
    person, or from the agent — when there is a fit.
 
@@ -711,10 +755,14 @@ sentence stops being read.
 - Assign work, or promote its own draft.
 - Suggest on every message, or raise a dismissed suggestion again with
   nothing new behind it.
-- Close, extend, or open a project without a Shaper's tap — except the
-  scheduled close on an end date a Shaper already set.
-- Mark anything done on someone else's word.
+- Close, extend, or open a project. (The relay closes a project on the end
+  date a Shaper set; that is a date rule, not the agent.)
+- Mark anything done on someone else's word, or on a transcript.
 - Flip a state without a receipt.
+- Write a state at all: it publishes drafts and health reads signed with its
+  own key; every state change is a person's signed command that the relay
+  executes. The one exception is done-from-talk (4.7), where the agent
+  relays the DRI's own signed message and the relay checks the author.
 
 ---
 
@@ -724,7 +772,7 @@ sentence stops being read.
    asking you** card for Autumn harvest fair — and becomes a ticket DRI.
    After setup is held, the agent drafts **keys** under it (1.6).
 2. **Ticket DRI (Lea)** sees a rota draft the agent wrote once covers was
-   assigned; or asks for the split herself (1.6). Says done in the room
+   accepted; or asks for the split herself (1.6). Says done in the room
    (1.3); asks for the pay proposal (1.7).
 3. **Shaper (Maya)** **Agrees** strategy (“we do not take brand money”) —
    not Confirm v5, and not a sponsorship vote (2.3, 2.6). Approves pay
@@ -743,6 +791,7 @@ Same doors, different cards. Energy is the same loop with different names
 ## Related
 
 - [The Intelligent Organization — What it is](./intelligent-org-features.md) — the features these flows exercise
-- [The Intelligent Organization — Design](../architecture/intelligent-org-design.md) — work tree, confirm rules, money
-- [The Intelligent Organization — Current State](../architecture/intelligent-org-current-state.md) — what is shipped vs designed
-- Clickable preview: [hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app)
+- [The Intelligent Organization — Design](../architecture/intelligent-org-design.md) — work tree, confirm rules, money, on Buzz
+- [The Intelligent Organization — Protocol](../architecture/intelligent-org-protocol.md) — the events behind every tap above
+- [The Intelligent Organization — Current State](../architecture/intelligent-org-current-state.md) — what Buzz has today
+- Clickable preview: [hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app) — still says _Projects_ for the Work door

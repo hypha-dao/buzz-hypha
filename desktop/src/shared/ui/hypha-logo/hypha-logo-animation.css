@@ -1,48 +1,49 @@
-.buzz-logo {
+.hypha-logo {
   display: grid;
   place-items: center;
   inline-size: fit-content;
 }
 
-.buzz-logo--screen {
+.hypha-logo--screen {
   min-block-size: 100vh;
   inline-size: 100%;
   overflow: hidden;
 }
 
-.buzz-logo--background {
-  background-color: #d7d72e;
+.hypha-logo--background {
+  background-color: #e9f0fb;
   background-image: radial-gradient(
     circle,
-    rgba(35, 30, 30, 0.16) 1.2px,
+    rgba(28, 44, 93, 0.14) 1.2px,
     transparent 1.3px
   );
   background-position: 0 0;
   background-size: 37px 37px;
 }
 
-.buzz-logo__mark {
+.hypha-logo__mark {
   display: block;
-  inline-size: min(466px, calc(100vw - 32px));
+  inline-size: min(320px, calc(100vw - 32px));
   block-size: auto;
+  aspect-ratio: 1;
   overflow: visible;
 }
 
-.buzz-logo--compact {
+.hypha-logo--compact {
   inline-size: 1.5rem;
 }
 
-.buzz-logo--compact .buzz-logo__mark {
+.hypha-logo--compact .hypha-logo__mark {
   inline-size: 100%;
   block-size: auto;
   max-inline-size: 100%;
 }
 
-.buzz-logo__ink {
+.hypha-logo__ink {
   fill: currentColor;
 }
 
-@keyframes buzz-logo-pulse {
+@keyframes hypha-logo-pulse {
   0%,
   100% {
     opacity: 0.55;
@@ -52,11 +53,11 @@
   }
 }
 
-.buzz-logo--pulse .buzz-logo__mark {
-  animation: buzz-logo-pulse 1.8s ease-in-out infinite;
+.hypha-logo--pulse .hypha-logo__mark {
+  animation: hypha-logo-pulse 1.8s ease-in-out infinite;
 }
 
-@keyframes buzz-logo-scale-pulse {
+@keyframes hypha-logo-scale-pulse {
   0%,
   100% {
     transform: scale(0.94);
@@ -66,22 +67,22 @@
   }
 }
 
-.buzz-logo--scale-pulse .buzz-logo__mark {
-  animation: buzz-logo-scale-pulse 1.8s ease-in-out infinite;
+.hypha-logo--scale-pulse .hypha-logo__mark {
+  animation: hypha-logo-scale-pulse 1.8s ease-in-out infinite;
   transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .buzz-logo animate {
+  .hypha-logo animate {
     display: none;
   }
 
-  .buzz-logo--pulse .buzz-logo__mark {
+  .hypha-logo--pulse .hypha-logo__mark {
     animation: none;
     opacity: 0.8;
   }
 
-  .buzz-logo--scale-pulse .buzz-logo__mark {
+  .hypha-logo--scale-pulse .hypha-logo__mark {
     animation: none;
     transform: none;
   }

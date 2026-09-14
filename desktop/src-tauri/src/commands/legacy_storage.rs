@@ -165,7 +165,7 @@ fn merge_legacy_workspace_storage(
 }
 
 /// Return workspace-scoped localStorage values from the legacy Sprout WebKit
-/// data directory so the frontend can seed Buzz localStorage before first
+/// data directory so the frontend can seed Hypha localStorage before first
 /// render. This is separate from `migrate_legacy_app_data_dir`: Tauri app data
 /// migration copies files such as `identity.key`, but WebKit localStorage lives
 /// under `~/Library/WebKit/<identifier>/...` on macOS and is not included in the
@@ -194,7 +194,7 @@ pub async fn get_legacy_workspace_storage(
             match read_legacy_workspace_storage_db(&database) {
                 Ok(storage) => merge_legacy_workspace_storage(&mut result, storage),
                 Err(error) => eprintln!(
-                    "buzz-desktop: legacy-local-storage-migration: {}: {error}",
+                    "hypha-desktop: legacy-local-storage-migration: {}: {error}",
                     database.display()
                 ),
             }

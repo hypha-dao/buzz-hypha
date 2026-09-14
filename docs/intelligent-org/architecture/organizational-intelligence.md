@@ -1,8 +1,8 @@
 ---
 title: 'Organizational Intelligence — Memory Architecture'
-date: 2026-08-20
-status: draft
-tags: [architecture, ai, memory, intelligent-org]
+date: 2026-09-14
+status: current
+tags: [architecture, ai, memory, intelligent-org, buzz]
 ---
 
 # Organizational Intelligence — Memory Architecture
@@ -15,12 +15,17 @@ tags: [architecture, ai, memory, intelligent-org]
 4. How does the AI work out what is relevant?
 5. How do we make the AI actually intelligent?
 
-Companion to [User Journeys](../archive/user-journeys.md), which describes what this is for.
+Companion to [What it is](../product/intelligent-org-features.md) (what this serves) and
+[Design](./intelligent-org-design.md) (where each layer lives on Buzz). This document is the
+reasoning behind the layers; the design is the placement; the
+[Protocol](./intelligent-org-protocol.md) is the wire format.
 
-Numbers here are grounded in two documents that currently live on other branches: the measured AI
-cost model (`docs/hypha-ai-cost/`, branch `docs/hypha-ai-cost-per-space`) and the frozen Space
-Intelligence spec (`docs/plans/space-intelligence.md`, branch `feat/org-memory` /
-[PR #2461](https://github.com/hypha-dao/hypha-web/pull/2461)).
+> **Revision note (2026-09-14).** First written on 2026-08-20 against the Hypha platform, when
+> work was modelled as funded _mandates_ with _pots_ and _stewards_. Sections 0–7 stand. Section
+> 8 has been rewritten onto the current model — one recursive work tree, five proposal kinds,
+> no money on work items — and section 9 pruned accordingly. Cost figures in §3–§4 come from a
+> measured Hypha cost model (`docs/hypha-ai-cost/`, hypha-web) and are order-of-magnitude
+> guidance, not Buzz measurements.
 
 ---
 
@@ -56,50 +61,51 @@ Almost every failed AI-memory project fails by conflating these. They have diffe
 different writers, different lifespans, and — critically — different rules about whether they are
 ever allowed near the AI's context.
 
-|        | Layer           | What it holds                                                                                     | Rough size                        | Written by                              | Reaches the AI         |
-| ------ | --------------- | ------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------- | ---------------------- |
-| **L1** | Substrate       | chat messages, call recordings, uploaded files, raw blockchain events                             | millions of tokens, grows forever | machines, automatically                 | **never directly**     |
-| **L2** | Activity ledger | typed timestamped facts: _proposal 12 executed_, _treasury −8%_, _member joined_, _signal closed_ | large, grows forever              | the system, automatically               | **only as aggregates** |
-| **L3** | Semantic memory | what the organization believes: purpose, stakeholders, risks, charter, standing assessments       | **small — tens of documents**     | humans, and AI proposals humans approve | **always**             |
-| **L4** | Decision memory | recommendation → action → outcome chains; what we tried, what happened, what we now think instead | medium                            | the system, on state change             | **selectively**        |
+|        | Layer           | What it holds                                                                                          | Rough size                        | Written by                                    | Reaches the AI         |
+| ------ | --------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------- | ---------------------- |
+| **L1** | Substrate       | chat messages, forum posts, call transcripts, uploaded files                                           | millions of tokens, grows forever | machines, automatically                       | **never directly**     |
+| **L2** | Activity ledger | typed timestamped facts: _ticket done_, _project approved_, _offer declined_, _proposal settled_       | large, grows forever              | the relay, on every state change              | **only as aggregates** |
+| **L3** | Semantic memory | what the organization believes: **mission, vision, objectives, strategy** — four short, versioned texts | **small — four documents**        | humans confirm every version; AI only drafts  | **always, in full**    |
+| **L4** | Decision memory | recommendation → action → outcome chains; what we tried, what happened, what we now think instead      | medium                            | the relay, on state change                    | **selectively**        |
 
-Where we stand today: L1 exists. L3 is built and awaiting merge (the Space Intelligence Markdown
-artifacts). L2 exists as an unused table. **L4 does not exist.** L2 and L4 are both ordinary
-database tables — inexpensive to build, and they are what make the loop closeable.
+Where we stand on Buzz: **L1 exists** — the relay's event store already holds every message,
+post, file, and huddle event with a signed author and a stable id, indexed for full-text
+search. L2, L3, and L4 are specified in the [Protocol](./intelligent-org-protocol.md) and not
+yet built. All three are ordinary projections of signed events — inexpensive to build, and they
+are what make the loop closeable.
 
 The single most important design rule follows from this table:
 
 > **L3 holds interpretation. It never holds readings.**
 
-Treasury balances, vote counts, and membership numbers change constantly and are always fetched
-live at question time. If a number gets written into a memory document, the AI will confidently
-recite a stale figure forever. Artifacts say _"we are over-exposed to a single funding source"_;
-they never say _"we hold 43,000 USDC"_.
+Balances, vote counts, and membership numbers change constantly and are always fetched live at
+question time. If a number gets written into a memory document, the AI will confidently recite a
+stale figure forever. Direction says _"we are over-exposed to a single funding source"_; it never
+says _"we hold 43,000 USDC"_.
 
 A second rule carries equal weight, and it governs where memory draws its authority from:
 
 > **Deliberative artifacts record what the organization believes about itself. Behavioural evidence
 > records what it did. Where the two disagree, the disagreement is the finding.**
 
-Nearly all of L3 is deliberative — charters, stated risks, standing assessments, proposal text. That
-material is indispensable for interpretation, and it is also the organization's self-image. People
-posture in governance forums, and a proposal records intent rather than outcome. An intelligence
-built mainly from it becomes a very sophisticated model of how a space would like to be seen.
+L3 is deliberative — direction is the organization's self-image. People posture in governance
+rooms, and a strategy line records intent rather than outcome. An intelligence built mainly from
+it becomes a very sophisticated model of how an organization would like to be seen.
 
-The corrective is behavioural, and in this domain it is unusually good. Treasury movements,
-contributor payments actually made, funds deployed against funds promised, votes cast rather than
-opinions voiced — money is the least dishonest signal an organization emits, and in a DAO it is
-public and cryptographically verifiable rather than merely observed. That is L2, which is why L2
-sitting unused is a foundational gap rather than deferred plumbing.
+The corrective is behavioural. Tickets actually closed against tickets promised, offers accepted
+against offers declined, payments actually settled against payments proposed — what people _do_
+is the least dishonest signal an organization emits, and on Buzz every one of those facts is a
+signed event. That is L2, which is why the ledger is a foundation rather than deferred plumbing.
 
 Two consequences for how the system should behave:
 
-- **Anchor interpretation to evidence.** An L3 claim that no ledger fact supports is an opinion.
-  Assertions that go long enough without behavioural corroboration should be surfaced for review,
-  not quietly retained as fact.
-- **Treat the gap as the product.** The distance between what a space committed to and what its
-  ledger shows it did is the most valuable thing this system can show a member — and it is invisible
-  to everyone today precisely because nobody holds both halves at once.
+- **Anchor interpretation to evidence.** An objective no root item cites is an intention. An
+  objective whose date is near with nothing under it should be surfaced for review, not quietly
+  retained as belief.
+- **Treat the gap as the product.** The distance between what an organization committed to (L3)
+  and what its ledger shows it did (L2) is the most valuable thing this system can show a member —
+  and it is invisible to everyone today precisely because nobody holds both halves at once. Move 1
+  and the weekly gap scan in the design are this rule, made operational.
 
 ---
 
@@ -112,39 +118,41 @@ Memory quality is a governance process, not a storage problem. The lifecycle:
 **Propose.** Something — the AI, a connected app, or a person — proposes that the organization
 should _know_ something. The AI's default is always to propose, never to publish. This is the
 critical guardrail: memory an AI can silently rewrite launders hallucination into institutional
-truth, which is strictly worse than having no memory at all.
+truth, which is strictly worse than having no memory at all. On Buzz this is structural: the
+agent has no event kind that writes L3.
 
-**Approve.** A member reviews the proposed change against the current version and accepts, edits,
+**Approve.** A Shaper reviews the proposed change against the current version and accepts, edits,
 or rejects it. This moment is where human judgment enters the corpus, which makes it the most
-valuable data we collect — we should record the _edits_ approvers make, not just the yes/no.
+valuable data we collect — we record the _edits_ approvers make (an amended draft), not just the
+yes/no.
 
-**Version.** The approved change is written as a new immutable version, content-addressed, with a
-pointer to what it supersedes. Old versions stay readable forever. This is what lets the
-organization ask "what did we believe in March, and who changed it, and why?"
+**Version.** The approved change is written as a new version with a pointer to what it
+supersedes. Old versions stay readable forever — every version is a passed proposal on the
+relay. This is what lets the organization ask "what did we believe in March, and who changed it,
+and why?"
 
-**Consolidate.** On a regular rhythm, the AI proposes compressions: these four overlapping insights
-are one insight; this assessment is contradicted by that decision. Humans approve. This is the
-mechanism that keeps the corpus small, and it should be a scheduled organizational ritual rather
-than a background job nobody sees.
+**Consolidate.** Objectives are redrawn, not appended: when one is reached or dropped the agent
+proposes the new list, and Shapers confirm. This is the mechanism that keeps L3 small, and it is
+triggered by the ledger (a project closing), not by a background job nobody sees.
 
-**Retire.** Beliefs that no longer hold are marked superseded or contested with a recorded reason.
-Nothing is deleted.
+**Retire.** A struck objective or a withdrawn strategy line is gone from the head but present in
+every earlier version with the decision that removed it. Nothing is deleted.
 
-Two properties every artifact carries:
+Two properties every belief carries:
 
-- **Provenance** — which app or person produced it, when, and from what.
-- **A falsification condition** — what would make this wrong? The energy-pack templates already
-  ask "how will we know this identity still fits". Generalize that. A belief with no stated way of
-  being wrong can never be revised, and will quietly rot.
+- **Provenance** — which proposal produced it, who confirmed it, when, and from what talk.
+- **A falsification condition** — what would make this wrong? For an objective it is built in:
+  the line has a date and a set of items that cite it. A belief with no stated way of being wrong
+  can never be revised, and will quietly rot.
 
 ### The invariant that matters most
 
 > **L3 must stay small enough that a person could read all of it in an afternoon.**
 
 This is not an efficiency target, it is what makes the memory trustworthy. A corpus nobody can
-audit is a corpus nobody should rely on. If a space accumulates two hundred "insights", the
-organization has no insight — it has a landfill. Growth in L3 is a symptom to investigate, not
-progress to celebrate.
+audit is a corpus nobody should rely on. The current model fixes L3 at four artifacts and asks
+that `objectives` hold three to seven lines. If a community wants a fifth artifact, that is a
+protocol change to argue for, not a slot to fill.
 
 ---
 
@@ -153,38 +161,39 @@ progress to celebrate.
 We do not "search a big pile." We **spend a fixed budget** on every turn, filled in a defined
 order. The ordering is the design.
 
-The key move — and the answer to most of the difficulty — is this:
+With L3 fixed at four short texts, the first rule is simple: **the whole of L3 is always in the
+prompt.** Four artifacts of a page or two each are 2,000–6,000 tokens. There is no retrieval
+lottery for what the organization believes.
 
-> **Always send the _map_ of memory. Send the _contents_ only on demand.**
+The subtler rule — the one that answers most of the difficulty — governs everything else:
 
-The whole index of an organization's memory (every artifact's title, type, status, last-updated
-date, and a one-line summary) costs around **1,500 tokens**. The full text of all those artifacts
-costs around **60,000**. So for roughly 2% of the cost, the AI can always know _everything it
-knows about_ — and then ask precisely for the two or three documents it actually needs.
+> **Always send the _map_. Send the _contents_ only on demand.**
 
-This is why we do not need a vector database to get good behaviour. The model is choosing from a
-short labelled menu, which is something models are extremely reliable at, rather than guessing
-search keywords and hoping.
+For L2 the map is aggregates (open items by state, offers past their window, done this week);
+the contents are ledger rows, fetched when a draft needs receipts. For L1 the map is the
+channel list and recent activity; the contents are messages, fetched by search when the agent
+needs to cite one. The model chooses from a short labelled menu, which is something models are
+extremely reliable at, rather than guessing search keywords and hoping. This is why we do not
+need a vector database to get good behaviour.
 
 A typical turn, budgeted:
 
-| Slice                                                          | Tokens       | Always present? |
-| -------------------------------------------------------------- | ------------ | --------------- |
-| System prompt (trimmed from today's 5.6k)                      | 3,000        | yes             |
-| Identity card — who this org is, its purpose, its phase        | 300          | yes             |
-| Memory index — one line per artifact                           | 1,500        | yes             |
-| Current state — members, treasury, open proposals, top signals | 700          | yes             |
-| What changed since this person last looked                     | 1,000        | yes             |
-| Selected artifact bodies (2–4, chosen from the index)          | 6,000        | on demand       |
-| Conversation history (bounded, not the full transcript)        | 3,000        | trimmed         |
-| **Total**                                                      | **≈ 15,500** |                 |
+| Slice                                                                 | Tokens       | Always present? |
+| --------------------------------------------------------------------- | ------------ | --------------- |
+| System prompt for the move being run                                  | 2,000        | yes             |
+| The four direction heads, in full                                     | 4,000        | yes             |
+| Current state — open work aggregates, Shapers, offers pending         | 700          | yes             |
+| What changed since the last run of this move (ledger since)           | 1,000        | yes             |
+| The trigger's context — a channel window, a subtree, a diff           | 4,000        | per trigger     |
+| Relevant L4 — earlier drafts on this gap key and how they fared       | 1,000        | on demand       |
+| Selected L1 receipts (messages the draft will cite)                   | 2,000        | on demand       |
+| **Total**                                                             | **≈ 15,000** |                 |
 
-For comparison, a multi-tool advisory task today consumes about **28,000** input tokens. So the
-proposed design is both **better grounded and roughly half the cost** of current behaviour — because
-the index replaces bulk loading, and history is bounded instead of re-sent whole.
-
-The first four slices are stable between turns, which makes them ideal for prompt caching (cached
+The first four slices are stable between runs, which makes them ideal for prompt caching (cached
 reads run 60–80% cheaper on most hosts).
+
+If L3 ever outgrows "four short texts", the index-then-select pattern returns: send one line per
+artifact, load bodies by name. Nothing else in the design changes.
 
 ---
 
@@ -192,33 +201,31 @@ reads run 60–80% cheaper on most hosts).
 
 This is the question that most needs a real answer, so here is the arithmetic.
 
-**The curated memory of an entire organization is small.** A realistic artifact is one to two pages
-— call it 2,000 tokens. A mature organization with a fully populated ontology has perhaps 30 of
-them. That is **~60,000 tokens for everything the organization believes about itself.** Every
-current frontier model has a context window several times larger than that. So yes: technically,
-we could put the organization's entire belief system into every single request.
+**The curated memory of an organization is small.** Four artifacts of a page or two each. Even a
+generous reading of "what we believe" — the four heads plus their last few versions and the
+decisions that produced them — is tens of thousands of tokens. Every current frontier model has a
+context window several times larger than that. So yes: technically, we could put the
+organization's entire belief system into every single request, and we do.
 
-**The raw substrate is not small, and never will be.** Working from the measured cost model — around
-120 discussion-summary runs and 6 call transcripts per month for a typical space — a single active
-organization generates on the order of **one to three million tokens of chat and transcript per
-year**, growing every year. That is twenty to fifty times the curated corpus in year one alone, and
-the ratio worsens indefinitely.
+**The raw substrate is not small, and never will be.** A single active organization generates on
+the order of **one to three million tokens of chat and transcript per year**, growing every year.
+That is many times the curated corpus in year one alone, and the ratio worsens indefinitely.
 
 So the honest formulation of what we can offer:
 
 > **We can give the AI everything the organization _believes_. We can let it query everything the
 > organization has _done_. We will never send it everything the organization has _said_.**
 
-L3 goes in whole (or as an index plus selections). L2 is queried and arrives as aggregates and
-trends. L1 is reachable only by explicit drill-down into a specific transcript or file.
+L3 goes in whole. L2 is queried and arrives as aggregates and rows. L1 is reachable only by
+explicit drill-down into a specific message, transcript, or file — and only to produce a receipt.
 
 ### Why we should not send everything even when we can
 
 There are two arguments, and the weaker one is about money.
 
-**Cost** — at 15,500 tokens per turn a typical space is affordable on any tier; at 60,000+ per turn,
-premium models get expensive fast. But this argument erodes every year as prices fall, so we should
-not build the architecture around it.
+**Cost** — at 15,000 tokens per run a typical organization is affordable on any tier; at 60,000+
+per run, premium models get expensive fast. But this argument erodes every year as prices fall, so
+we should not build the architecture around it.
 
 **Attention** — this is the durable argument. A model's ability to use a fact _degrades_ as that
 fact is buried in more undifferentiated context. The same document that produces a sharp answer in
@@ -239,19 +246,18 @@ inference were free tomorrow, this architecture would not change.
 Relevance is decided in a fixed order, cheapest and most reliable signals first. A memorable
 shorthand: **pinned, changed, nearby, named, fresh, similar.**
 
-1. **Pinned** — identity, purpose, and charter are always in context. Not a ranking decision.
-2. **Changed** — the activity ledger says what actually moved since this person last looked,
-   weighted by magnitude and by whether it touches an open decision. This is deterministic, and it
-   is where most genuinely useful advice comes from. _Trend beats snapshot._
-3. **Nearby** — artifacts linked to whatever the person is currently looking at: this signal, this
-   proposal, this member. The artifact-to-signal graph already gives us this.
-4. **Named** — the model selects from the always-present index by label. Reliable because the menu
-   is short and well described.
-5. **Fresh** — prefer current over contested; never load superseded versions unless the question is
-   explicitly historical.
-6. **Similar** — semantic search by embedding. **Deliberately last, and not needed yet.** It becomes
-   worthwhile only when the index itself outgrows the budget (order of a hundred-plus artifacts),
-   and even then it should run over artifact _summaries_, not raw text chunks.
+1. **Pinned** — the four direction heads are always in context. Not a ranking decision.
+2. **Changed** — the ledger says what actually moved since the last run, weighted by whether it
+   touches an open item or an objective near its date. This is deterministic, and it is where
+   most genuinely useful drafts come from. _Trend beats snapshot._
+3. **Nearby** — what is linked to the trigger: the item a message mentions, the objective a root
+   cites (`objective_ref`), the channel a project talks in, the subtree under a held item.
+4. **Named** — the model asks for a specific item, version, or channel window by id.
+5. **Fresh** — prefer the head version; never load a superseded direction version unless the
+   question is explicitly historical.
+6. **Similar** — semantic search by embedding. **Deliberately last, and used only for
+   deduplication** (is this draft the same gap as an open one?), never for truth. Full-text
+   search (NIP-50) covers finding receipts.
 
 Building steps 1–5 first is not a compromise on the way to "real" retrieval. Steps 1–5 are more
 accurate, fully explainable, and free. Step 6 is an optimization for scale we do not have.
@@ -262,39 +268,41 @@ accurate, fully explainable, and free. Step 6 is an optimization for scale we do
 
 Four ingredients, and the model is not one of them.
 
-**Grounding — it knows this organization.** Everything it says is anchored in the curated corpus and
-cites what it drew on. An uncited recommendation is an opinion, and the organization already has
-plenty of those.
+**Grounding — it knows this organization.** Everything it says is anchored in L3 and cites the
+ledger rows and messages it drew on. An uncited recommendation is an opinion, and the
+organization already has plenty of those. On Buzz the relay refuses a draft whose receipts do not
+resolve.
 
-**Salience — it knows what changed.** Detection comes from thresholds on the activity ledger, not
-from a model. This is the difference between advice and a horoscope. It is worth being explicit
-about how the work divides:
+**Salience — it knows what changed.** Detection comes from state changes and thresholds on the
+ledger, not from a model. This is the difference between advice and a horoscope. It is worth being
+explicit about how the work divides:
 
-| Job                                  | Do it with                        | Because                                                             |
-| ------------------------------------ | --------------------------------- | ------------------------------------------------------------------- |
-| Detect that something changed        | deterministic rules on the ledger | must be reproducible, auditable, and cheap enough to run constantly |
-| Decide whether it matters            | rules plus organizational context | needs to be inspectable when it gets it wrong                       |
-| Explain what it means and what to do | the language model                | requires judgment and phrasing, which is what models are for        |
+| Job                                  | Do it with                          | Because                                                             |
+| ------------------------------------ | ----------------------------------- | ------------------------------------------------------------------- |
+| Detect that something changed        | relay state events and ledger rules | must be reproducible, auditable, and cheap enough to run constantly |
+| Decide whether it matters            | rules plus the four direction heads | needs to be inspectable when it gets it wrong                       |
+| Explain what it means and what to do | the language model                  | requires judgment and phrasing, which is what models are for        |
 
-Today's system does both jobs with arithmetic, which is why its output reads like a fortune cookie.
-The mistake to avoid next is the mirror image — using a model as the trigger, which is
-non-deterministic, unauditable, and expensive to run continuously.
+The mistake to avoid is using a model as the trigger, which is non-deterministic, unauditable,
+and expensive to run continuously. _Rules trigger; models explain._
 
 **Judgment — it knows how this organization decides.** Decision memory means the AI can say "you
 faced this in March, chose that, and here is how it turned out." No general-purpose model has
 access to that, and it is the thing that makes advice feel like it came from a colleague rather
 than a consultant.
 
-**Feedback — it knows whether it was right.** Every proactive recommendation records whether a human
-acted on it. That number is simultaneously our product KPI and the loop's error signal. Below
-roughly a third acceptance, the channel is noise and should be switched off rather than tuned —
-because a low-quality proactive channel is not a neutral placeholder. It spends the attention
-budget you need for the real thing.
+**Feedback — it knows whether it was right.** Every draft records whether a human accepted,
+amended, or declined it, and why. That number is simultaneously our product KPI and the loop's
+error signal. Below roughly a third acceptance, the channel is noise and should be switched off
+rather than tuned — because a low-quality proactive channel is not a neutral placeholder. It
+spends the attention budget you need for the real thing. The
+[AI evaluation plan](../plans/intelligent-org-ai-evaluation.md) turns this into pass/fail bars
+per move.
 
 And the delivery contract, which is where intelligence becomes visible or fails:
 
-> Every proactive recommendation must name **an owner**, state **one specific next action**, and
-> **cite the evidence** it rests on. If it cannot do all three, it is not sent.
+> Every draft must name **who can make it real**, state **one specific thing to do**, and **cite
+> the evidence** it rests on. If it cannot do all three, it is not sent.
 
 ---
 
@@ -303,21 +311,21 @@ And the delivery contract, which is where intelligence becomes visible or fails:
 Each of these is a plausible, popular design that we are consciously rejecting.
 
 - **Vector-database-first memory.** Opaque, unauditable, unmaintainable by the organization itself.
-  We use readable Markdown that a member can correct. Embeddings are an optimization we add later,
-  if ever.
+  We use readable text that a Shaper can correct. Embeddings are a dedupe tool, not a memory.
 - **Letting the AI write memory directly.** Turns model error into institutional belief with no
-  audit trail. Propose-then-approve, always.
+  audit trail. Propose-then-approve, always — enforced by the protocol, not by convention.
 - **A model as the proactive trigger.** Non-deterministic, unexplainable, and costly to run
   continuously. Rules trigger; models explain.
 - **Unbounded accumulation.** "Store everything, retrieve later" produces a corpus nobody trusts
-  and a retrieval problem that gets harder forever.
+  and a retrieval problem that gets harder forever. L3 is four texts.
 - **Numbers inside memory documents.** Guarantees confident stale answers. Volatile state is always
   fetched live.
-- **Notification per event.** Destroys the attention budget. Digest, then earn the interrupt.
+- **Notification per event.** Destroys the attention budget. Buzz's default is zero
+  notifications; the org agent must not be the exception.
 - **Escalating by default.** Sending anything uncertain to a vote feels safe and is not. It
   manufactures approval fatigue, which then degrades the votes that actually matter. Route to the
   lightest channel that fits — see §8.
-- **Measuring activity.** Artifacts created and messages sent are vanity metrics that actively
+- **Measuring activity.** Drafts created and messages sent are vanity metrics that actively
   reward the wrong behaviour. Measure acceptance and outcomes.
 
 ---
@@ -331,187 +339,125 @@ alongside the ones that don't. **Protecting the vote channel is a core architect
 a governance nicety, because the AI will be generating candidate decisions faster than any previous
 system did.
 
-### The wrong test
-
-"Anything involving money is a proposal" is the intuitive rule, and it fails in both directions.
-
-It **under-protects**: the most consequential decisions in a Hypha space are not spends, they are
-rule changes. Altering the voting method, the entry or exit method, or who counts as a member
-reshapes every future decision — which is why the platform already treats those as proposals
-(`change-voting-method`, entry/exit methods, space-to-space membership) alongside the monetary ones
-(`issue-new-token`, `mint-tokens-to-space-treasury`, `token-burning`).
-
-It also **fails to reduce load**: "does money move?" catches every reimbursement, contractor
-invoice, and tool subscription. The overwhelm remains.
-
 ### The test
 
-A decision requires a vote only on **yes to both**:
+A decision needs the Shapers only on **yes to both**:
 
-1. **Does it commit shared resources or change shared rules?** Shared means the treasury, the rules
-   of the game, who is a member, or anything binding the organization externally. If no, it is
-   operational and should never reach a vote.
-2. **Is it hard to reverse, or large relative to our capacity?** If no, it belongs to a named owner
-   inside a mandate, with a record.
+1. **Does it commit shared resources or change shared rules?** Shared means money leaving the
+   organization, its direction, who is a member, who is a Shaper, or a new root of work. If no,
+   it is operational and should never reach a vote.
+2. **Is it hard to reverse, or large relative to our capacity?** If no, it belongs to whoever
+   holds the work it sits under, with a record.
 
 The first question is a claim about rights — people should have a say over decisions whose
 consequences land on them and who are not otherwise in the room. The second is what keeps that
 principle from consuming the organization.
 
-### The tiers
+### The answer, fixed
 
-| Tier | Mechanism                                                              | For                                               |
-| ---- | ---------------------------------------------------------------------- | ------------------------------------------------- |
-| 0    | Just do it, logged to the ledger                                       | Work inside an existing mandate                   |
-| 1    | One named owner approves                                               | Small, reversible, inside a budget envelope       |
-| 2    | **Visible for N days; proceeds unless someone objects, with a reason** | Most of what gets over-escalated to votes today   |
-| 3    | Vote                                                                   | A payment no pot covers; rule changes; membership |
-| 4    | Supermajority                                                          | How decisions get made; purpose; exit rights      |
+In the current model the test has already been applied, once, and the result is the protocol.
+**Exactly five things are proposals**; everything else is either a holder's call or just logged.
 
-**Tier 2 is the one we do not have, and its absence is the actual cause of the overload.** Most
-organizations offer only two channels — do it quietly, or put it to a vote — and since only the
-second confers legitimacy, everything ambiguous drifts upward. A visible objection window that
-closes in silence gives collective legitimacy without collective effort, and absorbs the majority of
-borderline cases.
+| Level | Mechanism                                                                    | What lives here                                                                                                   |
+| ----- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 0     | Just do it; the ledger records it                                            | Work inside an item you hold: split it, offer pieces, mark yours done, set a child's date                        |
+| 1     | The holder of the parent decides                                             | Promote a child, offer it, take it back — the person one level up, never a vote                                  |
+| 3     | **Shapers decide** — the five proposal kinds, threshold per kind (`39103.rules`) | `project` (a new root), `dri` (name a holder by vote), `money` (out only), `direction` (a new version of one of the four), `join` (a person) |
+| 4     | Shapers decide, higher bar by default                                        | Who is a Shaper; the decision rules themselves (`io_shaper_set`)                                                 |
 
-### Constituencies, not just thresholds
+Level 2 — _visible for N days, proceeds unless someone objects with a reason_ — is the channel
+most organizations lack and the one that absorbs most over-escalation. It is **not built** in
+the MVP: every Shaper decision is an explicit vote. It is the obvious next rule value
+(`silence_after: <secs>`) for `39103.rules` once the five kinds have real traffic and the tally
+shows which of them pass near-unanimously without discussion. Those were not decisions; they
+were level-2 items taxing everyone's attention.
 
-The tiers above vary _how much_ agreement a decision needs. A second axis varies _whose_ agreement it
-needs, and it is easy to miss because most governance tooling assumes one electorate.
+### Constituencies
 
-- Operational decisions need the people accountable for the work.
-- Rule changes need the members.
-- **Reserved matters** — changing the purpose, diluting holders, disposing of major assets — need
-  investor or funder consent, which is a different set of people from the members.
-- Decisions that land on the people the organization serves need **beneficiary consultation**, even
-  when those people hold no vote at all.
+The levels above vary _how much_ agreement a decision needs. A second axis varies _whose_
+agreement it needs. In the MVP there is one electorate — the Shapers — and every proposal kind
+reads its threshold from `39103.rules`. Named constituencies (funders with reserved matters,
+beneficiaries who must be consulted but hold no vote) are not modelled. The discipline to keep
+when they come: **being heard and having authority are separate grants, and most edge
+stakeholders should get the first without the second.** A funder who can file an observation
+into a Shaper's DM is well served; a funder who can direct operations has quietly become
+management.
 
-So a decision class is a pair: a threshold _and_ a constituency. A space today can configure
-`quorum` and `unity`, which addresses the threshold and nothing else — every vote implicitly has the
-same electorate. Supporting the edge stakeholders in
-[User Journeys](../archive/user-journeys.md#stakeholders) properly means decision classes can name
-who must consent, not only how many.
+**Shaper is itself a grant.** The community owner is the first. After that, only Shapers decide
+who is a Shaper. Founding the organization does not keep it forever. Shapers decide direction,
+roots, DRIs by vote, money out, and joins. They do not run tickets, and they do not hold work by
+virtue of being Shapers.
 
-The useful discipline: **being heard and having authority are separate grants, and most edge
-stakeholders should get the first without the second.** An investor who can file an observation into
-normal triage is well served. An investor who can direct operations has quietly become management.
-
-**Shaper is itself a grant.** The founder names the first set. After that, only Shapers decide who
-is a Shaper. A steward or a contributor can hold it if they are added; founding the organization
-does not keep it forever. Shapers decide strategy, pots, and all organizational memory. They do
-not sign every payment.
-A pot may name cosigners who must release funds; default is none.
-The product list of every decision and who takes it lives in
-[User Journeys — What has to be decided, and by whom](../archive/user-journeys.md#what-has-to-be-decided-and-by-whom).
-The same classes, mapped onto this section's tiers:
-
-| Decision class                                                        | Who decides                                 | Tier               |
-| --------------------------------------------------------------------- | ------------------------------------------- | ------------------ |
-| Constitution at creation (first Shapers, entry/exit, first mandates)  | Founder, AI proposes                        | —                  |
-| High-level strategy (purpose, direction, which domains the org needs) | Shapers                                     | 1 / 3              |
-| Add, remove, or replace a steward; create or resize a mandate         | Shapers                                     | 3                  |
-| Change who is a Shaper, voting method, purpose, or entry/exit         | Shapers                                     | 4                  |
-| Green-light a ticket (approve / reject / hold)                        | Matching steward, before work starts        | 1                  |
-| Spend or commit inside an existing envelope                           | Steward of that mandate                     | 1                  |
-| Fill, refill, enlarge, shrink, or close a top-level pot               | Shapers                                     | 3                  |
-| Set, change, or clear cosigners on a pot                              | Shapers, or the parent steward on a sub-pot | 1 / 3              |
-| Release a payment from a pot that names cosigners                     | Those cosigners                             | 1                  |
-| Carve a sub-mandate from a remaining pot                              | Steward of the parent pot                   | 1                  |
-| A payment no existing pot covers                                      | Shapers                                     | 3                  |
-| Issue, mint, or burn tokens; space-to-space membership                | Shapers                                     | 3                  |
-| Admit or remove a member                                              | Whatever entry/exit method the founder set  | follows the method |
-| Memory update (strategy, purpose, or domain)                          | Shapers                                     | 1                  |
-| Memory hygiene (unsupported assertion, contradiction)                 | Shapers                                     | 0 / 1              |
-| Purpose change, dilution, major-asset disposal                        | Shapers **and** investor consent            | 4 + reserved       |
-| Decision that lands on the people the org serves                      | Shapers decide; beneficiaries consulted     | 3 + heard          |
-| Claim, decline, or act on approved work; declare capacity             | The individual                              | —                  |
-
-### Mandates, not transactions
+### Projects, not transactions
 
 The highest-leverage move is to change what a vote is _about_.
 
-> **The tier is a property of the decision's relationship to existing mandates, not a property of
-> the request.**
+> **Whether something needs a vote is a property of its relationship to existing work, not of the
+> request.**
 
-Take "we want feature X, we need developer Y, budget Z". Its tier depends entirely on something
-outside the request:
+Take "we want feature X, we need Y to do it". Its level depends entirely on something outside
+the request:
 
-- A product domain already holds a quarterly envelope and a named owner → **Tier 0/1**. An owner
-  spending their mandate is not a governance event; it is them doing their job.
-- It exceeds the envelope, creates an ongoing obligation rather than a one-off, or is the first hire
-  in a domain nobody owns → **Tier 3**.
-- It needs a domain that does not exist yet → vote on **the mandate**, once. The next thirty
-  decisions inside it are then Tier 0/1.
+- A live project already covers it and someone holds that project → **level 0/1**. The holder
+  splits their item and offers a piece. Not a governance event; them doing their job.
+- Nothing live covers it → the AI drafts a **root**, and the Shapers vote on the project, once.
+  The next thirty decisions inside it are then level 0/1.
+- It changes what the organization is trying to do → it is a `direction` proposal, and the root
+  follows from the new objective, not the other way round.
 
-So one vote on "this domain, this owner, this envelope, this review date" retires dozens of future
-votes. Mandates are the compression mechanism for governance in the same way that L3 artifacts are
-the compression mechanism for memory.
+So one vote on "this project, this end date, this objective" retires dozens of future votes.
+Projects are the compression mechanism for governance in the same way that four short artifacts
+are the compression mechanism for memory. Money is not on the project — it is a separate,
+out-only decision when a piece of work is done — which is what removes the two hardest
+questions (how budgets cascade, salary vs. per-piece) from the model entirely.
 
-**Same object at 10 members and at 10,000.** With ten people, Shapers fill two or three pots and
-stewards spend. With ten thousand, Shapers still fill a handful of pots; a steward carves
-sub-mandates from their remaining pot (same fields, no Shaper vote; they may add a cosigner on
-what they carve). Parent close freezes
-children. The Shaper set does not grow with membership.
+**Same object at 10 members and at 10,000.** With ten people, Shapers approve two or three
+roots and hold most of them. With ten thousand, Shapers still approve a handful of roots; holders
+split to whatever depth the work needs, and every split is level 1. The Shaper set does not grow
+with membership; the tree does.
 
-See [How it looks with 10 members, and with 10,000](../archive/user-journeys.md#how-it-looks-with-10-members-and-with-10000).
+### Where new roots come from
 
-### Where new mandates come from
+A root is created as **one Shaper decision**, usually on an AI draft: this title, this brief,
+this end date, this objective it serves, and — if the agent can name one — a suggested holder.
+Direction that is not a job — mission, who is a Shaper, join rules — stays memory and is not
+turned into a root. If a direction change implies new work, the root draft follows from the
+confirmed version (move 1); it is not a second thing to argue about in the same breath.
 
-A mandate is created as **one Shaper decision**, usually on an AI draft: this domain, this steward,
-this pot (which may be zero), this review date, and optionally who must cosign. Strategy that is
-not a job — purpose, who is a
-Shaper, entry rules — stays memory and is not turned into a mandate. If a belief change implies a
-new job, that job is on the same item, not a second vote.
+Roots should be created from observed need, not asserted need. The mechanism is the gap: an
+objective no root cites, a need heard in a room that no held item covers.
 
-Mandates should be created from observed need, not asserted need. The mechanism is work routing.
-
-When the system detects that something needs doing, it matches the work to a person using stated
-skills and mandates (L3) plus demonstrated history (L2), then checks the match against that person's
-**declared** capacity. Most of the time it finds someone. The interesting case is when it does not.
-
-**A ticket with no steward is a measurement, not a failure — and it is enough.** Left alone,
+**A ticket with no holder is a measurement, not a failure — and it is enough.** Left alone,
 unrouteable work silently lands on whoever is most responsive, which hides the shortage and burns
-out the conscientious. The AI must draft a mandate for the Shapers on that first ticket: this
-domain, a steward if it can name one, this pot, this review date. Further tickets in the same gap
-attach to the same open proposal; they do not open a second vote, and they do not wait to
-accumulate before the first one is filed.
+out the conscientious. The AI names the gap on the card (_open — no holder_), suggests a person
+when it can, and a Shaper can name one by vote when the offer path stalls. Further needs in the
+same gap attach to the same open draft (one draft per gap key); they do not open a second card.
 
 Three constraints on the matcher itself:
 
-- **Propose, do not allocate.** In a voluntary organization work cannot be assigned, only made
-  visible to the person most likely to take it. Suggested owner, reasoning shown, claimable by
-  anyone.
+- **Propose, do not allocate.** Work cannot be assigned, only made visible to the person most
+  likely to take it. Suggested holder, reasoning shown, accept or decline theirs alone. The `dri`
+  vote is the one exception, and it takes the Shapers to use it.
 - **Reserve a minority of routing for stretch matches.** Matching purely on demonstrated history
   ossifies roles and quietly creates single points of failure. Capabilities held by exactly one
   person are a risk the system is well placed to notice and surface.
 - **Capacity is declared, not inferred.** Do not build a load model. Most of what constrains a
   contributor is off-platform and therefore unmeasurable here, and the tempting proxy — open item
-  count — penalises whoever takes on slow work. Store a coarse, revisable, self-set limit; use it to
-  gate flow rather than to score fit; and let observation surface a discrepancy to the person
-  without ever overriding them. "Everyone who fits is at their self-set limit" is then a first-class
-  capacity signal, and a much more honest one than an inferred number.
+  count — penalises whoever takes on slow work. Store a coarse, revisable, self-set limit on the
+  profile; use it to gate suggestions rather than to score fit; and let observation surface a
+  discrepancy to the person without ever overriding them.
 
 ### What this means for the AI
 
-Routing is a more valuable capability than drafting. For every candidate decision the AI should
-propose the **lowest** tier satisfying both questions, name the mandate it believes covers it, and
-treat escalation as the exception it must argue for. A human can always override the routing
-upward; the AI's bias must run downward.
+Routing is a more valuable capability than drafting. For every heard need the AI should propose
+the **lowest** level that fits — a child under the nearest held item before a new root, a new
+root before a direction change — name the item or objective it believes covers it, and treat a
+Shaper proposal as the exception it must argue for. A human can always escalate upward; the AI's
+bias must run downward.
 
-This also yields a governance health metric worth tracking: **what share of votes pass
-near-unanimously with no substantive discussion?** Those were not decisions, they were Tier 2 items
-taxing everyone's attention. A high consensus rate is a symptom of mis-tiered governance, not of a
-healthy organization.
-
-### What the platform would need
-
-Three gaps between this model and what exists today:
-
-- **Per-decision-class thresholds.** `quorum` and `unity` are configurable 0–100, but per _space_,
-  not per decision class. Tiering needs a space to say "spending: 20% quorum; rule changes: 80%".
-- **An objection-window mechanism.** Tier 2 has no implementation today.
-- **A mandate / budget-envelope primitive.** There is nothing for spending to be checked against, so
-  no decision can currently be classified as "inside an existing mandate".
+This also yields a governance health metric worth tracking: **what share of proposals pass
+near-unanimously with no substantive discussion?** A high rate is a symptom of a missing level 2,
+not of a healthy organization.
 
 ---
 
@@ -519,34 +465,29 @@ Three gaps between this model and what exists today:
 
 Worth resolving before or during build, but not blocking the shape above.
 
-1. **Consolidation cadence and trigger** — calendar rhythm, corpus-size threshold, or steward
-   discretion?
-2. **Per-artifact size limit.** The current cap is 256 KiB, which is roughly 64,000 tokens — a
-   single artifact could consume an entire context budget. For documents intended to be
-   always-loadable, something closer to 4,000–8,000 tokens seems right. What is the enforcement?
-3. **Digest cadence** and whether it is per-person or per-organization.
-4. **Where decision outcomes come from** — inferred from on-chain and ledger state, or explicitly
-   recorded by a human at close-out? Inference scales; explicit recording is accurate.
-5. **Cross-organization memory** — what may be relayed to a parent or sibling space by default, and
-   what requires consent?
-6. **Model routing.** Our cost analysis suggests a premium tier for interactive work and a cheap
-   tier for background jobs lands a typical space at $1–3/month. Which model per tier, and who
-   decides?
-7. **Objection windows.** How long, who may object, and does one reasoned objection escalate to a
-   vote or block outright?
-8. **Mandates as a primitive.** Do mandates and budget envelopes become first-class objects, or are
-   they expressed as memory artifacts that the AI reads and reasons over? The first is enforceable;
-   the second is far cheaper to build.
-9. **Who sets the tier when the AI and a member disagree?** A member can escalate upward, but should
-   anyone be able to route a decision _downward_ out of the vote channel?
+1. **Redraw cadence for `objectives`.** Only on a project close, or also on a calendar rhythm
+   when nothing has closed for a quarter?
+2. **Per-artifact size limit.** Direction heads are meant to be always-loadable; something near
+   4,000–8,000 tokens each seems right. Enforced at the relay, or a soft limit the agent respects?
+3. **Where decision outcomes come from** — inferred from the ledger at review time (does the
+   objective's line still stand? did the follow-up happen?), or explicitly recorded by a Shaper at
+   close? Inference scales; explicit recording is accurate. The review card is where both meet.
+4. **Cross-community memory** — a person's profile spans communities; should anything else? Default
+   no.
+5. **Model routing.** A premium tier for interactive DM work and a cheap tier for the scheduled
+   moves. Which model per tier, and does Buzz Mesh cover the cheap tier?
+6. **Level 2.** When the tally shows kinds that pass silently, what does the silence window look
+   like, who may object, and does one reasoned objection escalate to a vote or block outright?
+7. **Who sets the level when the AI and a member disagree?** A member can escalate upward (open a
+   root instead of a child). Should anyone be able to route _downward_ out of a proposal?
 
 ---
 
 ## Related
 
-- [User Journeys — The Intelligent Organization](../archive/user-journeys.md) — what this serves
-- Space Intelligence & Documentation spec — the L3 substrate as specified and built; arrives with
-  [PR #2461](https://github.com/hypha-dao/hypha-web/pull/2461) at `docs/plans/space-intelligence.md`
-- [Documents and media overview](https://github.com/hypha-dao/hypha-web/blob/main/docs/architecture/documents-and-media-overview.md) — where L1 raw media lives
-- [Space Memory panel](https://github.com/hypha-dao/hypha-web/blob/main/docs/plans/space-memory-panel.md) — current aggregation surface
-- [The Intelligent Organization — Current State](./intelligent-org-current-state.md) — what is shipped vs designed
+- [The Intelligent Organization — What it is](../product/intelligent-org-features.md) — what this serves
+- [The Intelligent Organization — Design](./intelligent-org-design.md) — where each layer lives on Buzz
+- [The Intelligent Organization — Protocol](./intelligent-org-protocol.md) — the events that carry L2, L3, and L4
+- [The Intelligent Organization — AI Evaluation Plan](../plans/intelligent-org-ai-evaluation.md) — the feedback loop as pass/fail bars
+- [The Intelligent Organization — Current State](./intelligent-org-current-state.md) — what Buzz has today
+- [archive/user-journeys.md](../archive/user-journeys.md) — the August model this section 8 used to describe (mandates, pots, stewards); superseded

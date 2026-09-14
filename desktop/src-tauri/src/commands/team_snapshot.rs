@@ -910,7 +910,7 @@ fn retain_agent_pending(app: &AppHandle, state: &AppState, record: &ManagedAgent
         )
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-snapshot-import retain-agent: {e}");
+        eprintln!("hypha-desktop: team-snapshot-import retain-agent: {e}");
     }
 }
 

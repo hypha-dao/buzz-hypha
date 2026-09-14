@@ -32,7 +32,7 @@ pub(crate) fn all_known_effort_keys() -> impl Iterator<Item = &'static str> {
 ///
 /// Used by readiness evaluation to silence requirements that are already
 /// satisfied in the file config layer — the harness reads this file at startup
-/// so env vars we would otherwise require are not needed from Buzz.
+/// so env vars we would otherwise require are not needed from Hypha.
 pub(crate) fn read_goose_file_config() -> Option<RuntimeFileConfig> {
     goose::read_config_file()
 }

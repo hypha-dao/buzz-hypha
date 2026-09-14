@@ -9,9 +9,9 @@ import {
 const expected = (name, slug) => ({
   name,
   slug,
-  productName: `Buzz ${name}`,
-  dmgVolumeName: `Buzz ${name}`,
-  dmgFileStem: `Buzz_${name.replace(/ /g, "_")}`,
+  productName: `Hypha ${name}`,
+  dmgVolumeName: `Hypha ${name}`,
+  dmgFileStem: `Hypha_${name.replace(/ /g, "_")}`,
   identifier: `xyz.block.buzz.app.demo.${slug}`,
   appDataIdentity: `xyz.block.buzz.app.demo.${slug}`,
   deepLinkScheme: `buzz-demo-${slug}`,
@@ -19,7 +19,7 @@ const expected = (name, slug) => ({
   nestName: `.buzz-demo-${slug}`,
   cliName: `buzz-demo-${slug}`,
   tauriConfig: {
-    productName: `Buzz ${name}`,
+    productName: `Hypha ${name}`,
     identifier: `xyz.block.buzz.app.demo.${slug}`,
     plugins: { "deep-link": { desktop: { schemes: [`buzz-demo-${slug}`] } } },
     bundle: { targets: ["app"] },
@@ -28,7 +28,7 @@ const expected = (name, slug) => ({
 
 test("production identity remains unchanged", () => {
   assert.deepEqual(productionBuildIdentity, {
-    productName: "Buzz",
+    productName: "Hypha",
     identifier: "xyz.block.buzz.app",
     deepLinkScheme: "buzz",
     keyringService: "buzz-desktop",

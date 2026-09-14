@@ -13,7 +13,7 @@
 /// (or remove it if `None`) and strip `BUZZ_ACP_MODEL` from the spawned env.
 ///
 /// Must be called after `descriptor.env` is written so that any user-supplied
-/// `ANTHROPIC_MODEL` is overridden by the Buzz-resolved value.
+/// `ANTHROPIC_MODEL` is overridden by the Hypha-resolved value.
 pub fn apply_claude_model_env(command: &mut std::process::Command, effective_model: Option<&str>) {
     // Remove BUZZ_ACP_MODEL — the catalog-switch path is for live ACP switches
     // only; at spawn time ANTHROPIC_MODEL is the sole authority.

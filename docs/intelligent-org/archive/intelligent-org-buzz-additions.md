@@ -1,11 +1,20 @@
 ---
 title: 'Intelligent Org — Buzz additions'
 date: 2026-08-26
-status: draft
-tags: [product, intelligent-org, buzz]
+status: superseded
+tags: [product, intelligent-org, buzz, archive]
 ---
 
 # Intelligent Org — Buzz additions
+
+> **Superseded (2026-09-14).** This was the first sketch of the intelligent org as Buzz event
+> kinds, written when work was modelled as a funded _mandate_ with a _pot_ and a _steward_, and
+> direction as one confirmed brief. The current model — four direction artifacts, one recursive
+> work tree, five proposal kinds, no money on work — and its Buzz mapping live in
+> [Design](../architecture/intelligent-org-design.md) and the
+> [Protocol](../architecture/intelligent-org-protocol.md). The instinct here ("a new feature is a
+> new event kind; do not add a second database for work") survived intact; the objects did not.
+> Kept for the reasoning, not as a spec.
 
 What we would add if we fork Buzz. Six features. Same rule as the rest of this work: the AI drafts, people confirm — except where talk already made the outcome obvious.
 

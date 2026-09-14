@@ -709,7 +709,7 @@ test("right-clicking selected composer text hides the selection formatter", asyn
   await expect(tray).toBeVisible();
 });
 
-test("Buzz theme uses the primary color for the selection formatter", async ({
+test("Hypha theme uses the primary color for the selection formatter", async ({
   page,
 }) => {
   await openGeneral(page);

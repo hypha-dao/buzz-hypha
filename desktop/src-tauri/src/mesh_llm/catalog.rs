@@ -12,7 +12,7 @@ use mesh_llm_node::models::{default_huggingface_cache_dir, scan_installed_models
 use mesh_llm_system::hardware;
 use mesh_llm_system::vram::{format_rated_capacity, rated_capacity_gb};
 
-/// Buzz-curated tier picks. These are the models we know survive the agent
+/// Hypha-curated tier picks. These are the models we know survive the agent
 /// harness on shared compute.
 ///
 /// The recommended ladder follows rated unified memory:
@@ -40,7 +40,7 @@ const CURATED_MEDIUM_MIN_RATED_GB: u64 = 32;
 /// cache and runtime use.
 const CURATED_LARGE_MIN_RATED_GB: u64 = 64;
 
-/// The Buzz-curated recommendation for a machine's rated memory capacity.
+/// The Hypha-curated recommendation for a machine's rated memory capacity.
 fn buzz_recommended_model(rated_gb: Option<u64>) -> &'static str {
     match rated_gb {
         Some(gb) if gb >= CURATED_LARGE_MIN_RATED_GB => CURATED_LARGE,
@@ -49,7 +49,7 @@ fn buzz_recommended_model(rated_gb: Option<u64>) -> &'static str {
     }
 }
 
-/// Convert Buzz's historical curated package aliases into the canonical model
+/// Convert Hypha's historical curated package aliases into the canonical model
 /// ids advertised and accepted by Mesh's OpenAI ingress.
 pub(crate) fn canonical_curated_model_id(model_id: &str) -> &str {
     match model_id.trim() {
@@ -105,7 +105,7 @@ pub struct MeshCatalogEntry {
     pub fit: ModelFit,
     pub installed: bool,
     pub recommended: bool,
-    /// Buzz-curated pick — known to survive the agent harness. Curated
+    /// Hypha-curated pick — known to survive the agent harness. Curated
     /// entries render above the fold; everything else is "advanced".
     pub curated: bool,
 }

@@ -363,7 +363,7 @@ impl RelaySession {
         let violations = self.state.lock().await.replace_desired(subscriptions);
         for id in violations {
             eprintln!(
-                "buzz-desktop: native_relay_client: subscription {id} changed filter under a \
+                "hypha-desktop: native_relay_client: subscription {id} changed filter under a \
                  reused id; ids must be derived from their filter"
             );
         }
@@ -438,7 +438,7 @@ async fn run_session(
                 run_connection(conn, &session, &mut wake_rx).await;
             }
             Err(error) => {
-                eprintln!("buzz-desktop: native_relay_client: connect failed: {error}");
+                eprintln!("hypha-desktop: native_relay_client: connect failed: {error}");
             }
         }
 
@@ -610,7 +610,7 @@ async fn run_connection(
                         let retry = retries.entry(subscription_id.clone()).or_default();
                         retry.schedule(&message);
                         eprintln!(
-                            "buzz-desktop: native_relay_client: relay closed {subscription_id}: {message}"
+                            "hypha-desktop: native_relay_client: relay closed {subscription_id}: {message}"
                         );
                     }
                     Ok(RelayMessage::Eose { subscription_id }) => {
@@ -653,7 +653,7 @@ async fn run_connection(
                     Ok(_) => {}
                     Err(error) => {
                         if !is_read_timeout(&error) {
-                            eprintln!("buzz-desktop: native_relay_client: read failed: {error}");
+                            eprintln!("hypha-desktop: native_relay_client: read failed: {error}");
                             return;
                         }
                     }
@@ -892,7 +892,7 @@ mod relay_backed_tests {
     /// ```text
     /// ./scripts/start-isolated-test-relay.sh          # ws://localhost:3030
     /// BUZZ_TEST_RELAY_URL=ws://localhost:3030 \
-    ///   cargo test -p buzz-desktop -- --ignored archive_sync_session
+    ///   cargo test -p hypha-desktop -- --ignored archive_sync_session
     /// ```
     #[tokio::test]
     #[ignore = "requires a local relay (set BUZZ_TEST_RELAY_URL)"]

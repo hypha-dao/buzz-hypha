@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 
-const TERM = 'section[aria-label="Buzz Term"]';
+const TERM = 'section[aria-label="Hypha Term"]';
 const NAMED = 0x0100_0000;
 const FG = NAMED | 256;
 const BG = NAMED | 257;
 
 /**
- * The shipped mock bridge throws on every `terminal_*` command, so Buzz Term is
+ * The shipped mock bridge throws on every `terminal_*` command, so Hypha Term is
  * unreachable through `installMockBridge` alone. This pre-creates
  * `__TAURI_INTERNALS__` and traps the `invoke` assignment `mockIPC` makes:
  * terminal commands are answered here, everything else falls through to the
@@ -147,7 +147,7 @@ async function reveal(page: Page) {
   await installMockBridge(page);
   await page.goto("/");
   await expect(page.getByTestId("home-inbox-list")).toBeVisible();
-  // Buzz Term needs a channel: TerminalBootstrap's context is null on Home, so
+  // Hypha Term needs a channel: TerminalBootstrap's context is null on Home, so
   // no session spawns and the chord is inert.
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
@@ -169,7 +169,7 @@ async function reveal(page: Page) {
     .toBeGreaterThanOrEqual(180);
 }
 
-test("project terminal button opens Buzz Term for the repository", async ({
+test("project terminal button opens Hypha Term for the repository", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -197,7 +197,7 @@ test("project terminal button opens Buzz Term for the repository", async ({
   await expect(page.locator(TERM)).toBeVisible();
 });
 
-test("scrollback: wheel over Buzz Term reaches terminal_scroll", async ({
+test("scrollback: wheel over Hypha Term reaches terminal_scroll", async ({
   page,
 }) => {
   await reveal(page);
@@ -241,7 +241,7 @@ test("terminal viewport click retains keyboard input ownership", async ({
     .toContain("FOCUS_KEYSTROKE");
 });
 
-test("concealed terminal viewport does not steal Buzz focus", async ({
+test("concealed terminal viewport does not steal Hypha focus", async ({
   page,
 }) => {
   await reveal(page);

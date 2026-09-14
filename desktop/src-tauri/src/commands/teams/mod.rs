@@ -62,7 +62,7 @@ pub(in crate::commands) fn propagate_membership_best_effort(
         Ok(())
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-membership-propagate: {e}");
+        eprintln!("hypha-desktop: team-membership-propagate: {e}");
     }
 }
 
@@ -262,7 +262,7 @@ pub(super) fn retain_team_pending(app: &AppHandle, state: &AppState, team: &Team
         retain_team_pending_at(&scope, team)
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-retain: {e}");
+        eprintln!("hypha-desktop: team-retain: {e}");
     }
 }
 
@@ -327,7 +327,7 @@ fn tombstone_team_pending(app: &AppHandle, state: &AppState, d_tag: &str) {
         tombstone_team_at(&scope.db_path, &scope.owner_keys, d_tag)
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: team-tombstone: {e}");
+        eprintln!("hypha-desktop: team-tombstone: {e}");
     }
 }
 

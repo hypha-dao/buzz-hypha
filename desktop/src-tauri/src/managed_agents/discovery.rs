@@ -454,7 +454,7 @@ pub fn resolve_command(command: &str) -> Option<PathBuf> {
 
 /// Cache-only command resolution for the cheap discovery path.
 ///
-/// Consults the Buzz-managed shim dir (a filesystem stat, never a spawn) and
+/// Consults the Hypha-managed shim dir (a filesystem stat, never a spawn) and
 /// the resolve cache; on a miss it reports the command absent rather than
 /// resolving live via `resolve_command_uncached` → `find_via_login_shell`,
 /// which spawns a login shell on the channel-switch / composer hot path — the
@@ -691,7 +691,7 @@ fn runtime_needs_npm(runtime: &KnownAcpRuntime) -> bool {
 
 /// Returns `true` when `cmd` is an npm global install/uninstall invocation.
 ///
-/// Buzz rewrites these catalog commands to an app-private npm prefix before
+/// Hypha rewrites these catalog commands to an app-private npm prefix before
 /// execution; the global shape remains in the catalog so existing install plans
 /// and Doctor's Node.js-required detection stay simple.
 pub(crate) fn is_npm_global_install(cmd: &str) -> bool {
@@ -750,7 +750,7 @@ pub fn missing_command_message(command: &str, role: &str) -> String {
     }
 
     format!(
-        "{role} `{command}` was not found. Make sure it is installed and on your PATH. Antivirus software can quarantine bundled binaries — if that happened, restore the file or reinstall Buzz. (Source builds: see TESTING.md.)"
+        "{role} `{command}` was not found. Make sure it is installed and on your PATH. Antivirus software can quarantine bundled binaries — if that happened, restore the file or reinstall Hypha. (Source builds: see TESTING.md.)"
     )
 }
 
@@ -780,7 +780,7 @@ pub(crate) fn classify_runtime(
     }
 }
 
-/// The oldest `codex-acp` version supported by Buzz managed agents.
+/// The oldest `codex-acp` version supported by Hypha managed agents.
 ///
 /// Older 1.x adapters are detected successfully, but can still bundle a Codex runtime
 /// that cannot use newer models. Adapter 1.6.2 bundles Codex 0.148.x, which rejects
@@ -1016,8 +1016,8 @@ fn discover_acp_runtime_phase1(runtime: &'static KnownAcpRuntime, force: bool) -
         | AcpAvailabilityStatus::NotInstalled => runtime.cli_install_instructions_url,
     };
 
-    // node_required now means Buzz cannot provide npm for this platform.
-    // On supported desktop platforms, Buzz downloads a private Node/npm
+    // node_required now means Hypha cannot provide npm for this platform.
+    // On supported desktop platforms, Hypha downloads a private Node/npm
     // runtime into app data before running npm-backed adapter installs.
     let node_required = matches!(
         availability,

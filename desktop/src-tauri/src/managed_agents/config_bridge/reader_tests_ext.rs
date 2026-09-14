@@ -259,7 +259,7 @@ fn reserved_key_absent_from_definition_env_falls_through() {
 
 // ── B4/B5 canonical effort_level tier tests ────────────────────────────────
 //
-// record.effort_level is the Buzz-canonical seeded value (the effort a spawn
+// record.effort_level is the Hypha-canonical seeded value (the effort a spawn
 // applies at next session start via `apply_effort_env`). It must surface as
 // BuzzExplicit and take precedence over the config-file tier, but not over a
 // record env var override.

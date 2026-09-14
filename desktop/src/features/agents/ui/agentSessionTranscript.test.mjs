@@ -146,7 +146,7 @@ test("buildTranscript preserves a slash-command preamble before semantic prompt 
   );
   assert.deepEqual(
     promptContext?.sections.map((section) => section.title),
-    ["Prompt", "Context", "Buzz event: @mention"],
+    ["Prompt", "Context", "Hypha event: @mention"],
   );
   assert.equal(promptContext?.sections[0]?.body, "/goal ship it");
 });

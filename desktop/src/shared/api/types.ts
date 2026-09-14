@@ -467,7 +467,7 @@ export type ControlResultFrame = {
   modelId?: string;
   /** Opaque per-pick id echoed from the request; correlates late frames. */
   requestId?: string;
-  /** Buzz channel UUID from the observer envelope; disambiguates channels. */
+  /** Hypha channel UUID from the observer envelope; disambiguates channels. */
   channelId?: string | null;
 };
 

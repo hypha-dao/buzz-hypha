@@ -90,11 +90,11 @@ pub fn migrate_personas_to_events(app: &tauri::AppHandle, keys: &nostr::Keys, db
         Ok(0) => {}
         Ok(migrated) => {
             eprintln!(
-                "buzz-desktop: persona-event-migration: {migrated} personas migrated to retention"
+                "hypha-desktop: persona-event-migration: {migrated} personas migrated to retention"
             );
         }
         Err(e) => {
-            eprintln!("buzz-desktop: persona-event-migration: {e}");
+            eprintln!("hypha-desktop: persona-event-migration: {e}");
         }
     }
 }
@@ -227,7 +227,9 @@ pub fn migrate_teams_to_events(
     match migrate_teams_in_dir_at(&base_dir, keys, db_path) {
         Ok(0) => Ok(()),
         Ok(migrated) => {
-            eprintln!("buzz-desktop: team-event-migration: {migrated} teams migrated to retention");
+            eprintln!(
+                "hypha-desktop: team-event-migration: {migrated} teams migrated to retention"
+            );
             Ok(())
         }
         Err(e) => Err(format!("team-event-migration: {e}")),
@@ -362,11 +364,11 @@ fn reconcile_team_catalog_heads(app: &tauri::AppHandle, keys: &nostr::Keys, db_p
         Ok(0) => {}
         Ok(reconciled) => {
             eprintln!(
-                "buzz-desktop: team-catalog-reconcile: {reconciled} shared team heads refreshed"
+                "hypha-desktop: team-catalog-reconcile: {reconciled} shared team heads refreshed"
             );
         }
         Err(e) => {
-            eprintln!("buzz-desktop: team-catalog-reconcile: {e}");
+            eprintln!("hypha-desktop: team-catalog-reconcile: {e}");
         }
     }
 }
@@ -457,13 +459,15 @@ fn reconcile_team_catalog_heads_core(
             })()
             .unwrap_or_else(|| head.d_tag.clone());
             let reason = "team no longer exists".to_string();
-            eprintln!("buzz-desktop: team-catalog-reconcile: tombstoning '{team_name}' — {reason}");
+            eprintln!(
+                "hypha-desktop: team-catalog-reconcile: tombstoning '{team_name}' — {reason}"
+            );
             // `tombstone_team_catalog_coordinate` opens its own WAL connection;
             // `conn` is kept alive for the retain_event calls in later
             // iterations.
             if let Err(e) = tombstone_team_catalog_coordinate(db_path, keys, &head.d_tag) {
                 eprintln!(
-                    "buzz-desktop: team-catalog-reconcile: tombstone failed for '{}': {e}",
+                    "hypha-desktop: team-catalog-reconcile: tombstone failed for '{}': {e}",
                     head.d_tag
                 );
             } else {
@@ -491,7 +495,7 @@ fn reconcile_team_catalog_heads_core(
             Ok(builder) => builder,
             Err(reason) => {
                 eprintln!(
-                    "buzz-desktop: team-catalog-reconcile: tombstoning '{}' — {reason}",
+                    "hypha-desktop: team-catalog-reconcile: tombstoning '{}' — {reason}",
                     team.name
                 );
                 // `tombstone_team_catalog_coordinate` opens its own WAL
@@ -499,7 +503,7 @@ fn reconcile_team_catalog_heads_core(
                 // processing remaining heads (I2 — multi-head continuation).
                 if let Err(e) = tombstone_team_catalog_coordinate(db_path, keys, &team.id) {
                     eprintln!(
-                        "buzz-desktop: team-catalog-reconcile: tombstone failed for '{}': {e}",
+                        "hypha-desktop: team-catalog-reconcile: tombstone failed for '{}': {e}",
                         team.name
                     );
                 } else {
@@ -566,7 +570,7 @@ fn emit_team_catalog_auto_retracted(app: &tauri::AppHandle, team_name: &str, rea
         "team-catalog-auto-retracted",
         TeamCatalogAutoRetractedPayload { team_name, reason },
     ) {
-        eprintln!("buzz-desktop: team-catalog-reconcile: failed to emit retraction notice: {e}");
+        eprintln!("hypha-desktop: team-catalog-reconcile: failed to emit retraction notice: {e}");
     }
 }
 
@@ -627,13 +631,13 @@ fn tombstone_orphan_heads(
         // relay, and boot reconcile enumerates disk records, so nothing else
         // will ever retract it. Re-run the (idempotent) atomic tombstone.
         eprintln!(
-            "buzz-desktop: deletion-reconcile: tombstoning orphan kind:{kind} head '{}'",
+            "hypha-desktop: deletion-reconcile: tombstoning orphan kind:{kind} head '{}'",
             head.d_tag
         );
         match tombstone(db_path, keys, &head.d_tag) {
             Ok(()) => tombstoned += 1,
             Err(e) => eprintln!(
-                "buzz-desktop: deletion-reconcile: tombstone failed for kind:{kind} '{}': {e}",
+                "hypha-desktop: deletion-reconcile: tombstone failed for kind:{kind} '{}': {e}",
                 head.d_tag
             ),
         }
@@ -667,9 +671,9 @@ fn reconcile_deleted_heads(app: &tauri::AppHandle, keys: &nostr::Keys, db_path: 
     match reconcile_deleted_heads_at(&base_dir, keys, db_path) {
         Ok(0) => {}
         Ok(tombstoned) => {
-            eprintln!("buzz-desktop: deletion-reconcile: {tombstoned} orphan heads tombstoned");
+            eprintln!("hypha-desktop: deletion-reconcile: {tombstoned} orphan heads tombstoned");
         }
-        Err(e) => eprintln!("buzz-desktop: deletion-reconcile: {e}"),
+        Err(e) => eprintln!("hypha-desktop: deletion-reconcile: {e}"),
     }
 }
 

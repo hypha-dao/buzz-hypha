@@ -389,7 +389,7 @@ test("settings shortcut returns without opening search dialog", async ({
   await expect(page.getByTestId("search-results")).not.toBeVisible();
 });
 
-test("mixed Buzz permalinks render as chips in the composer", async ({
+test("mixed Hypha permalinks render as chips in the composer", async ({
   page,
 }) => {
   await page.goto("/");
@@ -445,7 +445,7 @@ test("mixed Buzz permalinks render as chips in the composer", async ({
   await expect(composerInput).not.toContainText("buzz://");
 });
 
-test("composer Buzz chip labels wrap without orphaning their icons", async ({
+test("composer Hypha chip labels wrap without orphaning their icons", async ({
   page,
 }) => {
   await page.addInitScript(() => {

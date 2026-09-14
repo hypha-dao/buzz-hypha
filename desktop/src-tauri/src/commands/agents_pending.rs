@@ -38,7 +38,7 @@ pub(crate) fn retain_managed_agent_pending(
         retain_agent_record(&conn, &scope.owner_keys, record).map(|_| ())
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: agent-retain: {e}");
+        eprintln!("hypha-desktop: agent-retain: {e}");
     }
 }
 
@@ -63,7 +63,7 @@ pub(crate) fn tombstone_managed_agent_pending(
         tombstone_managed_agent_at(&scope.db_path, &scope.owner_keys, agent_pubkey)
     })();
     if let Err(e) = result {
-        eprintln!("buzz-desktop: agent-tombstone: {e}");
+        eprintln!("hypha-desktop: agent-tombstone: {e}");
     }
 }
 

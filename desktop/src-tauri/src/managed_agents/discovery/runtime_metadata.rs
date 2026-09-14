@@ -23,7 +23,7 @@ pub(crate) struct EffortNormalization {
 /// Source: `crates/goose-provider-types/src/thinking.rs` at Goose `2db0e31fe`.
 /// Canonical Display values: `off`, `low`, `medium`, `high`, `max`.
 /// Aliases (case-insensitive): `none|disabled→off`, `med→medium`, `xhigh→max`.
-/// `minimal` (Buzz-only) is invalid — skipped as absent at every tier.
+/// `minimal` (Hypha-only) is invalid — skipped as absent at every tier.
 pub(crate) static GOOSE_EFFORT_NORMALIZATION: EffortNormalization = EffortNormalization {
     canonical: &["off", "low", "medium", "high", "max"],
     aliases: &[
@@ -95,7 +95,7 @@ pub(crate) struct KnownAcpRuntime {
     /// Human-readable hint about installing the ACP adapter.
     pub adapter_install_hint: &'static str,
     /// Harness-specific skill discovery directory (e.g. `.goose/skills`).
-    /// `Some(dir)` → Buzz creates a symlink at `<nest>/<dir>/buzz-cli`
+    /// `Some(dir)` → Hypha creates a symlink at `<nest>/<dir>/buzz-cli`
     /// pointing to the canonical `.agents/skills/buzz-cli`. `None` → this
     /// runtime reads the canonical path directly or has no skill support.
     pub skill_dir: Option<&'static str>,

@@ -372,7 +372,7 @@ async function pasteAfterComposerText(
   }, flavors);
 }
 
-/** The flavors a Buzz copy of `body` writes for a "John Smith" chip. */
+/** The flavors a Hypha copy of `body` writes for a "John Smith" chip. */
 function mentionFlavors(pubkey: string, body: string) {
   const at = body.indexOf(MENTION_SIGIL);
   if (at < 0) throw new Error(`Body names nobody: ${body}`);
@@ -889,7 +889,7 @@ test("a chip whose spaces became NBSP in transit still pastes as a mention", asy
   await page.getByTestId("channel-bob-tyler").click();
   await expect(page.getByTestId("chat-title")).toHaveText("bob-tyler");
 
-  // A Buzz timeline copy as the pasteboard can hand it back: the chip's spaces
+  // A Hypha timeline copy as the pasteboard can hand it back: the chip's spaces
   // swapped for U+00A0. The paste normalizer tolerates that when judging the
   // chip whole, so it must insert the label the chip declares — the mention
   // decorations, the visibility gate, and the send-time extractor all want the
@@ -921,7 +921,7 @@ test("a boundary-crossing default copy pastes its chip fragment without a sigil"
   await emitMentionMessage(page, "general");
 
   // A drag from inside the chip into the sentence after it covers no chip
-  // fully, so Buzz's copy handler declines and the browser's default copy
+  // fully, so Hypha's copy handler declines and the browser's default copy
   // runs — serializing the partially covered chip element with its full
   // identity attributes around only the covered slice of its text.
   const flavors = await page.evaluate((pubkey) => {

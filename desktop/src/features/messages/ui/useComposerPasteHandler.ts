@@ -10,7 +10,7 @@ import { getBuzzCodeBlockClipboardText } from "@/shared/lib/codeBlockClipboard";
 export function useComposerPasteHandler(options: {
   editor: Editor | null;
   /**
-   * Teaches the composer each `name → pubkey` pair a Buzz copy carried, once
+   * Teaches the composer each `name → pubkey` pair a Hypha copy carried, once
    * trusted state vouches for it. Without it, a paste binds nothing.
    */
   bindMentionIdentities?: BindPastedMentionIdentities;

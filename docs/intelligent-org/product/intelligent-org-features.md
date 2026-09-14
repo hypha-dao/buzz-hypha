@@ -1,14 +1,20 @@
 ---
 title: 'The Intelligent Organization — What it is'
-date: 2026-09-11
-status: draft
-tags: [product, intelligent-org, hypha]
+date: 2026-09-14
+status: source of truth
+tags: [product, intelligent-org, buzz]
 ---
 
 # The Intelligent Organization — What it is
 
-Source of truth for building the intelligent org on the Hypha platform. This document says what
-it is and what users can do thanks to it. A companion document says how to build it.
+Source of truth for the intelligent organization, built on Buzz. This document says what it is
+and what users can do thanks to it. [Design](../architecture/intelligent-org-design.md) says how
+to build it on the Buzz relay; the [Protocol](../architecture/intelligent-org-protocol.md) pins
+the event kinds. Where a Buzz surface has a different name from the one used here, the design
+document says so; the behaviour described here is the contract.
+
+An organization is one Buzz **community** — one relay URL, one member list, one signed event log
+shared by people and the org agent.
 
 ---
 
@@ -48,7 +54,9 @@ Two rules hold everywhere:
 | **DRI**    | Accepted a project (holds the job) or a ticket (does the work). A relationship, not a title.                    |
 | **Shaper** | Sets direction: the org's mission, vision, objectives, and strategy; which projects exist; what they are worth. |
 
-The founder is the first Shaper. One person can be all three at once.
+The founder — the community's owner in Buzz — is the first Shaper. After that, only Shapers name
+Shapers. One person can be all three at once. The org agent is a member too, with its own key;
+it never holds a role.
 
 ---
 
@@ -74,10 +82,10 @@ them, and a review asks whether it did. There is no separate "org brief" — the
 the org believes about its own direction.
 
 Where the talk happens depends on how many Shapers there are. With several, it is the
-**Shapers room**: everyone there sees the draft, one of them confirms. With one Shaper — the
-founder in a new org — the same conversation happens in **their own chat with the assistant**.
-No room to open, no one to wait for. The moment a second Shaper is added, the conversation
-moves to the Shapers room; nothing confirmed is lost.
+**Shapers room** — a private channel the org agent is a member of: everyone there sees the
+draft, one of them confirms. With one Shaper — the founder in a new org — the same conversation
+happens in **their own DM with the agent**. No room to open, no one to wait for. The moment a
+second Shaper is added, the conversation moves to the Shapers room; nothing confirmed is lost.
 
 This is not a one-time founding interview. The chat never closes. Everything else the AI does
 reads from the latest confirmed mission, vision, objectives, and strategy.
@@ -101,8 +109,12 @@ The AI drafts work from what it hears. Who can make it real depends on what it i
 
 | What                        | Who makes it real                 | Date it carries          |
 | --------------------------- | --------------------------------- | ------------------------ |
-| **Project / mandate**       | A **Shaper**                      | **Review date**          |
+| **Project**                 | A **Shaper**                      | **End date**             |
 | **Ticket** (under anything) | The **DRI of what it sits under** | **Estimated completion** |
+
+A project is a ticket with nothing above it. Both are the same kind of thing — a piece of work
+with a holder, a date, and children — which is why one rule covers every level. (Earlier drafts
+called a project a _mandate_ and gave it a pot; neither survives. See feature 7.)
 
 One rule at every level: whoever holds the thing above you makes your draft real. If no project
 covers a need, the draft goes to Shapers. If one does, the ticket draft goes to that project's
@@ -128,11 +140,11 @@ version, right after a project goes live, and on a weekly scan — never per
 message. One open suggestion per gap; a dismissed one is not raised again
 until something changed.
 
-Anyone can also **publish** from **Personal Assistant**: draft a direction,
-project, money-out, or DRI-naming proposal; create a ticket (for themselves
-or someone else); mark their own ticket done; ask the org anything. Shapers
-do the same in the Shapers room. The agent drafts; a person opens it; the
-Shapers decide.
+Anyone can also **publish** from their **DM with the org agent** (the
+_Personal Assistant_): draft a direction, project, money-out, or DRI-naming
+proposal; create a ticket (for themselves or someone else); mark their own
+ticket done; ask the org anything. Shapers do the same in the Shapers room.
+The agent drafts; a person opens it; the Shapers decide.
 
 A project carries no budget and a ticket carries no pay. If a job should be paid, that is a
 conversation between the person taking it and the person offering it (see feature 7).
@@ -141,8 +153,8 @@ conversation between the person taking it and the person offering it (see featur
 chat. Naming a DRI is a separate move (offer, or a **project DRI** proposal).
 **Anyone can:** when a project or ticket has no DRI, propose themselves or
 someone else as DRI. Shapers do it in the Shapers room; everyone else
-does it in Personal Assistant. The draft is a proposal — tagged **project DRI**
-under **Decisions → Projects** — nothing is held until the Shapers agree.
+does it in their DM with the agent. The draft is a proposal — tagged **project DRI**
+under **Decisions → Work** — nothing is held until the Shapers agree.
 That vote is a Shaper decision about who is named. The offer–accept path
 still applies when the work is offered to a person (they can decline).
 **A Shaper can:** confirm a new objective and, without asking, get a project draft for it if
@@ -168,12 +180,15 @@ page says **Offered by AI**.
 
 ### 5. Talk moves work
 
-If the **DRI** says on a call or in a channel that their ticket is done, the agent marks it done
-and posts the receipt: which line, which call. The DRI's own words are the confirm — no card,
-no waiting window. The same rule if they tell Personal Assistant “mark my
-ticket done”: they confirm; the project DRI does not. Anyone else saying it
-changes nothing; the agent may nudge the DRI, that is all. A done with open
-children under it is refused with the reason.
+If the **DRI** writes in a channel or in their DM with the agent that their ticket is done, the
+agent marks it done and posts the receipt: which message, which room. The DRI's own signed
+message is the confirm — no card, no waiting window. Anyone else saying it changes nothing; the
+agent may nudge the DRI, that is all. A done with open children under it is refused with the
+reason.
+
+A done heard **on a call** is different: speaker attribution in a transcript is not a
+signature. The agent surfaces it to the DRI — _"you said covers is done — mark it?"_ — and the
+DRI's reply is the confirm. Transcripts nudge; they never close.
 
 Done first; other obvious moves (took it, dropped it) later.
 
@@ -181,15 +196,20 @@ Done first; other obvious moves (took it, dropped it) later.
 
 ### 6. Everyone has a home
 
-Five doors, one glance each. **Overview** is the Org door.
+Five doors, one glance each. **Overview** is the Org door. In the Buzz desktop they sit in the
+sidebar beside Home, channels, Forum, DMs, Agents, and Workflows.
 
 | Door           | What it answers                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Overview**   | Who are we? Mission, vision, objectives, strategy, established, founder, Shapers, members, who holds which job. Each direction card opens to its full text, every version, and the proofs behind each line — with receipts. |
-| **Projects**   | Who is working on what? Every project and ticket, DRI or _open_, dates visible.                                 |
-| **Decisions**  | What the Shapers decide: **Projects** (project approval and **project DRI**), **Money** (out only), **Direction**, **Join** (people only). Anyone can read; only Shapers vote. |
+| **Work**       | Who is working on what? Every project and ticket, DRI or _open_, dates visible, and on each project page the agent's **health read** (feature 8a). |
+| **Decisions**  | What the Shapers decide: **Work** (project approval and **project DRI**), **Money** (out only), **Direction**, **Join** (people only). Anyone can read; only Shapers vote. |
 | **My Work**    | What needs my tap — including AI cards — what I hold, what I offered (**You offered**), and what is finished. Waiting-on-me stays in the first column. Shapers also see open decision cards here. |
-| **My Profile** | Who I am across orgs — health, balances, current work, earlier work, recent decisions.                          |
+| **My Profile** | Who I am in this community — balances, current work, earlier work, recent decisions. Identity is one keypair across communities; the profile is per community. |
+
+The board door is called **Work**, not _Projects_: Buzz already has a Projects surface for git
+repositories, and the two must not share a name. Earlier drafts of these documents say
+_Projects_ for the same door.
 
 Empty states say so: _Nothing needs you._
 
@@ -197,9 +217,11 @@ Empty states say so: _Nothing needs you._
 
 ### 6a. Join is a people decision
 
-A person asks to join. Shapers decide on **Decisions → Join**. Nothing lands
+A person asks to join the community. Shapers decide on **Decisions → Join**. Nothing lands
 on them until they accept work. Join cards have no Recipient. Orgs do not
-request to join as members in this slice.
+request to join as members in this slice. (Community owners and admins can still add members
+directly — that is Buzz's existing administration, not a Join decision; a Join decision is how
+a _request_ is answered.)
 
 **A person can:** ask to join and wait on the Shapers.
 **A Shaper can:** let them in, or not.
@@ -214,20 +236,26 @@ sponsorship, a grant as a vote) is not a proposal. “We do not take brand
 money” is **strategy**, not a money decision. A grant can land as a ledger
 fact; it is not something the Shapers vote in.
 
-How pay works: the person holding the work and the person above them — a ticket holder with
-the project DRI, a DRI with a Shaper — agree a sum where they already talk. The agent remembers
-that line. When the work is done, either of them tells their personal assistant _"draft a
-proposal for the Shapers for this work — 150 USDC"_, or _"…whatever we agreed"_. The draft
-carries the agreement, the done receipt, and the sum; if the sum named differs from the one
-agreed, the draft shows both. The Shapers decide, as with any proposal, and the payment lands on
-the profile. In the MVP **every payment is a Shaper decision** — no sum is small enough to skip
-them, and no DRI approves pay for the people under them.
+How pay works: when the work is done, the person who did it — or the person above them — tells
+the agent _"draft a proposal for the Shapers for this work — 150 USDC"_. The draft carries the
+done receipt and the sum. The Shapers decide, as with any proposal. In the MVP **every payment
+is a Shaper decision** — no sum is small enough to skip them, and no DRI approves pay for the
+people under them.
 
-The AI never moves money. It remembers what was agreed and drafts on request — a person still
-takes it through governance.
+**Settlement is outside Buzz.** Buzz records the decision and, when a Shaper marks it, the
+settlement receipt (a transaction reference, a note). It does not hold or move funds. The
+balance on a profile is the sum of settled proposals. A treasury integration — Hypha or
+another — can later execute passed proposals; nothing here changes when it does.
 
-**A member can:** agree pay in a sentence, and get paid without filling in a form.
-**A DRI can:** ask for the pay proposal for someone under them by saying "what we agreed".
+**Later, not MVP — pay agreed in chat.** The person holding the work and the person above them
+agree a sum where they already talk; the agent remembers that line, so _"…whatever we agreed"_
+works in the draft request, and if the named sum differs from the agreed one the draft shows
+both. This needs the agent to hear rooms (feature 2) and is scoped after it.
+
+The AI never moves money. It drafts on request — a person still takes it through governance.
+
+**A member can:** get paid for a done ticket without filling in a form.
+**A DRI can:** ask for the pay proposal for someone under them.
 
 ### 8. Reviews write themselves
 
@@ -243,12 +271,30 @@ end date, because the objective is still live or the brief shows a clear next st
 **no further work in this domain is needed**, with the reasoning and receipts. Extending the
 existing project is possible but is the override, not the default.
 
-The Shaper closes and opens the follow-up, or closes and moves on. The agent never closes,
-extends, or opens a project by itself. What the Shaper chose, and what happened after, is
-remembered so the next recommendation is sharper.
+The Shaper opens the follow-up or moves on; either way the project closes on its date. The
+close itself is a **date rule the relay runs** on the end date a Shaper set — not the agent's
+judgment, and not a Shaper's tap. A Shaper can override it by setting a new end date. The agent
+never closes, extends, or opens a project by itself. What the Shaper chose, and what happened
+after, is remembered so the next recommendation is sharper.
 
 **A Shaper can:** end a project cleanly on its date and know, before it ends, whether something
 should come next.
+
+### 8a. The org reads its own health
+
+Every live project carries the agent's **health read**: one band — _struggling_, _wobbly_,
+_healthy_ — and a short paragraph, refreshed weekly and whenever the project's ledger changes.
+The band is computed from the ledger (done against elapsed time, overdue pieces, offers nobody
+answered, weeks of silence, pieces with no holder, whether the objective it serves moved); the
+paragraph is written by the agent, and every sentence points at the ledger rows behind it. The
+last sentence names the one thing most pulling the band down, when there is one.
+
+It is a read, not a decision: it lives on the project page, not on a card, and nothing changes
+state because of it. Shapers rate the band blind once a week; where they and the agent disagree
+is how the read gets better.
+
+**Anyone can:** open a project and see, without asking the DRI, whether it is going well and
+what would change that.
 
 ### 9. Ask the org anything
 
@@ -262,11 +308,13 @@ the outcomes. The org remembers what it tried and what happened, not just what w
 A new person builds their profile by talking — social links, what they like to do. What happens
 next depends on how they arrived:
 
-- **No specific Space in mind.** The AI suggests Spaces that might fit — based on their profile:
-  purpose, place, the kind of work they like. They pick one and join from its public page.
-- **Invited into a specific Space.** They land there as a member, nothing more. The AI tells
-  them: _"I'll let the others know about your skills and that you're available for work."_ The
-  org now knows who they are; offers come when there is a fit.
+- **Invited into a specific community.** They land there as a member, nothing more. The AI
+  tells them: _"I'll let the others know about your skills and that you're available for
+  work."_ The org now knows who they are; offers come when there is a fit.
+- **No specific community in mind.** The AI suggests communities that might fit — based on
+  their profile: purpose, place, the kind of work they like. They pick one and ask to join
+  (feature 6a). This needs a directory of communities and is scoped after the single-community
+  loop works.
 
 No work queue on day one. The path is stranger → member → DRI, one accept at a time.
 
@@ -277,18 +325,20 @@ for anything.
 
 ## What this is not
 
-- Not automation of decisions. Every consequential state change has a human confirm.
+- Not automation of decisions. Every consequential state change has a human confirm — or a
+  date rule a human set.
 - Not a chat product with a bot. The chat is how the org perceives; the loop is the product.
-- Not a payment system. Money moves through proposals, as it does today.
+- Not a payment system. Money is decided by proposal and settled outside Buzz.
+- Not a budget tree. No pot, envelope, or sum lives on a project or ticket.
 
 ---
 
 ## Related
 
 - [The Intelligent Organization — User Journeys](./intelligent-org-journeys.md) — DRI, Shaper, member-not-yet-DRI, and the org agent through the app
-- [Intelligent Org — Exploration](./intelligent-org-exploration.md) — how we got here, Buzz vs Hypha
-- [Intelligent Org — Buzz additions](./intelligent-org-buzz-additions.md) — the Buzz fork sketch this supersedes for Hypha
+- [The Intelligent Organization — Design](../architecture/intelligent-org-design.md) — how to build the features above on Buzz
+- [The Intelligent Organization — Protocol](../architecture/intelligent-org-protocol.md) — the event kinds, tags, and state machines
 - [Organizational Intelligence — Memory Architecture](../architecture/organizational-intelligence.md) — the memory that makes feature 9 possible
-- [The Intelligent Organization — Current State](../architecture/intelligent-org-current-state.md) — what is shipped vs designed
-- [The Intelligent Organization — Design](../architecture/intelligent-org-design.md) — how to build the features above
+- [The Intelligent Organization — Current State](../architecture/intelligent-org-current-state.md) — what Buzz has today and the gap
+- [Intelligent Org — Exploration](./intelligent-org-exploration.md) — how we got here, Buzz vs Hypha (historical)
 - Clickable preview: [hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app) — River Commons and Hypha Energy

@@ -1,162 +1,115 @@
 ---
 title: 'The Intelligent Organization — Current State'
-date: 2026-08-29
-status: draft
-tags: [architecture, intelligent-org, ai, memory, hypha]
+date: 2026-09-14
+status: current
+tags: [architecture, intelligent-org, ai, buzz]
 ---
 
 # The Intelligent Organization — Current State
 
-What intelligence is actually built on Hypha today, and how AI is used. Companion to
-[What it is](../product/intelligent-org-features.md) (the target) and
-[Design](./intelligent-org-design.md) (how to get there).
-
-Snapshot of the `hypha-web` codebase as of 2026-08-29. Not a roadmap.
+Snapshot of what **Buzz** has today that the intelligent organization needs, and what is
+designed but not built. Read this to know where to start; read
+[Design](./intelligent-org-design.md) for what to build and the
+[Protocol](./intelligent-org-protocol.md) for exactly how. The earlier version of this file
+(2026-08-29) was a snapshot of `hypha-web`; that platform is no longer the target and its state
+is not tracked here.
 
 ---
 
 ## Clickable preview
 
-The designed loop is **not shipped on hypha-web**. A clickable walk-through
-lives in `prototypes/org-preview` (this repo; `apps/org-preview` in hypha-web) and at
-[hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app). Two
-sample orgs: **River Commons** and **Hypha Energy**. It is a prototype of
-the product docs, not a production surface. Deploy is manual from that
-app; a git push does not update it.
+[`prototypes/org-preview`](../../../prototypes/org-preview/README.md) — a standalone Next.js
+app, deliberately outside the pnpm workspace — walks the five doors, the DMs and rooms, and the
+Personal Assistant for two sample orgs, **River Commons** and **Hypha Energy**. It is the target
+UI for the desktop `org` feature. It still calls the board door _Projects_; on Buzz it is
+**Work**. Live copy:
+[hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app).
 
 ---
 
 ## One sentence
 
-Hypha has a capable **in-app copilot** — onboarding, proposal drafting, space Q&A, navigation —
-plus a **file/timeline catalogue** called Space Memory. It does **not** yet run the intelligent-org
-loop: hear → remember → offer work → watch outcomes → revise beliefs.
+Buzz has the substrate — a signed event log, channels, DMs, full-text search, managed agents
+with their own keys, relay-side command execution, and a desktop with an Inbox — and none of
+the intelligent-org objects: no work tree, no direction artifacts, no proposals, no org agent,
+no doors.
 
 ---
 
-## How AI is used
+## What Buzz has
 
-Stack: **Vercel AI SDK + OpenRouter** (default `openai/gpt-4o-mini`). Contract everywhere: **the
-AI drafts, the member confirms.**
-
-The system prompt’s north star is _THE AI DOES IT FOR ME_ — propose, pre-fill, navigate; the
-member reacts yes / tweak / no.
-
-| Surface                                | What it does                                                                                                       | Flag (default)                                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| **Left AI panel** on space pages       | Ongoing advisor: reads space data, drafts proposals, creates signals, opens the right screen                       | `enable-ai-chat` (on)                                                                                            |
-| **Onboarding hero**                    | Conversational space creation — purpose, governance, visuals, nested spaces. Optional Live Voice (OpenAI Realtime) | `enable-onboarding-ai-hero` (on), `enable-onboarding-write-tools` (on), `enable-onboarding-voice-realtime` (off) |
-| **MCP server** (`packages/mcp-server`) | Same tools for Cursor / external agents                                                                            | always, stdio                                                                                                    |
-
-A model actually runs in those three places. Almost everything else that looks “smart” is
-arithmetic, heuristics, or a template.
-
----
-
-## What is shipped
-
-### Space advisor chat
-
-`packages/chat-server` — tools the model can call in a live space.
-
-**Read:** space, members, documents/proposals, treasury holdings, signals, parent/child ecosystem
-graph, org-memory catalogue, individual memory assets (text, PDF extract, images), web search.
-
-**Write / act:** draft and pre-fill any on-chain governance proposal (one field at a time, then
-open the form); create a Coherence signal; post to Human Chat as the member; summarize recent
-Matrix discussion; ingest a call recording/transcript into Space Memory; navigate to the relevant
-screen (`mcp_navigation`).
-
-This is the main intelligence members feel: ask about the space, get a grounded answer, have a
-proposal or signal drafted.
-
-### Space Memory — L1 substrate
-
-Closest thing to organizational memory that is **on this branch**. Coherence tab
-(`enable-space-memory`, on). Aggregates:
-
-- proposal uploads
-- Matrix chat files/images
-- call recordings and transcripts
-- discussion summaries
-
-The AI lists this via `get_org_memory_by_space_slug` and can fetch a file’s content. That is
-**raw substrate** — chat, files, transcripts — not curated beliefs.
-
-Discussion summaries are **not** model-written. They take the last few messages and truncate.
-
-### Coherence signals — proactive, mostly not a model
-
-A cron **signal orchestrator** watches memory ingest (new transcript, summary, upload) and may
-emit a signal. Scoring is **arithmetic** — asset counts, title overlap, cooldowns, daily caps.
-Copy is templated (_“Recent space-memory activity indicates a coordination opportunity.”_).
-
-The AI _can_ also create a signal from chat (`create_space_signal_by_slug`) and relay one to a
-connected space. That path is model-driven.
-
-### Onboarding AI
-
-Conversational wizard: interviews for purpose and principles; infers voting / entry /
-transparency; looks at other Hypha ecosystems and proposes a nested-space blueprint; generates
-logo/banner images; creates the space on-chain after confirmation. Optionally continues in Live
-Voice. The purpose answers land in the space `description`; they are not yet carried forward as
-the first mission / vision drafts the design calls for.
-
-### MCP for external agents
-
-Same catalogue as in-app chat: org memory, documents, people, treasury, signals, proposal
-guidance, discussion summary, call ingest. Cursor or an IBA can use Hypha as context.
-
----
-
-## Built, not on this branch
-
-**Space Intelligence** (L3 beliefs) lives on `feat/org-memory` /
-[PR #2461](https://github.com/hypha-dao/hypha-web/pull/2461):
-
-- versioned Markdown artifacts in object storage (purpose, assessments, insights, …)
-- human-approved publish (propose → member confirm)
-- graph / sunburst of artifacts ↔ signals
-- Hypha Energy starter pack
-- IBA API-key write path
-
-Until it merges, the AI has no always-loaded “what this org believes” corpus — only live queries
-of Postgres / Matrix.
+| Need                                    | What exists                                                                                                                                                                                                      | Where                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **L1 substrate**                        | Every message (`kind:9`, `40002`), forum post, canvas, file, huddle lifecycle event, and DM stored in Postgres with signed author, channel, timestamp. Postgres FTS via NIP-50 `search` on `POST /query`. Community-scoped by relay host. | `buzz-relay`, `buzz-db`, `buzz-search`                                                  |
+| **Transcripts**                         | Desktop huddles run on-device speech-to-text and post the text as `kind:9` into the huddle channel. Not tagged as transcript yet.                                                                                | `desktop/src-tauri/src/huddle/stt.rs`, `pipeline.rs`                                        |
+| **Command kinds executed transactionally** | `is_command_kind` → `command_executor::handle_command`: validate → begin tx → insert event → mutate → commit. Used for DM open/add/hide, workflow defs and triggers, approval grant/deny.                       | `crates/buzz-core/src/kind.rs`, `crates/buzz-relay/src/handlers/command_executor.rs`        |
+| **Relay-signed addressable state**      | NIP-29 group metadata/admins/members (`39000–39003`) emitted by the relay after admin commands; `is_relay_only_kind` rejects client writes.                                                                       | `handlers/side_effects.rs` (`emit_group_discovery_events`)                                  |
+| **Typed projections beside events**     | Sidecar tables with `community_id` for reports, push leases, workflows, approvals; thread counters materialised on insert.                                                                                       | `migrations/`, `buzz-db/src/store/*`                                                        |
+| **Roles**                               | NIP-43 relay membership with `owner` / `admin` / `member` roles; NIP-29 per-channel admins and roles.                                                                                                             | `handlers/relay_admin.rs`, `channel_authz.rs`                                               |
+| **Private rooms**                       | Private channels, invite-only, relay-enforced membership.                                                                                                                                                        | NIP-29 handlers                                                                             |
+| **DMs**                                 | DM channels opened by `kind:41010`; messages are ordinary `kind:9` in that channel — an agent reads and writes them like any room.                                                                                | `command_executor.rs` (`handle_dm_open`)                                                    |
+| **Agents as members**                   | Managed agents (NIP-AP `30177`) with their own key, owner, persona (`30175`), deployed from the desktop Agents view; ACP harness subscribes by mention, publishes via CLI; credentials injected as `BUZZ_RELAY_URL` / `BUZZ_PRIVATE_KEY` / `BUZZ_AUTH_TAG`. | `crates/buzz-acp`, `crates/buzz-persona`, `desktop/src/features/agents/`             |
+| **Agent memory**                        | NIP-AE engrams (`30174`), encrypted agent↔owner; `buzz mem` CLI.                                                                                                                                                  | `crates/buzz-core/src/engram.rs`, `crates/buzz-cli`                                         |
+| **Model access**                        | `buzz-agent` provider config (Anthropic, OpenAI-compatible, OpenRouter, Databricks); Buzz Mesh as a local OpenAI-compatible endpoint.                                                                             | `crates/buzz-agent/src/config.rs`, `desktop/src-tauri/.../relay_mesh.rs`                    |
+| **Schedules**                           | Relay-side due-time handling for reminders (NIP-ER `not_before`); workflow `schedule` triggers (cron / interval); admin worker pattern.                                                                           | `buzz-workflow`, `handlers/admin_action_worker.rs`                                          |
+| **Items needing action**                | Relay-assembled Home feed with a `needs_action` bucket (approvals, reminders) surfaced in the desktop Inbox.                                                                                                      | `buzz-db/src/store/feed.rs`, `desktop/src/features/home/`                                   |
+| **Desktop shell**                       | Tauri 2 + React 19; TanStack file routes; primary menu (Inbox, Pulse, Projects, Agents, Workflows); feature folders; Rust-side signing (`sign_event`); relay client with live REQ.                                | `desktop/src/app/routes.ts`, `features/sidebar/`, `shared/api/relayClientSession.ts`        |
+| **Approval card pattern**               | Workflow approval card (pending, approver, expiry) — the visual pattern for decision cards. Visual only: its grant/deny is not wired in the desktop and the executor's `request_approval` is unfinished (WF-08). Our cards sign `io_*` commands directly; nothing here is reused but the look. | `desktop/src/features/workflows/.../WorkflowApprovalCard.tsx`                              |
+| **CLI**                                 | Agent-first `buzz` CLI with typed subcommands, JSON output, exit codes; SDK builders per kind.                                                                                                                    | `crates/buzz-cli`, `crates/buzz-sdk/src/builders.rs`                                        |
+| **Tests**                               | `buzz-test-client` E2E suite against a live relay; desktop Playwright with a mock bridge.                                                                                                                         | `crates/buzz-test-client/tests/`, `desktop/tests/e2e/`                                      |
 
 ---
 
 ## Designed, not built
 
-From [What it is](../product/intelligent-org-features.md) and
-[Design](./intelligent-org-design.md):
+| Layer / feature                                              | Status on Buzz                                                                                                                                        | Where it is specified                              |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **L2 activity ledger**                                       | Not built. Commands `50001–50018`, ledger projection `io_ledger`.                                                                                      | Protocol §3.2, §6.2                                |
+| **L3 direction** (mission, vision, objectives, strategy)     | Not built. `kind:39100` heads; `io_direction_propose` → `io_vote`. Overview today: nothing; the community description is a listing one-liner, not belief. | Protocol §4.1, §5.2                            |
+| **L4 decision memory**                                       | Not built. `kind:39104` draft outcomes; `io_health_ratings`.                                                                                          | Protocol §4.6                                      |
+| **Work tree** (projects / tickets, any depth) / DRI / offer–accept | Not built. `kind:39101`; commands `50004–50011`, `50018`; `io_scheduler` for offer expiry, review window, close on date.                          | Protocol §4.2, §5.1, §6.3                          |
+| **Shapers**                                                  | Not built. `kind:39103` + relay-synced `#shapers` channel. Community `owner` role exists and seeds it.                                                | Protocol §4.5, §6.4                                |
+| **Proposals** (project, dri, money, direction, join)         | Not built. `kind:39102`; thresholds in `39103.rules`. Workflow approvals are a different object and are not reused.                                    | Protocol §4.4, §5.3                                |
+| **Org agent** (HEAR → THINK → ROUTE)                         | Not built. `crates/buzz-org-agent`; deployed as a managed agent with a `role: org-agent` tag. `buzz-acp` is mention-driven and conversational — the identity and deployment path are reused, the pipeline is not. | Design § The org agent |
+| **Drafts and cards**                                         | Not built. `kind:50100` + `39104`; card component set in `features/org/`.                                                                             | Protocol §4.3; Design § Surfaces                   |
+| **Health reads**                                             | Not built. `kind:50101`.                                                                                                                              | Protocol §4.7                                      |
+| **Doors** — Overview / Work / Decisions / My Work / Profile  | Not built. `desktop/src/features/org/`, routes under `/org`. Walkable in `prototypes/org-preview`.                                                     | Design § Surfaces                                  |
+| **Inbox sources**                                            | Not built. `needs_action` gains offers, drafts addressed to me, open proposals for Shapers.                                                            | Protocol §6.5                                      |
+| **Transcript tag**                                           | Not built. Huddle STT must tag its `kind:9` output `["transcript", "huddle"]`.                                                                         | Protocol §5.5                                      |
+| **Done-from-talk**                                           | Not built. The one agent-authored command, five relay checks.                                                                                          | Protocol §5.5                                      |
+| **"Ask the org anything" with receipts**                     | Not built. L3 + ledger aggregates + NIP-50 search, citations as event ids.                                                                             | Design § Personal Assistant                        |
+| **Money settlement**                                         | Not built. `io_money_settle`; no treasury, settlement outside Buzz.                                                                                    | Protocol §3.2; Design § Money                      |
+| **Join via proposal**                                        | Not built. `io_join_propose` → NIP-43 add member. Inbound join-request path depends on how a community accepts requests today.                          | Protocol §5.3                                      |
+| **`buzz org` CLI**, SDK builders, kinds in `kinds.ts` / `nostr_models.dart` | Not built.                                                                                                                              | Design § Surfaces                                  |
 
-| Layer / feature                                                      | Status                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **L1 substrate**                                                     | Partial: files, transcripts, and summaries ship as Space Memory. Chat message bodies stay on Matrix — no ingestion into Postgres (the design's long pole).                                                                                                                                                                                  |
-| **L2 activity ledger**                                               | `events` table exists and is barely used. Not the typed ledger.                                                                                                                                                                                                                                                                             |
-| **L3 beliefs** (mission, vision, objectives, strategy)               | Artifact storage built on `feat/org-memory`, not merged. No reserved `mission` / `vision` / `objectives` / `strategy` slots, no draft-and-confirm write path from the Shapers room or a lone Shaper's assistant chat. The Overview tab today shows the space `description` written at creation — a listing one-liner, not confirmed belief. |
-| **L4 decision memory**                                               | Does not exist                                                                                                                                                                                                                                                                                                                              |
-| Work items tree (projects / tickets, any depth) / DRI / offer–accept | Do not exist                                                                                                                                                                                                                                                                                                                                |
-| Hear → Think → Route agent                                           | Does not exist. Chat is pull (member asks), not a listener on rooms.                                                                                                                                                                                                                                                                        |
-| Overview / Projects / Decisions / My Work / Profile                  | Do not exist on hypha-web. Walkable in `prototypes/org-preview`.                                                                                                                                                                                                                                                                                  |
-| Reviews that write themselves                                        | Do not exist                                                                                                                                                                                                                                                                                                                                |
-| “Ask the org anything” with receipts                                 | Partial: chat can query memory, no L3+L4 grounding or citation contract                                                                                                                                                                                                                                                                     |
+---
 
-Scorecard from [Organizational Intelligence — Memory Architecture](./organizational-intelligence.md):
+## What to verify before building
 
-> L1 exists. L3 is built and awaiting merge. L2 exists as an unused table. **L4 does not exist.**
+Facts the design leans on that should be checked in code before step 1 of the build order:
 
-The signal orchestrator is the failure mode that document names: both “did something change?” and
-“what does it mean?” done with arithmetic, so the output stays generic.
+1. **Multi-letter tag filters.** The doors filter on `#needs`, `#item`, `#parent`, `#status`.
+   Confirm `buzz-db` indexes and matches arbitrary tag names in REQ filters, or plan the index
+   migration.
+2. **Global-only kinds with `d` tags.** `39100–39104` are addressable, relay-signed, and
+   community-global. Confirm `replace_parameterized_event` handles relay-authored events with
+   `channel_id = NULL` the way `39000` does.
+3. **Managed-agent role tag.** `kind:30177` content is an allowlist projection; confirm a
+   `["role", "org-agent"]` tag can be added without leaking anything and that the relay can
+   read it at ingest time to gate Protocol §5.5.
+4. **Huddle STT authorship.** Which key signs the `kind:9` messages the STT pipeline posts —
+   the speaker's, or the device owner's? Either way they need the transcript tag; the answer
+   decides how strongly the relay must distrust them.
+5. **Community join requests.** How a non-member asks to join a community today (if at all)
+   decides whether `io_join_propose` is opened by the relay or only by members on someone's
+   behalf.
 
 ---
 
 ## Related
 
 - [The Intelligent Organization — What it is](../product/intelligent-org-features.md) — the target
-- [The Intelligent Organization — Design](./intelligent-org-design.md) — how to build it
-- [The Intelligent Organization — User Journeys](../product/intelligent-org-journeys.md) — the flows the preview walks
-- Clickable preview: [hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app)
-- [Organizational Intelligence — Memory Architecture](./organizational-intelligence.md) — the four layers
-- [Space Memory panel](https://github.com/hypha-dao/hypha-web/blob/main/docs/plans/space-memory-panel.md) — current L1 aggregation surface
-- Space Intelligence spec — L3 as built on `feat/org-memory`; [PR #2461](https://github.com/hypha-dao/hypha-web/pull/2461)
+- [The Intelligent Organization — Design](./intelligent-org-design.md) — the how, on Buzz
+- [The Intelligent Organization — Protocol](./intelligent-org-protocol.md) — the kinds
+- [Intelligent Org on Buzz — Phase 0](../plans/intelligent-org-phase-0.md) — the first slice to build
+- [VISION.md](../../../VISION.md) — Buzz's own status table

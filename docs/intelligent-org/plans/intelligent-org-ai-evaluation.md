@@ -1,8 +1,8 @@
 ---
 title: 'The Intelligent Organization — AI Evaluation Plan'
-date: 2026-09-12
-status: draft
-tags: [plan, intelligent-org, ai, evaluation, testing, hypha]
+date: 2026-09-14
+status: current
+tags: [plan, intelligent-org, ai, evaluation, testing, buzz]
 parent: docs/intelligent-org/README.md
 ---
 
@@ -53,13 +53,13 @@ it. Both are hard gates: one failure fails the run.
 
 ### Targets
 
-| Metric                                                                                       | Move    | Offline (golden set) | Online (L4, per space, rolling 4 weeks) |
+| Metric                                                                                       | Move    | Offline (golden set) | Online (L4, per community, rolling 4 weeks) |
 | -------------------------------------------------------------------------------------------- | ------- | -------------------- | --------------------------------------- |
 | Receipt validity — cited ids exist and say what the draft says                               | all     | 100 %                | 100 %                                   |
 | Authority routing — `needs:` is the right role for the item's depth                          | all     | 100 %                | 100 %                                   |
 | Precision — drafts a judge marks "worth this person's minute"                                | 1, 2, 3 | ≥ 0.80               | accept + amend ≥ 0.55                   |
 | Recall — gold gaps the agent found                                                           | 1, 2    | ≥ 0.70               | —                                       |
-| Duplicate rate — two open drafts for one `gap_key`                                           | 1, 2    | 0                    | 0                                       |
+| Duplicate rate — two open drafts for one `gap` key                                           | 1, 2    | 0                    | 0                                       |
 | Nag rate — a dismissed key raised again with nothing changed                                 | 1, 2, 3 | 0                    | 0                                       |
 | Silence rate — candidates that correctly produced nothing                                    | 1, 2    | ≥ 0.90 on negatives  | —                                       |
 | Recommendation fit — follow-up vs "no further work" matches gold                             | 3       | ≥ 0.85               | reject rate ≤ 0.25                      |
@@ -70,24 +70,28 @@ it. Both are hard gates: one failure fails the run.
 | Judge calibration — LLM judge vs human labels (Cohen's κ)                                    | harness | ≥ 0.70               | re-checked monthly                      |
 
 Offline numbers gate a prompt or model change. Online numbers gate widening
-to another space. A drop of more than five points on any row is a
+to another community. A drop of more than five points on any row is a
 regression and blocks the release that caused it.
 
 ---
 
 ## The harness
 
-One harness, four suites. It lives in `packages/chat-server` next to the
-agent code, runs on Vitest, and is the same for a laptop and CI.
+One harness, four suites. It lives in `crates/buzz-org-agent/tests/eval/`
+next to the agent code, runs as ordinary Rust tests (`cargo test -p
+buzz-org-agent`), and is the same for a laptop and CI.
 
 ### Replay, not chat
 
 An evaluation case is a **scripted org**: a seed of L3 (the four direction
-artifacts), a work tree, an L2 ledger, an L1 room window, and an L4 history
+artifacts), a work tree, an L2 ledger, an L1 channel window, and an L4 history
 — followed by one **trigger** (a confirm, an accept, a done, a date). The
-harness loads the seed into an in-memory store shaped like the real tables,
-fires the trigger through the real HEAR → THINK → ROUTE code, and captures
-what comes out: zero or more structured drafts, or one health read.
+harness loads the seed into an in-memory store shaped like the relay's
+state events and `io_*` projections, fires the trigger through the real
+THINK → ROUTE code (and HEAR, once it exists), and captures what comes out:
+zero or more structured drafts (`kind:50100` payloads), or one health read
+(`kind:50101`). The relay is not in the loop; the judge's receipt check
+stands in for the relay's.
 
 ```
 fixtures/orgs/<org>/seed.json          L3 + tree + ledger + room + L4
@@ -95,7 +99,7 @@ fixtures/orgs/<org>/cases/<case>.json  trigger + gold
 ```
 
 Gold is written by a human and reviewed by a second one. It says: which
-drafts should exist (by `gap_key` and one-line intent), which must **not**
+drafts should exist (by `gap` key and one-line intent), which must **not**
 exist, the correct `needs:`, and for health, the band and the facts the text
 must cover.
 
@@ -103,20 +107,21 @@ must cover.
 
 Every draft passes through three checks, in this order. Cheap first.
 
-1. **Deterministic.** Schema is valid. Every cited id resolves. `needs:`
-   matches depth. `due_at` is before the objective's rough date. `gap_key`
-   has no open sibling. No money field on a work item. No `dri_person_id`
-   set by the agent. A dismissed key was not reused unless the L3 version or
-   subtree changed. Any failure here is a hard fail — no model call needed
-   to know it is wrong.
+1. **Deterministic.** Schema is valid. Every cited id resolves. `needs`
+   matches depth. `due_at` is before the objective's rough date. `gap` key
+   has no open sibling. No money field on a work item. No `dri` or `state`
+   in any payload — the agent has no command kind. A declined key was not
+   reused unless the L3 version or subtree changed. Any failure here is a
+   hard fail — no model call needed to know it is wrong. This is the same
+   `judge.rs` the live agent runs.
 2. **Model judge.** A second model (never the generator's) scores the draft
    against a rubric with the seed as context: _does this serve the cited
    line? is it already covered? would the named person recognise it? is the
    size right for one holder?_ Scores are 0–2 per question; a draft passes
    at ≥ 6 of 8. The judge prompt is versioned with the cases.
-3. **Human panel.** Each week, Shapers of pilot spaces rate a sample of
-   twenty live drafts on the same rubric. Their labels calibrate the model
-   judge (κ ≥ 0.70 or the judge is retuned) and are the online truth.
+3. **Human panel.** Each week, Shapers of pilot communities rate a sample
+   of twenty live drafts on the same rubric. Their labels calibrate the
+   model judge (κ ≥ 0.70 or the judge is retuned) and are the online truth.
 
 ### Negatives matter more than positives
 
@@ -134,11 +139,11 @@ re-records and shows the metric diff.
 
 ### L4 is the production suite
 
-Every online decision — accept, amend, reject, dismiss — is already an L4
-row. The online metrics above are queries on that table per space, per
-move, per week. No new instrumentation; the design already writes the
-signal. A dashboard on Overview for Shapers (their own space) and one
-internal view across spaces.
+Every online decision — accept, amend, decline — is already an L4 row
+(`io_drafts` outcome, `kind:39104`). The online metrics above are queries
+on that table per community, per move, per week. No new instrumentation;
+the protocol already writes the signal. A tally card on Overview for
+Shapers (their own community) and `buzz org tally` for the internal view.
 
 ---
 
@@ -154,7 +159,7 @@ nothing happens.
 
 - **Context recipe.** The full L3 (always). The live roots with their
   `objective_ref`, one line each. The last two closed roots. L4 rows for
-  past project suggestions in this space: what was accepted, amended,
+  past project suggestions in this community: what was accepted, amended,
   dismissed. Nothing from L1 — this move is about the gap, not the talk.
 - **Structured output.** THINK returns a typed array, possibly empty. Each
   item: `objective_ref` or `strategy_line_ref`, `title`, `brief` (≤ 60
@@ -171,7 +176,7 @@ nothing happens.
 - **Size.** One project per line. If the model wants two, it must pick one
   and say what it left out in `why`. Splitting is the DRI's job (move 2).
 - **DRI suggestion is evidence-based.** Only members with L2 rows in the
-  nearest domain, or the founder when the space is new. Never a name with no
+  nearest domain, or the founder when the community is new. Never a name with no
   receipt behind it.
 
 ### How we test it
@@ -184,7 +189,7 @@ Positive cases (a draft must appear):
 - Objectives v1 confirmed on the cold org → one root per objective, all
   `needs: shaper`, all dated before the objective's date.
 - Objectives redrawn — one new line added (Energy: "a second island by
-  December") → exactly one new draft, with `gap_key` on the new line.
+  December") → exactly one new draft, with `gap` key on the new line.
 - Strategy line added that names an action ("publish the Ameland report
   before any marketing") → one draft for it.
 - Weekly scan: an objective whose date is eight weeks out with nothing under
@@ -241,7 +246,7 @@ parent's date.
   uncovered. Stored, graded.
 - **Depth discipline.** Suggest at most one level down per trigger. A ticket
   draft never arrives with its own children pre-drafted; those come when it
-  is accepted. Median depth on a real space is watched (design risk 6); if
+  is accepted. Median depth on a real community is watched (design risk 6); if
   the agent is pushing it past three, the pieces are too small and the
   prompt's size guidance is wrong.
 - **Never under something the person does not hold.** ROUTE checks; the
@@ -317,7 +322,7 @@ Adversarial:
   a row, so grounding is by construction.
 - **Recommendation context.** The objective's current state (met / live /
   dropped). Open work under the same objective. L4 rows for past
-  recommendations in this space and what the Shapers did with them. Room
+  recommendations in this community and what the Shapers did with them. Room
   window from the project's room for the last fifth (what people said is
   next).
 - **Two outputs, never a blend.** Either a full follow-up draft (same shape
@@ -454,13 +459,13 @@ Three seed orgs, kept as fixtures and versioned with the cases.
 | **Cold start**    | One founder, four fresh artifacts, empty tree — the first-week experience                                 |
 
 Each seed ships in `en` and one other locale (`pt` for River, `es` for
-Energy). The preview app (`apps/org-preview`) already encodes the River and
-Energy stories; its `data.ts` is the first source for the fixtures, so the
-prototype and the evaluation tell the same story.
+Energy). The preview app (`prototypes/org-preview`) already encodes the
+River and Energy stories; its `src/lib/data.ts` is the first source for the
+fixtures, so the prototype and the evaluation tell the same story.
 
-Add a real space as a fourth seed as soon as one pilot has three months of
-ledger. Synthetic orgs find the obvious failures; a real one finds the
-rest.
+Add a real community as a fourth seed as soon as one has three months of
+ledger — the Phase 0 dogfood community is the first candidate. Synthetic
+orgs find the obvious failures; a real one finds the rest.
 
 ---
 
@@ -471,47 +476,53 @@ metric row, not by a date.
 
 1. **Offline.** Suite green at target on the pinned model. No hard-gate
    failure.
-2. **Shadow.** The trigger fires on one pilot space; drafts are written to
-   L4 with `shadow: true` and shown to nobody. Two weeks. Precision judged
-   by the panel on the shadow drafts.
-3. **One space, suggest.** Drafts reach Shapers / DRIs on that space. Online
-   metrics at target for four weeks. Nag and duplicate rates at zero.
-4. **Widen.** One new space at a time. A regression on any space pauses
-   widening, not the others.
+2. **Shadow.** The trigger fires on one community; drafts are published
+   with `["shadow", "true"]` and shown to nobody. Two weeks. Precision
+   judged by the panel on the shadow drafts.
+3. **One community, suggest.** Drafts reach Shapers / DRIs on that
+   community. Online metrics at target for four weeks. Nag and duplicate
+   rates at zero.
+4. **Widen.** One new community at a time. A regression on any community
+   pauses widening, not the others.
 
-Kill switch per move: a feature flag that returns THINK to shadow without a
-deploy. The deterministic pre-filter and the dedupe key are never flagged
-off — they are the floor.
+Kill switch per move: `IO_MOVE_n_ENABLED` on the agent returns THINK to
+shadow without a deploy. The deterministic judge and the dedupe key are
+never flagged off — they are the floor.
 
 ---
 
 ## Order of work
 
-Follows the design's build order; the harness comes first because every
-later step is measured by it.
+This is the same order as [Phase 0](./intelligent-org-phase-0.md) "First
+things to build"; the harness comes first because every later step is
+measured by it. The relay protocol (Phase 0 step 1) is a prerequisite for
+shadow mode, not for the harness.
 
 1. **Harness.** Fixture loader, in-memory store, replay runner, the three
    judges, recorded-model replay. River seed, ten cases across the four
    moves. Nothing green yet — this is the ruler.
-2. **Move 4 — health.** Needs only L2 and the formula; no L1, no triggers.
-   Fastest to ship, teaches the receipts-per-sentence pattern the others
-   reuse.
-3. **Move 1 — direction → projects.** Needs L3 confirm hook and the gap
-   list. Ship shadow on the pilot space with the first real objectives.
-4. **Move 2 — tickets and subtickets.** Needs the promotion and accept
-   hooks. Talk-derived drafts join when L1 ingestion lands.
-5. **Move 3 — completion.** Needs L4 to have rows; the brief is assembled
-   from what 1, 2 and the ledger produced.
-6. **Real-space seed.** Freeze three months of one pilot as the fourth
-   fixture; re-baseline all targets against it.
+2. **Move 1 — direction → projects.** Needs the `39100` state trigger and
+   the gap list. Ship shadow on the dogfood community with the first real
+   objectives — the drafts it opens are the Phase 0 backlog.
+3. **Move 4 — health.** Needs only the ledger and the formula; no HEAR, no
+   extra triggers. Teaches the receipts-per-sentence pattern the others
+   reuse, and starts the Friday ritual.
+4. **Move 2 — tickets and subtickets.** Needs the `accepted` state trigger.
+   Talk-derived drafts join when HEAR lands.
+5. **Move 3 — completion.** Needs L4 to have rows and the scheduler's
+   `in_review`; the brief is assembled from what 1, 2 and the ledger
+   produced.
+6. **Real-community seed.** Freeze the dogfood community's `io_*` rows as
+   the fourth fixture; re-baseline all targets against it.
 
 ---
 
 ## Related
 
-- [Hypha Intelligent Org — Phase 0](./intelligent-org-phase-0.md) — running the build in the minimal real app; its record becomes the fourth fixture
-- [The Intelligent Organization — What it is](../product/intelligent-org-features.md) — features 1, 3, 8
-- [The Intelligent Organization — User Journeys](../product/intelligent-org-journeys.md) — 4.4, 4.10, 4.11, 4.13
+- [Intelligent Org on Buzz — Phase 0](./intelligent-org-phase-0.md) — running the build in the minimal real app; its record becomes the fourth fixture
+- [The Intelligent Organization — What it is](../product/intelligent-org-features.md) — features 1, 3, 8, 8a
+- [The Intelligent Organization — User Journeys](../product/intelligent-org-journeys.md) — 4.4, 4.10, 4.11, 4.12a, 4.13
 - [The Intelligent Organization — Design](../architecture/intelligent-org-design.md) — the org agent, L4, build order
+- [The Intelligent Organization — Protocol](../architecture/intelligent-org-protocol.md) — the draft and health payloads the harness asserts on
 - [Organizational Intelligence — Memory Architecture](../architecture/organizational-intelligence.md) — rules trigger, models explain
 - Clickable preview: [hypha-org-preview.vercel.app](https://hypha-org-preview.vercel.app) — the River and Energy stories the fixtures are drawn from

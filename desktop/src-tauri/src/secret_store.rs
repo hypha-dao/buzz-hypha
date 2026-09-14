@@ -45,7 +45,7 @@ const BLOB_KEY: &str = "secrets";
 
 // ── Interprocess advisory lock ─────────────────────────────────────────────
 //
-// Two concurrent Buzz processes (e.g. the signed DMG build and an unsigned dev
+// Two concurrent Hypha processes (e.g. the signed DMG build and an unsigned dev
 // build via `just staging`) share the same OS keychain blob because the
 // service name `"buzz-desktop"` is a constant — it does not key off the bundle
 // identifier. Each process holds its own in-memory cache, so without an
@@ -396,7 +396,7 @@ impl SecretStore {
     where
         F: FnOnce(&mut HashMap<String, String>),
     {
-        // Acquire the interprocess advisory lock first. All Buzz processes
+        // Acquire the interprocess advisory lock first. All Hypha processes
         // using the same service name contend on the same lockfile at
         // /tmp/buzz-keychain-<uid>-<service>.lock (a deterministic per-user
         // path invariant to $TMPDIR), so only one process performs a
@@ -1117,7 +1117,7 @@ mod tests {
         // against the durable cache, not an unpersisted candidate.
         //
         // This is a real-keychain integration test. Run locally with:
-        //   cargo test -p buzz-desktop -- --ignored mutate_blob_does_not_advance
+        //   cargo test -p hypha-desktop -- --ignored mutate_blob_does_not_advance
         //
         // On a machine with a reachable keychain the `store()` call succeeds
         // (result.is_ok()) and the write-failure branch is skipped — the test
@@ -1187,7 +1187,7 @@ mod tests {
 
     // Integration tests that exercise the real OS keychain. Skipped in CI
     // (unsigned builds lack keychain entitlements); run locally with:
-    //   cargo test -p buzz-desktop -- --ignored blob_
+    //   cargo test -p hypha-desktop -- --ignored blob_
     //
     // Each test uses a unique service name to avoid cross-test pollution.
 

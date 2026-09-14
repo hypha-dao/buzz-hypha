@@ -210,7 +210,7 @@ fn migrate_inline_key(store: &impl KeyStore, record: &ManagedAgentRecord) -> Key
                 Ok(()) => KeyMigration::Persisted,
                 Err(e) => {
                     eprintln!(
-                        "buzz-desktop: keyring write for agent {} failed ({e}), keeping inline",
+                        "hypha-desktop: keyring write for agent {} failed ({e}), keeping inline",
                         record.pubkey
                     );
                     KeyMigration::KeptInline
@@ -293,7 +293,7 @@ pub(crate) fn backup_invalid_store(path: &Path) {
     let backup = path.with_extension("json.invalid");
     if let Err(e) = fs::copy(path, &backup) {
         eprintln!(
-            "buzz-desktop: failed to preserve malformed store {} as {}: {e}",
+            "hypha-desktop: failed to preserve malformed store {} as {}: {e}",
             path.display(),
             backup.display()
         );
@@ -337,7 +337,7 @@ fn hydrate_keys_with(store: &impl KeyStore, records: &mut [ManagedAgentRecord]) 
                 Ok(Some(nsec)) => record.private_key_nsec = nsec,
                 Ok(None) => {
                     eprintln!(
-                        "buzz-desktop: agent {} has no key in JSON or keyring",
+                        "hypha-desktop: agent {} has no key in JSON or keyring",
                         record.pubkey
                     );
                 }
@@ -346,7 +346,7 @@ fn hydrate_keys_with(store: &impl KeyStore, records: &mut [ManagedAgentRecord]) 
                 // refuses rather than launching with no identity.
                 Err(e) => {
                     eprintln!(
-                        "buzz-desktop: agent {} key unavailable — keyring read failed ({e}); \
+                        "hypha-desktop: agent {} key unavailable — keyring read failed ({e}); \
                          agent will be refused until the keyring is reachable",
                         record.pubkey
                     );
@@ -479,7 +479,7 @@ pub fn migrate_agent_keys_to_dev_service(app: &tauri::AppHandle) {
     let records = match load_agent_store(app) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("buzz-desktop: keyring-dev-migration: cannot read agent store: {e}");
+            eprintln!("hypha-desktop: keyring-dev-migration: cannot read agent store: {e}");
             return;
         }
     };
@@ -533,7 +533,7 @@ fn copy_agent_keys_between_stores(pubkeys: &[String], src: &impl KeyStore, dst: 
         Ok(Some(map)) => map,
         Ok(None) => HashMap::new(),
         Err(e) => {
-            eprintln!("buzz-desktop: keyring-dev-migration: cannot read dev keyring: {e}");
+            eprintln!("hypha-desktop: keyring-dev-migration: cannot read dev keyring: {e}");
             return;
         }
     };
@@ -548,7 +548,7 @@ fn copy_agent_keys_between_stores(pubkeys: &[String], src: &impl KeyStore, dst: 
             Ok(Some(map)) => map,
             Ok(None) => HashMap::new(), // prod has no blob yet — nothing to copy
             Err(e) => {
-                eprintln!("buzz-desktop: keyring-dev-migration: cannot read prod keyring: {e}");
+                eprintln!("hypha-desktop: keyring-dev-migration: cannot read prod keyring: {e}");
                 return;
             }
         }
@@ -575,13 +575,13 @@ fn copy_agent_keys_between_stores(pubkeys: &[String], src: &impl KeyStore, dst: 
     to_write.insert(DEV_MIGRATION_MARKER.to_string(), "done".to_string());
 
     if let Err(e) = dst.store_all(&to_write) {
-        eprintln!("buzz-desktop: keyring-dev-migration: cannot write to dev keyring: {e}");
+        eprintln!("hypha-desktop: keyring-dev-migration: cannot write to dev keyring: {e}");
         return;
     }
 
     if copied > 0 {
         eprintln!(
-            "buzz-desktop: keyring-dev-migration: copied {copied} agent key(s) from buzz-desktop"
+            "hypha-desktop: keyring-dev-migration: copied {copied} agent key(s) from buzz-desktop"
         );
     }
 }
@@ -602,7 +602,7 @@ pub(crate) fn try_delete_agent_key(pubkey: &str) -> Result<(), String> {
 /// is deleted so its secret does not linger in the OS store.
 pub fn delete_agent_key(pubkey: &str) {
     if let Err(e) = try_delete_agent_key(pubkey) {
-        eprintln!("buzz-desktop: failed to delete agent {pubkey} key from keyring: {e}");
+        eprintln!("hypha-desktop: failed to delete agent {pubkey} key from keyring: {e}");
     }
 }
 

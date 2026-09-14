@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <Buzz.app> <output.dmg>" >&2
+  echo "Usage: $0 <Hypha.app> <output.dmg>" >&2
   exit 2
 fi
 

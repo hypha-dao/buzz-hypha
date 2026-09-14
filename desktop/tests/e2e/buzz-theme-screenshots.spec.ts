@@ -361,8 +361,8 @@ async function expectAppliedBuzzTheme(
       storedTheme,
       isDark,
       buzzTheme: themeName,
-      gradientTop: isDark ? "#4a4616" : "#e6e6b6",
-      gradientBottom: isDark ? "#0a1423" : "#c4d0da",
+      gradientTop: isDark ? "#1f2f6b" : "#cfdbfa",
+      gradientBottom: isDark ? "#0a0f22" : "#e4e9f5",
     });
 }
 
@@ -758,7 +758,7 @@ test("app font size and conversation density apply independently", async ({
   await expect(comfortable).toHaveAttribute("aria-pressed", "true");
   await expect(defaultSize).toHaveAttribute("aria-pressed", "true");
   await expect(densityDescription).toHaveText(
-    "Spacing in conversations and Markdown content across Buzz",
+    "Spacing in conversations and Markdown content across Hypha",
   );
   await expect(fontSizeDescription).toHaveText(
     "Applies across conversations and interface text",
@@ -1163,28 +1163,30 @@ test("app font size and conversation density apply independently", async ({
   });
 });
 
-test("appearance picker — system tab (Buzz follows OS)", async ({ page }) => {
+test("appearance picker — system tab (Hypha follows OS)", async ({ page }) => {
   await seedTheme(page, "buzz");
   await installMockBridge(page);
   const panel = await openAppearance(page, "system");
   await panel.screenshot({ path: `${SHOTS}/03-picker-system.png` });
 });
 
-test("appearance picker — light tab (Buzz)", async ({ page }) => {
+test("appearance picker — light tab (Hypha)", async ({ page }) => {
   await seedTheme(page, "buzz");
   await installMockBridge(page);
   const panel = await openAppearance(page, "light");
   await panel.screenshot({ path: `${SHOTS}/04-picker-light.png` });
 });
 
-test("appearance picker — dark tab (Buzz Dark)", async ({ page }) => {
+test("appearance picker — dark tab (Hypha Dark)", async ({ page }) => {
   await seedTheme(page, "buzz-dark");
   await installMockBridge(page);
   const panel = await openAppearance(page, "dark");
   await panel.screenshot({ path: `${SHOTS}/05-picker-dark.png` });
 });
 
-test("settings nav uses Buzz active pill + hover (light)", async ({ page }) => {
+test("settings nav uses Hypha active pill + hover (light)", async ({
+  page,
+}) => {
   await seedTheme(page, "buzz");
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -1197,7 +1199,7 @@ test("settings nav uses Buzz active pill + hover (light)", async ({ page }) => {
   await expect(profileRow).toHaveAttribute("data-active", "true");
   await expect(profileRow).toHaveCSS("font-weight", "600");
   const selectedLabelBox = await profileLabel.boundingBox();
-  // Appearance is the active section here; its nav row should carry the Buzz
+  // Appearance is the active section here; its nav row should carry the Hypha
   // white active pill (data-active=true), matching the Left Nav treatment.
   await page.getByTestId("settings-nav-appearance").click();
   await expect(profileRow).toHaveCSS("font-weight", "400");
@@ -1215,7 +1217,7 @@ test("settings nav uses Buzz active pill + hover (light)", async ({ page }) => {
   await sidebar.screenshot({ path: `${SHOTS}/06-settings-nav-light.png` });
 });
 
-test("settings nav uses Buzz active pill + hover (dark)", async ({ page }) => {
+test("settings nav uses Hypha active pill + hover (dark)", async ({ page }) => {
   await seedTheme(page, "buzz-dark");
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -1391,7 +1393,7 @@ for (const { mode, theme } of [
   { mode: "light" as const, theme: "github-light" },
   { mode: "dark" as const, theme: "github-dark" },
 ]) {
-  test(`${theme} ignores the Buzz prominent preference`, async ({ page }) => {
+  test(`${theme} ignores the Hypha prominent preference`, async ({ page }) => {
     await seedTheme(page, theme);
     await page.addInitScript(
       ({ key }) => window.localStorage.setItem(key, "true"),
@@ -1524,11 +1526,11 @@ test("settings content uses the same inset surface as the main app", async ({
   });
 });
 
-test("appearance hides accent picker under Buzz", async ({ page }) => {
+test("appearance hides accent picker under Hypha", async ({ page }) => {
   await seedTheme(page, "buzz");
   await installMockBridge(page);
   const panel = await openAppearance(page, "light");
-  // The accent picker is hidden while a Buzz theme is active. Its neutral
+  // The accent picker is hidden while a Hypha theme is active. Its neutral
   // swatch testid must not be present.
   await expect(page.getByTestId("accent-color-neutral")).toHaveCount(0);
   await panel.screenshot({ path: `${SHOTS}/10-appearance-no-accent.png` });
@@ -1679,7 +1681,7 @@ test("glass background is unavailable on Linux", async ({ page }) => {
     });
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
-      get: () => "Buzz Desktop Linux",
+      get: () => "Hypha Desktop Linux",
     });
   }, GLASS_BACKGROUND_STORAGE_KEY);
   await installMockBridge(page);
@@ -1711,7 +1713,7 @@ test("glass background is unavailable on Linux", async ({ page }) => {
     .toBe("true");
 });
 
-test("non-Buzz glass preserves the selected theme sidebar tint", async ({
+test("non-Hypha glass preserves the selected theme sidebar tint", async ({
   page,
 }) => {
   await seedTheme(page, "rose-pine-dawn");
@@ -1756,10 +1758,10 @@ test("non-Buzz glass preserves the selected theme sidebar tint", async ({
   expect(tint.actual).toBe(tint.expected);
 });
 
-test("accent picker reveals/hides when toggling Buzz", async ({ page }) => {
-  // Start on a non-Buzz theme so the accent picker is present, then select the
-  // Buzz tile — the picker should animate out and unmount. Reselecting a
-  // non-Buzz tile brings it back. Asserts the presence toggle (the motion
+test("accent picker reveals/hides when toggling Hypha", async ({ page }) => {
+  // Start on a non-Hypha theme so the accent picker is present, then select the
+  // Hypha tile — the picker should animate out and unmount. Reselecting a
+  // non-Hypha tile brings it back. Asserts the presence toggle (the motion
   // wrapper) works end to end.
   await seedTheme(page, "github-light");
   await page.addInitScript(() => {
@@ -1784,7 +1786,7 @@ test("accent picker reveals/hides when toggling Buzz", async ({ page }) => {
     "glass-background-row",
   ]);
 
-  // Switch to Buzz — picker should leave (allow the exit animation to settle).
+  // Switch to Hypha — picker should leave (allow the exit animation to settle).
   await page.getByTestId("theme-style-trigger").click();
   await page.getByTestId("theme-option-buzz").click();
   await expect(page.getByTestId("theme-style-trigger")).toHaveAttribute(
@@ -1793,7 +1795,7 @@ test("accent picker reveals/hides when toggling Buzz", async ({ page }) => {
   );
   await expect(page.getByTestId("accent-color-neutral")).toHaveCount(0);
 
-  // Back to a non-Buzz theme — picker returns.
+  // Back to a non-Hypha theme — picker returns.
   await page.getByTestId("theme-option-github-light").click();
   await expect(page.getByTestId("accent-color-neutral")).toBeVisible();
   await expect(page.getByTestId("theme-style-trigger")).toHaveAttribute(
@@ -1835,7 +1837,7 @@ test("accent picker reveals/hides when toggling Buzz", async ({ page }) => {
   });
 });
 
-test("Buzz light and dark modes apply live without a reload", async ({
+test("Hypha light and dark modes apply live without a reload", async ({
   page,
 }) => {
   await seedTheme(page, "buzz");
@@ -1859,7 +1861,7 @@ test("Buzz light and dark modes apply live without a reload", async ({
   await expectAppliedBuzzTheme(page, "buzz");
 });
 
-test("Buzz follows native system theme changes without a reload", async ({
+test("Hypha follows native system theme changes without a reload", async ({
   page,
 }) => {
   await seedTheme(page, "buzz");

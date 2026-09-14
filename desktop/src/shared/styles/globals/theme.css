@@ -47,11 +47,11 @@
     --sidebar-accent-foreground: 234 16.02% 35.49%;
     --sidebar-border: 225 13.56% 76.86%;
     --sidebar-ring: 225 13.56% 76.86%;
-    /* Exact Buzz palette tokens; components consume these semantically. */
-    --buzz-gradient-light-top: #e6e6b6;
-    --buzz-gradient-light-bottom: #c4d0da;
-    --buzz-gradient-dark-top: #4a4616;
-    --buzz-gradient-dark-bottom: #0a1423;
+    /* Exact Hypha palette tokens; components consume these semantically. */
+    --buzz-gradient-light-top: #cfdbfa;
+    --buzz-gradient-light-bottom: #e4e9f5;
+    --buzz-gradient-dark-top: #1f2f6b;
+    --buzz-gradient-dark-bottom: #0a0f22;
     --buzz-content-dark: 0 0% 10.1960784314%;
     /* Hosted-community onboarding intentionally keeps this light palette in
        both app themes; semantic tokens keep component code color-agnostic. */
@@ -181,7 +181,7 @@
 }
 
 /*
- * Keep Buzz's established production selected tint available independently
+ * Keep Hypha's established production selected tint available independently
  * from the optional prominent treatment.
  */
 :root {
@@ -192,7 +192,7 @@
   --sidebar-row-subtle-active-surface: rgb(255 255 255 / 16%);
 }
 
-/* The prominent treatment is exclusive to Buzz's painted gradient. */
+/* The prominent treatment is exclusive to Hypha's painted gradient. */
 :root[data-buzz-sidebar] {
   --sidebar-row-active-surface: rgb(255 255 255 / 82%);
 }
@@ -202,12 +202,12 @@
 }
 
 /*
- * Buzz theme - sidebar gradient.
+ * Hypha theme - sidebar gradient.
  *
- * Buzz reuses the GitHub Light palette for every base color; its one
+ * Hypha reuses the GitHub Light palette for every base color; its one
  * distinguishing feature is this gradient painted across the sidebar/nav
  * canvas, replacing GitHub Light's flat grey. ThemeProvider toggles the
- * `data-buzz-sidebar` attribute on <html> when the Buzz theme is active.
+ * `data-buzz-sidebar` attribute on <html> when the Hypha theme is active.
  *
  * These rules are intentionally UNLAYERED: the `bg-sidebar` background-color
  * lives in Tailwind's `utilities` layer, and unlayered declarations win over
@@ -225,7 +225,7 @@
  * floating chip should retain its own fill rather than becoming transparent
  * over the full-app gradient.
  *
- * Shared row state colors are applied below so Buzz and flat themes use the
+ * Shared row state colors are applied below so Hypha and flat themes use the
  * same hover/selection hierarchy.
  */
 :root[data-buzz-sidebar] {
@@ -244,8 +244,8 @@
 }
 
 /*
- * Dark variant (Buzz Dark). Reuses the GitHub Dark base palette; only the
- * Buzz color tokens change, so every downstream rule (gradient fill, hover,
+ * Dark variant (Hypha Dark). Reuses the GitHub Dark base palette; only the
+ * Hypha color tokens change, so every downstream rule (gradient fill, hover,
  * search box, muted labels, active pill) adapts automatically. The `.dark`
  * class is set on the document root whenever a dark theme is active.
  */
@@ -261,7 +261,7 @@
 }
 
 /*
- * Use the Buzz primary color for the floating selection-formatting tray.
+ * Use the Hypha primary color for the floating selection-formatting tray.
  * Other themes retain the standard popover treatment.
  */
 :root[data-buzz-sidebar] [data-buzz-selection-formatting-tray] {
@@ -282,7 +282,7 @@
   color: hsl(var(--primary-foreground));
 }
 
-/* Keep the subtle content-card lift in Buzz Light only. */
+/* Keep the subtle content-card lift in Hypha Light only. */
 :root[data-buzz-sidebar]:not(.dark)
   [data-buzz-content-surface]:not([data-buzz-content-unframed]) {
   box-shadow:
@@ -296,7 +296,7 @@
 }
 
 /*
- * Buzz Dark uses a warmer neutral for the inset main/settings content canvas.
+ * Hypha Dark uses a warmer neutral for the inset main/settings content canvas.
  * Override `--background` locally as well as the surface fill so descendant
  * headers and panes using `bg-background` remain visually continuous.
  */
@@ -311,7 +311,7 @@
   isolation: isolate;
 }
 
-/* The Buzz theme uses a translucent color wash. Back it with an opaque copy
+/* The Hypha theme uses a translucent color wash. Back it with an opaque copy
  * of the same gradient by default so its color remains stable over every app
  * surface, including a lifted huddle. */
 :root[data-buzz-sidebar] .buzz-theme-gradient-underlay {
@@ -325,7 +325,7 @@
 }
 
 /*
- * Keep both Buzz gradients painted and switch only which layer is visible.
+ * Keep both Hypha gradients painted and switch only which layer is visible.
  * WKWebView can retain the old raster when `background-image` is replaced on
  * a translucent surface. The center content already follows `.dark`, so using
  * that same state for layer visibility keeps both surfaces in lockstep.
@@ -410,7 +410,7 @@
  * Active nav item. The accent system (`applyAccentColor` in ThemeProvider)
  * sets `--sidebar-active` to the theme foreground as an INLINE style on
  * :root, which renders the selected page as a solid black pill under GitHub
- * Light. For the Buzz theme we want a subtle theme-specific tint instead.
+ * Light. For the Hypha theme we want a subtle theme-specific tint instead.
  * Override the two active tokens on the sidebar element itself; element-local
  * custom properties win over the inherited inline values from :root. Text
  * uses the theme foreground, and the derived
@@ -420,7 +420,7 @@
  * `text-sidebar-active-foreground` tokens are also consumed by non-sidebar
  * controls (avatar edit buttons in ProfileSettingsCard / AgentCreationPreview,
  * the selected row in CommunityCatalogDialog). A root-level override
- * turned those white (white-on-white under Buzz Dark); scoping keeps them on
+ * turned those white (white-on-white under Hypha Dark); scoping keeps them on
  * the normal accent-driven active colors.
  */
 :root[data-buzz-sidebar] [data-testid="app-sidebar"],
@@ -441,7 +441,7 @@
 
 /*
  * By default, selected navigation uses a darker version of the hover tint,
- * matching Buzz's established production treatment. The optional prominent
+ * matching Hypha's established production treatment. The optional prominent
  * preference repaints that same row with the higher-contrast tab surface.
  */
 :root[data-buzz-sidebar] [data-testid="app-sidebar"] [data-active="true"],
@@ -462,7 +462,7 @@
 }
 
 /*
- * Hover on non-active Buzz nav items uses the established 4% theme-specific
+ * Hover on non-active Hypha nav items uses the established 4% theme-specific
  * tint. Active items are excluded so they retain the selected surface. Covers
  * both top-level menu buttons and channel sub-buttons in app and Settings nav.
  */
@@ -572,7 +572,7 @@
  * section header): match the same translucent white fill (see
  * `--buzz-hover-surface`) on hover/focus instead of the grey
  * `bg-sidebar-border/35` fill. Unlayered + `[data-buzz-sidebar]` prefix beats
- * the Tailwind utility so it only applies under the Buzz theme.
+ * the Tailwind utility so it only applies under the Hypha theme.
  */
 :root[data-buzz-sidebar]
   [data-testid="app-sidebar"]
@@ -584,7 +584,7 @@
 }
 
 /*
- * Per-row-type text colors (Buzz theme).
+ * Per-row-type text colors (Hypha theme).
  *
  * By default the whole sidebar inherits a single `--sidebar-foreground`, so
  * channels, direct messages, and the Inbox/Agents nav rows all share one text
@@ -592,7 +592,7 @@
  * keeping the default value unchanged.
  *
  * Each var defaults to `inherit`, so with nothing set the sidebar looks
- * exactly as before. Scoped to the Buzz sidebar container so other themes are
+ * exactly as before. Scoped to the Hypha sidebar container so other themes are
  * untouched.
  */
 /* Channels: rows live inside the `stream-list` / `starred-list` menus. */
@@ -639,7 +639,7 @@
   color: var(--buzz-nav-fg);
 }
 
-/* Follow Buzz's selected appearance, independent of the OS color scheme. */
+/* Follow Hypha's selected appearance, independent of the OS color scheme. */
 .dark .sidebar-muted-content {
   opacity: 0.45;
 }
@@ -661,21 +661,21 @@
   --buzz-translucency-wash-alpha: 2.4%;
 }
 
-/* The regular Buzz theme keeps an opaque copy of the gradient beneath its
+/* The regular Hypha theme keeps an opaque copy of the gradient beneath its
  * color layers. Remove that backing while glass is enabled so the translucent
  * wash can reveal the native macOS vibrancy view. */
 :root[data-glass-background] .buzz-theme-gradient-underlay {
   background: transparent;
 }
 
-/* Non-Buzz themes use their existing sidebar color as the glass tint. */
+/* Non-Hypha themes use their existing sidebar color as the glass tint. */
 :root[data-glass-background]:not([data-buzz-sidebar])
   .buzz-theme-gradient-layer {
   background-color: var(--glass-sidebar-surface);
 }
 
 :root[data-glass-background] .buzz-theme-gradient-layer-light {
-  /* Buzz color wash above a neutral frost wash. */
+  /* Hypha color wash above a neutral frost wash. */
   background-image:
     linear-gradient(
       to bottom,
@@ -907,7 +907,7 @@
   background: hsl(var(--buzz-huddle-drawer-surface));
 }
 
-/* Keep the Buzz gradient in the lifted app surface. The shell beneath it is
+/* Keep the Hypha gradient in the lifted app surface. The shell beneath it is
  * strictly the huddle drawer, so its dark surface is revealed at the rounded
  * lower corners instead of the theme gradient bleeding through there. */
 :root[data-buzz-sidebar] .buzz-huddle-shell[data-huddle-open="true"] {

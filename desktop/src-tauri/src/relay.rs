@@ -448,7 +448,7 @@ async fn send_query_request(
 
 /// Parse a command-event OK message of the form `"response:<json>"`.
 ///
-/// Buzz's command kinds (e.g. 41010, 30620, 46020) acknowledge writes via
+/// Hypha's command kinds (e.g. 41010, 30620, 46020) acknowledge writes via
 /// relay OK messages whose payload is a `response:`-prefixed JSON document.
 /// This helper strips the prefix and deserializes the remainder as `T`.
 pub fn parse_command_response<T: DeserializeOwned>(message: &str) -> Result<T, String> {

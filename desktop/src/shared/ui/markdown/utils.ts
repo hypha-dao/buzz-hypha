@@ -169,7 +169,7 @@ export function isInsideHiddenSpoiler(element: Element): boolean {
 
 /**
  * `urlTransform` for `<ReactMarkdown>` that preserves `buzz://` deep links
- * used by Buzz — both `buzz://message?…` links and `buzz://pr|issue|repo?…`
+ * used by Hypha — both `buzz://message?…` links and `buzz://pr|issue|repo?…`
  * entity links. The default transform strips unknown schemes (returns `""`)
  * before the `a` component override can see them, which would break copy →
  * paste → click end-to-end.

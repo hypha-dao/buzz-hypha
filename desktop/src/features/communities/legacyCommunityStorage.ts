@@ -105,11 +105,11 @@ export function applyLegacyCommunityStorage(
 }
 
 /**
- * Seed Buzz localStorage from legacy Sprout WebKit localStorage before the app
+ * Seed Hypha localStorage from legacy Sprout WebKit localStorage before the app
  * renders providers that read community state. The native command reads the old
  * app identifier's WebKit SQLite database; this frontend step writes only when
- * Buzz does not already have community state, except for the known broken
- * Sprout→Buzz first-run handoff that created a single localhost community.
+ * Hypha does not already have community state, except for the known broken
+ * Sprout→Hypha first-run handoff that created a single localhost community.
  */
 export async function migrateLegacyCommunityStorageBeforeRender(): Promise<void> {
   if (typeof window === "undefined") {

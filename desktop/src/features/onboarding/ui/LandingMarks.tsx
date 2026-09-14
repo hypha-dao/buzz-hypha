@@ -1,9 +1,9 @@
 import * as React from "react";
 
-import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
-import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
+import { AnimatedHyphaMark } from "@/shared/ui/hypha-logo/AnimatedHyphaMark";
+import { HyphaMark } from "@/shared/ui/hypha-logo/HyphaMark";
 
-type Bee = {
+type Mark = {
   top: string;
   left: string;
   size: number;
@@ -11,11 +11,12 @@ type Bee = {
   color: string;
 };
 
+// Hypha brand blues, read against the light landing field.
 const WHITE = "#FFFFFF";
-const YELLOW = "#E9E94F";
+const YELLOW = "#3F65EF";
 
 // Fixed scatter so the field doesn't shimmer between renders.
-const BEES: Bee[] = [
+const MARKS: Mark[] = [
   { top: "4%", left: "27%", size: 34, rotate: -12, color: WHITE },
   { top: "7%", left: "58%", size: 28, rotate: 18, color: YELLOW },
   { top: "5%", left: "88%", size: 32, rotate: -20, color: WHITE },
@@ -58,15 +59,19 @@ const BEES: Bee[] = [
 
 const REPEL_RADIUS = 180;
 const REPEL_STRENGTH = 110;
-// Autonomous wander: each bee drifts on its own smooth loop.
+// Autonomous wander: each mark drifts on its own smooth loop.
 const WANDER_X = 26;
 const WANDER_Y = 20;
 
-export function LandingBees() {
+/**
+ * Decorative field of Hypha marks behind the landing page: each drifts on its
+ * own slow loop and gently yields to the pointer. Purely visual (aria-hidden).
+ */
+export function LandingMarks() {
   const fieldRef = React.useRef<HTMLDivElement>(null);
-  const beeRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
+  const markRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const pointer = React.useRef<{ x: number; y: number } | null>(null);
-  const offsets = React.useRef(BEES.map(() => ({ x: 0, y: 0 })));
+  const offsets = React.useRef(MARKS.map(() => ({ x: 0, y: 0 })));
 
   React.useEffect(() => {
     const field = fieldRef.current;
@@ -79,10 +84,10 @@ export function LandingBees() {
       const t = (now - start) / 1000;
       const rect = field.getBoundingClientRect();
       const p = pointer.current;
-      beeRefs.current.forEach((el, i) => {
+      markRefs.current.forEach((el, i) => {
         if (!el) return;
-        const bee = BEES[i];
-        // Per-bee wander: two incommensurate sine waves, phase-shifted by index.
+        const mark = MARKS[i];
+        // Per-mark wander: two incommensurate sine waves, phase-shifted by index.
         const phase = i * 1.7;
         const wx =
           Math.sin(t * (0.7 + (i % 5) * 0.13) + phase) * WANDER_X +
@@ -93,8 +98,8 @@ export function LandingBees() {
         let rx = 0;
         let ry = 0;
         if (p) {
-          const cx = rect.left + (rect.width * parseFloat(bee.left)) / 100;
-          const cy = rect.top + (rect.height * parseFloat(bee.top)) / 100;
+          const cx = rect.left + (rect.width * parseFloat(mark.left)) / 100;
+          const cy = rect.top + (rect.height * parseFloat(mark.top)) / 100;
           const ox = cx - p.x;
           const oy = cy - p.y;
           const dist = Math.hypot(ox, oy);
@@ -110,7 +115,7 @@ export function LandingBees() {
         const cur = offsets.current[i];
         cur.x += (target.x - cur.x) * 0.12;
         cur.y += (target.y - cur.y) * 0.12;
-        el.style.transform = `translate(${cur.x}px, ${cur.y}px) rotate(${bee.rotate}deg)`;
+        el.style.transform = `translate(${cur.x}px, ${cur.y}px) rotate(${mark.rotate}deg)`;
       });
       raf = requestAnimationFrame(tick);
     };
@@ -141,26 +146,28 @@ export function LandingBees() {
       aria-hidden
       className="pointer-events-none absolute inset-0 overflow-hidden"
     >
-      <span className="absolute left-6 top-12 block w-11 text-[#231E1E]">
-        <BuzzMark className="h-auto w-full" />
+      <span className="absolute left-6 top-12 block w-11">
+        <HyphaMark className="h-auto w-full" variant="brand" />
       </span>
-      {BEES.map((bee, i) => (
+      {MARKS.map((mark, i) => (
         <span
-          key={`${bee.top}-${bee.left}`}
+          key={`${mark.top}-${mark.left}`}
           ref={(el) => {
-            beeRefs.current[i] = el;
+            markRefs.current[i] = el;
           }}
           className="absolute block will-change-transform"
           style={{
-            top: bee.top,
-            left: bee.left,
-            width: bee.size,
-            color: bee.color,
-            transform: `rotate(${bee.rotate}deg)`,
+            top: mark.top,
+            left: mark.left,
+            width: mark.size,
+            color: mark.color,
+            transform: `rotate(${mark.rotate}deg)`,
             opacity: 0.9,
+            // Stagger the ring rotation so the field doesn't turn in lockstep.
+            ["--turn-delay" as string]: `${-(i % 6)}s`,
           }}
         >
-          <FlappingBee className="w-full" />
+          <AnimatedHyphaMark className="w-full" />
         </span>
       ))}
     </div>

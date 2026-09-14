@@ -74,7 +74,9 @@ export function parsePromptText(text: string): {
 
   const eventSection = sections.find((section) => {
     const title = section.title.toLowerCase();
-    return title.startsWith("buzz event");
+    // Semantic `<buzz-event>` blocks render as "Hypha event: …"; legacy plain
+    // "## Buzz event" headers from older harnesses still arrive verbatim.
+    return title.startsWith("hypha event") || title.startsWith("buzz event");
   });
   const eventContent = eventSection
     ? extractEventContent(eventSection.body)
@@ -88,7 +90,7 @@ export function parsePromptText(text: string): {
   return {
     sections,
     userText: eventContent,
-    userTitle: eventKind ? titleCase(eventKind) : "Buzz event",
+    userTitle: eventKind ? titleCase(eventKind) : "Hypha event",
     userPubkey: eventAuthorPubkey,
     userEventId: eventId,
   };
@@ -474,9 +476,11 @@ function semanticTurnTitle(
       return `${label} (${attributes.included} of ${attributes.total} messages${truncated})`;
     }
     case "buzz-event":
-      return attributes.type ? `Buzz event: ${attributes.type}` : "Buzz event";
+      return attributes.type
+        ? `Hypha event: ${attributes.type}`
+        : "Hypha event";
     case "buzz-events":
-      return `Buzz events — ${attributes.count} events`;
+      return `Hypha events — ${attributes.count} events`;
     case "what-you-were-working-on":
       return "What you were working on";
     case "new-message-arrived-while-you-were-working":
