@@ -25,6 +25,17 @@ and runtime evidence answer different questions.
 
 ---
 
+## Hypha fork — the intelligent organization
+
+`hypha-dao/buzz-hypha` is Block's Buzz plus the **intelligent organization**
+feature set. Before working on anything under that heading, read
+[docs/intelligent-org/README.md](docs/intelligent-org/README.md) — it orders the
+product, architecture, and plan documents. A clickable prototype of the target
+UI is in [prototypes/org-preview](prototypes/org-preview/README.md); it is a
+standalone Next.js app, deliberately outside the pnpm workspace.
+
+---
+
 ## Ecosystem
 
 Buzz spans five repos. This one (`block/buzz`) is the OSS source for the relay, desktop, mobile, and CLI. The others handle internal builds and deployment:
