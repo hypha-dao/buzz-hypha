@@ -23,7 +23,7 @@ The four moves:
 | 1   | **Direction → projects**                            | L3 confirm hook; weekly gap scan                             | Shapers           |
 | 2   | **Project → tickets, ticket → subtickets**          | root promoted; ticket accepted; weekly gap scan              | that item's DRI   |
 | 3   | **Completion → what next**                          | last child done; `due_at − 20 %` of run; project closed      | parent DRI / Shapers |
-| 4   | **Project health — the agent's read**               | on page load (cached per L2 change); weekly                  | anyone reading    |
+| 4   | **Project health — the agent's read**               | Friday; any ledger change on a live root (debounced, Org agent § 6.2) | anyone reading    |
 
 Everything the agent writes is a **draft**. A human tap promotes it. That is
 not a limitation of the evaluation — it is what we measure: _did a person
@@ -39,7 +39,9 @@ One sentence per move, then the numbers.
    _we already do that_, not _that is not what the objective said_.
 2. A DRI opens a ticket draft and can offer it as written, or with one edit.
    Never a piece that is already covered, never one the description did not
-   ask for.
+   ask for, never one whose turn has not come — the draft is the piece that
+   can start now, it names what the piece needs, and it names the person
+   who has that or says plainly that nobody here does.
 3. When something ends, the next move is already on the table — a follow-up
    that fits, or a clear "nothing more here" — and the objective list is
    redrawn only where the close actually moved it.
@@ -51,6 +53,32 @@ cites resolves to an L1 event, an L2 row, or an L3 line. **No authority
 slip** — a draft always carries the `needs:` of the one role that can promote
 it. Both are hard gates: one failure fails the run.
 
+### The bar is expertise, not plausibility
+
+The drafts have to read like the work of someone who has run this kind of
+organisation before — a community hall, a co-op, an energy pilot — not like
+a template with the nouns swapped. That is the standard every case in this
+plan is written to, and it has three consequences for how the suites are
+built:
+
+- **Gold is domain-real.** A case's expected drafts are what an
+  experienced operator in that domain would actually create: the licence
+  before the opening night, the site survey before the installer is
+  booked, the person with the certification for the electrical piece. Case
+  authors write the domain reasoning down in the case file (`why_gold`),
+  so a reviewer can disagree with the operator, not just the model.
+- **Generic fails.** A title or brief that could sit under any project
+  ("Make a plan", "Do research", "Kick-off") fails the model judge's
+  _specific_ question regardless of the rest. The suites carry a
+  vacuous-title list as a deterministic pre-check so the cheap judge
+  catches the common form.
+- **The whole surface is covered.** Every job in Org agent § 1 that
+  produces model output — J1, J1b, J2, J3b, J3c, J3d, J4, J6, J7, J8b, J9,
+  J10, J11 — has a suite or a case set with positives, negatives, and
+  adversarials, on every seed org. The four move suites below are the
+  core; § 5 lists the rest. A job with no cases does not ship with cards
+  on.
+
 ### Targets
 
 | Metric                                                                                       | Move    | Offline (golden set) | Online (L4, per community, rolling 4 weeks) |
@@ -60,6 +88,8 @@ it. Both are hard gates: one failure fails the run.
 | Precision — drafts a judge marks "worth this person's minute"                                | 1, 2, 3 | ≥ 0.80               | accept + amend ≥ 0.55                   |
 | Recall — gold gaps the agent found                                                           | 1, 2    | ≥ 0.70               | —                                       |
 | Duplicate rate — two open drafts for one `gap` key                                           | 1, 2    | 0                    | 0                                       |
+| Sequence fit — drafted pieces are the ones that can start now; held pieces match gold        | 2       | ≥ 0.90               | reorder-amend rate ≤ 0.15               |
+| Who-is-needed fit — `requires` matches gold; holder has it, or `unfilled` names the gap      | 1, 2    | ≥ 0.85               | holder-change amend rate ≤ 0.20         |
 | Nag rate — a dismissed key raised again with nothing changed                                 | 1, 2, 3 | 0                    | 0                                       |
 | Silence rate — candidates that correctly produced nothing                                    | 1, 2    | ≥ 0.90 on negatives  | —                                       |
 | Recommendation fit — follow-up vs "no further work" matches gold                             | 3       | ≥ 0.85               | reject rate ≤ 0.25                      |
@@ -84,7 +114,7 @@ buzz-org-agent`), and is the same for a laptop and CI.
 ### Replay, not chat
 
 An evaluation case is a **scripted org**: a seed of L3 (the four direction
-artifacts), a work tree, an L2 ledger, an L1 channel window, and an L4 history
+artifacts and every member's `39105` profile), a work tree, an L2 ledger, an L1 channel window, and an L4 history
 — followed by one **trigger** (a confirm, an accept, a done, a date). The
 harness loads the seed into an in-memory store shaped like the relay's
 state events and `io_*` projections, fires the trigger through the real
@@ -94,7 +124,7 @@ zero or more structured drafts (`kind:50100` payloads), or one health read
 stands in for the relay's.
 
 ```
-fixtures/orgs/<org>/seed.json          L3 + tree + ledger + room + L4
+fixtures/orgs/<org>/seed.json          L3 + profiles + tree + ledger + room + L4
 fixtures/orgs/<org>/cases/<case>.json  trigger + gold
 ```
 
@@ -117,8 +147,11 @@ Every draft passes through three checks, in this order. Cheap first.
 2. **Model judge.** A second model (never the generator's) scores the draft
    against a rubric with the seed as context: _does this serve the cited
    line? is it already covered? would the named person recognise it? is the
-   size right for one holder?_ Scores are 0–2 per question; a draft passes
-   at ≥ 6 of 8. The judge prompt is versioned with the cases.
+   size right for one holder? is it specific to this org, or could it sit
+   under any project? is this the right next thing given what is done and
+   what is not yet known? is the named person the one this really needs —
+   and if nobody fits, did it say so?_ Scores are 0–2 per question; a draft
+   passes at ≥ 11 of 14. The judge prompt is versioned with the cases.
 3. **Human panel.** Each week, Shapers of pilot communities rate a sample
    of twenty live drafts on the same rubric. Their labels calibrate the
    model judge (κ ≥ 0.70 or the judge is retuned) and are the online truth.
@@ -149,7 +182,7 @@ Shapers (their own community) and `buzz org tally` for the internal view.
 
 ## 1. Direction → projects
 
-**Goal.** When a Shaper confirms objectives or strategy, each objective with
+**Goal.** When the Shapers confirm objectives or strategy, each objective with
 no live root and each strategy line nothing acts on gets **one** project
 draft — title, description, the objective it serves, a suggested DRI, an
 exact end date before the objective's rough date. If everything is served,
@@ -175,9 +208,19 @@ nothing happens.
   prompt names this. The suite has a case for it.
 - **Size.** One project per line. If the model wants two, it must pick one
   and say what it left out in `why`. Splitting is the DRI's job (move 2).
-- **DRI suggestion is evidence-based.** Only members with L2 rows in the
-  nearest domain, or the founder when the community is new. Never a name with no
-  receipt behind it.
+- **First step first.** When an objective's sensible first step is a
+  validation — a pilot before a rollout, a survey before a build, a permit
+  before a programme — the draft is that step, sized as one project, and
+  `why` names what waits behind it. The follow-up arrives through move 3
+  when the first one reviews, informed by what it found.
+- **DRI suggestion is evidence-based.** The context carries a **candidate
+  list** (≤ 10): members whose `39105` skills or about are near the brief,
+  and members with L2 rows under the nearest domain — each with skills,
+  about, open count against `open_limit`, past items. The suggestion names
+  one of them and returns `matched { skills, about, items }` — the
+  receipts. Never a name with nothing behind it; a member with no profile
+  and no rows is not a candidate; the founder is the fallback when the
+  community is new; _none_ is a correct answer and the prompt says so.
 
 ### How we test it
 
@@ -194,10 +237,34 @@ Positive cases (a draft must appear):
   before any marketing") → one draft for it.
 - Weekly scan: an objective whose date is eight weeks out with nothing under
   it → one draft.
+- Holder from profile: River's "grant for the hall roof" line, Rafi's
+  profile says _grant writing_, nobody has held a grant item → draft
+  suggests Rafi with `matched.skills = ["grant-writing"]` and no items.
+- Holder from history over profile: Lea's profile says nothing about
+  markets but she held the stall last year → the stall follow-up suggests
+  Lea with `matched.items`, `skills` empty. Profile and history are both
+  evidence; neither is required, one is.
+- Profile changed: Rafi adds _grant writing_ a week after the roof project
+  went live with no holder → the `profile-changed` trigger yields one DRI
+  suggestion for that root, and nothing for roots that already have one.
+- First step first: Energy's "a second island by December" with no site
+  chosen → one project, the site survey / selection, `why` naming the
+  installation that waits on it. A draft for the installation itself fails
+  _right next thing_.
+- Nobody here fits: an objective line needs a capability no profile and no
+  history shows (River: "get the hall's electrics certified") → the draft
+  has `suggested_dri: null` and `why` says what the community lacks. Naming
+  anyone fails `unmatched skill`.
 
 Negative cases (nothing must appear):
 
 - Objectives reconfirmed with no text change.
+- A holder suggestion for a member at their `open_limit` (Energy: Rowan,
+  limit 2, holding 2) → the draft either names someone else or `null`;
+  naming Rowan fails the judge.
+- A skill the member never wrote (`matched.skills` contains a slug not on
+  their `39105`) → judge failure `unmatched skill`. This is the case that
+  catches a model inventing fit.
 - A new objective already served by a live root whose brief plainly covers
   it (River: "stall every Saturday" while the stall project is live).
 - A strategy line that is a constraint ("we do not take brand money").
@@ -235,10 +302,12 @@ parent's date.
   live children, one line each. Its siblings' titles (to avoid drafting a
   piece a sibling already holds). The L3 line the root serves. L4 rows for
   child drafts under this DRI: which they confirmed, amended, discarded.
-  Members with L2 `done` rows in this project's domain, for holder
-  suggestions.
+  The holder candidate list as in move 1: members whose `39105` skills or
+  about are near the brief, and members with L2 `done` rows in this
+  project's domain, each with open count and `open_limit`.
 - **Structured output.** Typed array. Each item: `parent_id`, `title`,
-  `brief` (≤ 40 words), `suggested_holder` (member + receipt rows, or none),
+  `brief` (≤ 40 words), `suggested_holder` (member + `matched { skills,
+  about, items }`, or none),
   `due_at` (≤ parent's), `covers` — the phrase in the parent brief this
   piece answers to. `covers` is the receipt and the dedupe key.
 - **Coverage list first.** THINK produces the list of pieces the brief
@@ -249,6 +318,23 @@ parent's date.
   is accepted. Median depth on a real community is watched (design risk 6); if
   the agent is pushing it past three, the pieces are too small and the
   prompt's size guidance is wrong.
+- **Sequence.** The coverage list is an ordered plan, not a bag of pieces:
+  each piece has `order`, `after`, and is `held` when a predecessor is
+  neither live nor done (Org agent § 8.6). A **gate** — a piece whose
+  outcome decides what the later pieces are (a permit, a pilot, a
+  supplier's yes, a measurement) — is drafted first, alone or with the
+  pieces independent of it; the rest waits. When the gate's item goes done,
+  the "child done unblocks a held piece" trigger re-runs the move with the
+  outcome in context, and the next wave is drafted against what was
+  learned. A DRI should never see a ticket for step four while step one is
+  an open question. The prompt's line: _draft what can start now; hold what
+  depends on an answer nobody has yet._
+- **Who is needed, before who is available.** Every draft names `requires`
+  — what the piece calls for — read from the brief before the candidate
+  list is consulted. The holder suggestion is the candidate whose `matched`
+  covers `requires`, or `null` with `unfilled` naming the requirement no
+  member meets. The agent should know exactly who a piece needs, and say
+  so even when the answer is "nobody here yet".
 - **Never under something the person does not hold.** ROUTE checks; the
   harness checks that ROUTE checked.
 - **Talk-derived drafts share the suite.** "Jun, could you print the rota?"
@@ -271,11 +357,40 @@ Positive:
   drafted under setup (the preview's case), others only if no sibling holds
   them.
 - Lea accepts covers; brief names a rota → rota draft to Lea, suggested
-  holder Jun with his L2 rows.
+  holder Jun with his L2 rows and the _printing_ line on his profile.
+- Brief names "translate the flyer to Spanish"; Priya's profile says
+  _Spanish_, she has held nothing → suggested holder Priya, `matched.skills
+  = ["spanish"]`, no items.
 - Last child under a ticket goes done, brief not yet met → one draft for
   the remaining piece.
 - Talk: "Jun, could you print the Saturday cover rota?" from Lea → same
   draft, `origin: talk`, receipt is the message.
+- Gate first: weekday hall's brief names a licence, a rota, insurance, and
+  the opening night → `coverage` orders licence first with `gate: true`,
+  insurance independent (drafted now), rota and opening night `held: after
+  licence`; exactly two drafts. Gold names the order and its `why_gold`
+  (no licence, no opening — and the licence conditions may change the
+  rota).
+- Next wave on the gate: the licence ticket goes done with a progress note
+  saying "granted, weekdays only, until 22:00" → J2 re-runs on the hall;
+  the rota draft appears with `after: [licence-uuid]` and a brief that
+  respects 22:00; the opening-night draft appears; nothing already live is
+  re-drafted.
+- Gate outcome changes the plan: the same licence comes back "refused for
+  weekday evenings" → the next wave is not the old held pieces; the draft
+  is a re-scoped piece (daytime rota) or a `done`/review nudge to the DRI,
+  and the judge fails a rota draft that ignores the refusal.
+- Energy Iberia: "pick the pilot site, sign the landowner, order the
+  inverters, install, commission" → site is the gate; landowner `held:
+  after site`; inverters `held: after landowner` (the quantity depends on
+  the site); one draft now. A six-piece batch fails _sequence fit_.
+- Who is needed: the "get the electrics certified" piece → `requires:
+  ["electrical-certification"]`; no River profile has it → `suggested_holder:
+  null`, `unfilled` names the certification. Energy has Tomas with it →
+  the same piece under Energy suggests Tomas with `matched.skills`.
+- Requires over availability: two candidates under `open_limit`, one with
+  the required skill and two open items, one with no skill and none → the
+  skilled one is suggested; the judge fails the free-but-unskilled name.
 
 Negative:
 
@@ -286,6 +401,11 @@ Negative:
 - A piece drafted and discarded last week, parent unchanged.
 - A ticket accepted whose brief is met by the ticket itself (no split
   needed).
+- A child goes done that unblocks nothing (an independent piece) → no
+  re-run output; the held pieces stay held.
+- Pieces with no real dependency (three posters for three noticeboards) →
+  no `after`, no `held`; inventing an order to look thorough fails
+  _sequence fit_ as much as missing one does.
 
 Adversarial:
 
@@ -295,6 +415,14 @@ Adversarial:
   eight leaf drafts at once fails the size rubric.
 - Two DRIs' tickets each mention the same shared piece → one draft, under
   the one whose brief names it first; never two.
+- Circular order in the model's plan (A after B, B after A) → gate 15
+  `sequence` fails the batch; nothing is published.
+- A brief that lists steps in the wrong order ("install, then survey") →
+  the coverage list orders them correctly and `why` says why; following
+  the brief's order fails _right next thing_.
+- `after` pointing at a sibling that is `open` with no holder → allowed
+  (it is live), but the judge's _right next thing_ asks whether drafting
+  the dependant now is useful; gold decides per case.
 
 ---
 
@@ -393,8 +521,10 @@ sentences.
 - **Score is computed; text is written.** The band comes from a small,
   published formula over L2 aggregates — done ratio against elapsed time,
   items overdue, offers past window, days since last activity, children
-  with no holder, payments through proposals, objective `read` movement.
-  The weights are in a config file, not the prompt. The model receives the
+  with no holder, pieces stalled by their progress notes, objective `read`
+  movement (`health-weights@1`, Org agent § 11.4; a payments factor joins
+  when money lands, as `health-weights@2`). The weights are in a config
+  file, not the prompt. The model receives the
   score, the factors, and the rows behind each factor; it writes the
   paragraph.
 - **Every sentence carries its rows.** Output is an array of `{ text,
@@ -427,8 +557,9 @@ Monotonicity — one change to the ledger, band must not move the wrong way:
 
 - Add a stuck offer → not higher.
 - Mark an overdue item done → not lower.
-- Add a payment through a proposal → not lower.
+- Post a progress note on a stalled piece → not lower.
 - Advance the clock two weeks with no activity → not higher.
+- _(next version, `health-weights@2`)_ Add a payment through a proposal → not lower.
 
 Human panel:
 
@@ -448,15 +579,40 @@ Adversarial:
 
 ---
 
+## 5. The rest of the surface
+
+The four moves are the core, not the whole. Every other job in Org agent
+§ 1 that puts model output in front of a person has a case set in the same
+harness, with the same three judges and the same half-negatives rule.
+Their pass bars are the hard gates (receipt validity, authority) plus the
+rows named here; a job with no case set does not leave shadow.
+
+| Job                            | Suite                     | What the cases prove                                                                                                                                                                                                                                         |
+| ------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| J1b DRI suggestion             | `dri-suggestion`          | The suggested holder's `matched` is real and covers what the root `requires`; history and profile each suffice alone; `open_limit` respected; `null` when nobody fits, with the missing requirement named; a `39105` change re-suggests only where it changes the answer. Negatives: a root that already has a holder; a profile edit that adds nothing relevant. |
+| J3d Strategy from a rejection  | `strategy-from-rejection` | A decline reason that states a constraint ("not with brand money") yields one strategy draft citing the reason; a decline with no reason, or a reason about timing, yields nothing.                                                                            |
+| J6 Direction from talk         | `direction-from-talk`     | In `#shapers`, a batch that agrees a new objective yields one `objectives` draft as operations over `base_version` with the messages as `heard`; chit-chat, a single Shaper musing, and the same idea already in the artifact yield nothing. Fenced text (§ 8.5): a message that instructs the agent yields nothing. |
+| J7 Talk → work                 | `talk-to-work`            | Shares `projects-to-tickets` (above): the same output shape from a room. Adds: the speaker must hold the item; a named person becomes `suggested_holder` only if in the candidate list; a request that fits no live item becomes a `project` draft to Shapers, not a ticket under the wrong thing; a `requires` read from the message. |
+| J8 / J8b Done from talk        | `done-from-talk`          | The holder saying "done" with the item recognisable → `io_done` with the message as receipt; a transcript line, a non-holder, a stale message, an ambiguous item → a `done` draft to the holder or nothing. Every Protocol § 5.5 rule is a case. Negatives outnumber positives here by design.                                    |
+| J9 Personal Assistant flows    | `assistant-flows`         | Each of the seven asks (Org agent § 10.2) from a plain sentence in the DM → the right draft kind with `needs <asker>`; a vague ask → the HELP menu, not a guess; an ask for something the member may not do → a refusal that names who may.                    |
+| J10 Ask the org anything       | `ask-the-org`             | Answers over the seed with receipts on every sentence; a question whose answer is a live number → refused and named in `live`; a question the ledger cannot answer → "not in the record", not an invention. Locale: asked in `pt`, answered in `pt`.        |
+| J11 Profile draft              | `profile-draft`           | Skills and `about` come only from the member's own words in their own DM; a third party's description yields nothing; the draft is the whole profile against the current `39105`; a slug is never invented from a synonym the member did not use.         |
+
+Case authorship, review, gold format, and the `why_gold` field are the
+same as for the four moves. E-2 in the Development plan carries these
+sets alongside the core four.
+
+---
+
 ## Test data
 
 Three seed orgs, kept as fixtures and versioned with the cases.
 
 | Org               | What it stresses                                                                                          |
 | ----------------- | --------------------------------------------------------------------------------------------------------- |
-| **River Commons** | Small, one level, two Shapers; the preview's stories are the gold (covers, rota, keys, weekday hall, strategy "no brand money") |
-| **Hypha Energy**  | Six projects, six-level tree, three Shapers, payments, a stuck offer, an objective met (Ameland)           |
-| **Cold start**    | One founder, four fresh artifacts, empty tree — the first-week experience                                 |
+| **River Commons** | Small, one level, two Shapers; the preview's stories are the gold (covers, rota, keys, weekday hall, strategy "no brand money"). Profiles: a mix of skills-only newcomers (Rafi, Priya), history-only old hands (Lea), and members with neither |
+| **Hypha Energy**  | Six projects, six-level tree, three Shapers, payments, a stuck offer, an objective met (Ameland); one member at `open_limit` (Rowan) |
+| **Cold start**    | One founder, four fresh artifacts, empty tree, no profiles — the first-week experience                    |
 
 Each seed ships in `en` and one other locale (`pt` for River, `es` for
 Energy). The preview app (`prototypes/org-preview`) already encodes the
@@ -466,6 +622,20 @@ fixtures, so the prototype and the evaluation tell the same story.
 Add a real community as a fourth seed as soon as one has three months of
 ledger — the Phase 0 dogfood community is the first candidate. Synthetic
 orgs find the obvious failures; a real one finds the rest.
+
+**Sequence fixtures.** Each seed carries at least two multi-step briefs
+whose order matters and is written down in `why_gold`: River's weekday hall
+(licence → rota → opening) and hall electrics (certification → rewiring →
+inspection); Energy's Iberia pilot (site → landowner → inverters → install
+→ commission) and the Andalusia tree at depth. Each ships as a series of
+snapshots — before the gate, gate done with outcome A, gate done with
+outcome B — so the "next wave" and "outcome changes the plan" cases replay
+from real state, not from a described one.
+
+**Who-is-needed fixtures.** Each seed's profiles are written so that some
+requirements are met by exactly one member, some by two (one at
+`open_limit`), and some by nobody — so `requires`, `matched`, and
+`unfilled` each have cases where they are the only correct answer.
 
 ---
 
@@ -508,11 +678,16 @@ shadow mode, not for the harness.
    extra triggers. Teaches the receipts-per-sentence pattern the others
    reuse, and starts the Friday ritual.
 4. **Move 2 — tickets and subtickets.** Needs the `accepted` state trigger.
+   Sequence (gate → held → next wave) and `requires` are in the first
+   version of the prompt and the first case set, not a later refinement —
+   a DRI who once gets step four before step one stops reading the cards.
    Talk-derived drafts join when HEAR lands.
 5. **Move 3 — completion.** Needs L4 to have rows and the scheduler's
    `in_review`; the brief is assembled from what 1, 2 and the ledger
    produced.
-6. **Real-community seed.** Freeze the dogfood community's `io_*` rows as
+6. **The rest of the surface (§ 5).** Case sets for J1b, J3d, J6, J7,
+   J8/J8b, J9, J10, J11, each before its job leaves shadow.
+7. **Real-community seed.** Freeze the dogfood community's `io_*` rows as
    the fourth fixture; re-baseline all targets against it.
 
 ---

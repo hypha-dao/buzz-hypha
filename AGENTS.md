@@ -34,6 +34,26 @@ product, architecture, and plan documents. A clickable prototype of the target
 UI is in [prototypes/org-preview](prototypes/org-preview/README.md); it is a
 standalone Next.js app, deliberately outside the pnpm workspace.
 
+Three fork-level decisions that touch existing Buzz surfaces: the **org agent is
+hosted** by the relay operator by default (one key per community, replaceable
+by a Shapers decision — see Design § Where it runs) and is never listed in the
+Agents door; the org agent is a **member of every channel and every DM** from
+creation — the relay adds `39103.agent` on channel create and `41010`, backfills
+at bootstrap, and **excludes its pubkey from the DM identity** so a 1:1 stays a
+1:1 and no client renders it as a participant; it listens passively only in
+`#shapers`, project rooms, and a member's own DM with it, and is mention-only
+everywhere else, but its searches and receipts span the whole community and a
+cited receipt is readable by anyone who can see the citing event (Protocol
+§6.8, Design § What the agent hears, and who sees it); and the Agents door
+**seeds no sample personas** (Fizz, Honey,
+Pollen, the retired set) — it stays for members' own agents, starts empty, and
+offers one template, **Work sync** (Design § Work sync): a member's own
+`buzz-acp` agent that pushes their work branch and posts `kind:50102` progress
+notes on tickets they hold. It sends no `io_*` command — done is always the
+holder's tap. A passed project also creates its **home** relay-side — room,
+relay-signed `30617`/`30621` — and the relay keeps the room roster equal to
+the tree (Protocol §6.7). Read those documents before changing any of this.
+
 ---
 
 ## Ecosystem

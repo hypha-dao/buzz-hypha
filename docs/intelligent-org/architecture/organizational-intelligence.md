@@ -22,7 +22,7 @@ reasoning behind the layers; the design is the placement; the
 
 > **Revision note (2026-09-14).** First written on 2026-08-20 against the Hypha platform, when
 > work was modelled as funded _mandates_ with _pots_ and _stewards_. Sections 0–7 stand. Section
-> 8 has been rewritten onto the current model — one recursive work tree, five proposal kinds,
+> 8 has been rewritten onto the current model — one recursive work tree, six proposal kinds,
 > no money on work items — and section 9 pruned accordingly. Cost figures in §3–§4 come from a
 > measured Hypha cost model (`docs/hypha-ai-cost/`, hypha-web) and are order-of-magnitude
 > guidance, not Buzz measurements.
@@ -70,8 +70,10 @@ ever allowed near the AI's context.
 
 Where we stand on Buzz: **L1 exists** — the relay's event store already holds every message,
 post, file, and huddle event with a signed author and a stable id, indexed for full-text
-search. L2, L3, and L4 are specified in the [Protocol](./intelligent-org-protocol.md) and not
-yet built. All three are ordinary projections of signed events — inexpensive to build, and they
+search. In this fork L1 is **whole**: the org agent is a member of every channel and every DM
+from creation, so no conversation in the community sits outside the substrate, and a receipt
+may point into any of them (Design § What the agent hears, and who sees it). L2, L3, and L4
+are specified in the [Protocol](./intelligent-org-protocol.md) and not yet built. All three are ordinary projections of signed events — inexpensive to build, and they
 are what make the loop closeable.
 
 The single most important design rule follows from this table:
@@ -150,9 +152,11 @@ Two properties every belief carries:
 > **L3 must stay small enough that a person could read all of it in an afternoon.**
 
 This is not an efficiency target, it is what makes the memory trustworthy. A corpus nobody can
-audit is a corpus nobody should rely on. The current model fixes L3 at four artifacts and asks
-that `objectives` hold three to seven lines. If a community wants a fifth artifact, that is a
-protocol change to argue for, not a slot to fill.
+audit is a corpus nobody should rely on. The current model fixes L3 at four org artifacts and
+asks that `objectives` hold three to seven lines. If a community wants a fifth artifact, that
+is a protocol change to argue for, not a slot to fill. The one per-person artifact — the org
+profile, `kind:39105`: about, skills, a self-set limit — is bounded the same way (a thousand
+characters, twenty skills) and is written by nobody but its subject.
 
 ---
 
@@ -356,19 +360,21 @@ principle from consuming the organization.
 ### The answer, fixed
 
 In the current model the test has already been applied, once, and the result is the protocol.
-**Exactly five things are proposals**; everything else is either a holder's call or just logged.
+**Exactly six things are proposals** — four in the first version, money and join following;
+everything else is either a holder's call or just logged. Membership in the first version is an
+invite link any Shaper can mint: a decision made in advance, not a vote.
 
 | Level | Mechanism                                                                    | What lives here                                                                                                   |
 | ----- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | 0     | Just do it; the ledger records it                                            | Work inside an item you hold: split it, offer pieces, mark yours done, set a child's date                        |
 | 1     | The holder of the parent decides                                             | Promote a child, offer it, take it back — the person one level up, never a vote                                  |
-| 3     | **Shapers decide** — the five proposal kinds, threshold per kind (`39103.rules`) | `project` (a new root), `dri` (name a holder by vote), `money` (out only), `direction` (a new version of one of the four), `join` (a person) |
-| 4     | Shapers decide, higher bar by default                                        | Who is a Shaper; the decision rules themselves (`io_shaper_set`)                                                 |
+| 3     | **Shapers decide** — proposals, threshold per kind (`39103.rules`, majority by default) | `project` (a new root), `dri` (name a holder by vote), `direction` (a new version of one of the four), `shapers` add/remove (the named one does not vote; an added Shaper must accept the seat); later: `money` (out only, released by contract), `join` (a person — first version is invite-only) |
+| 4     | Shapers decide, **all** must agree                                           | The decision rules themselves (`shapers/rules`) — nobody's vote is reweighted without their agree                |
 
 Level 2 — _visible for N days, proceeds unless someone objects with a reason_ — is the channel
 most organizations lack and the one that absorbs most over-escalation. It is **not built** in
 the MVP: every Shaper decision is an explicit vote. It is the obvious next rule value
-(`silence_after: <secs>`) for `39103.rules` once the five kinds have real traffic and the tally
+(`silence_after: <secs>`) for `39103.rules` once the six kinds have real traffic and the tally
 shows which of them pass near-unanimously without discussion. Those were not decisions; they
 were level-2 items taxing everyone's attention.
 
@@ -385,8 +391,8 @@ management.
 
 **Shaper is itself a grant.** The community owner is the first. After that, only Shapers decide
 who is a Shaper. Founding the organization does not keep it forever. Shapers decide direction,
-roots, DRIs by vote, money out, and joins. They do not run tickets, and they do not hold work by
-virtue of being Shapers.
+roots, and who shapes — later money out and joins; today they let people in by minting an
+invite. They do not run tickets, and they do not hold work by virtue of being Shapers.
 
 ### Projects, not transactions
 
@@ -444,8 +450,13 @@ Three constraints on the matcher itself:
 - **Capacity is declared, not inferred.** Do not build a load model. Most of what constrains a
   contributor is off-platform and therefore unmeasurable here, and the tempting proxy — open item
   count — penalises whoever takes on slow work. Store a coarse, revisable, self-set limit on the
-  profile; use it to gate suggestions rather than to score fit; and let observation surface a
-  discrepancy to the person without ever overriding them.
+  profile (`open_limit` on `kind:39105`); use it to gate suggestions rather than to score fit;
+  and let observation surface a discrepancy to the person without ever overriding them.
+- **Skills are declared too.** The same profile carries an **about** and a **skills** list the
+  person wrote (Protocol §4.7a). Fit is matched against what people said about themselves plus
+  what they have actually held — and the suggestion cites both. The system never writes a skill
+  onto someone from what it overheard; talk can become a draft to that person, and only their
+  confirm makes it true. This is the belief-with-receipt rule (§3) applied to people.
 
 ### What this means for the AI
 
@@ -472,8 +483,8 @@ Worth resolving before or during build, but not blocking the shape above.
 3. **Where decision outcomes come from** — inferred from the ledger at review time (does the
    objective's line still stand? did the follow-up happen?), or explicitly recorded by a Shaper at
    close? Inference scales; explicit recording is accurate. The review card is where both meet.
-4. **Cross-community memory** — a person's profile spans communities; should anything else? Default
-   no.
+4. **Cross-community memory** — a person's identity (`kind:0`) spans communities; their org
+   profile (`39105`) deliberately does not. Should anything else? Default no.
 5. **Model routing.** A premium tier for interactive DM work and a cheap tier for the scheduled
    moves. Which model per tier, and does Buzz Mesh cover the cheap tier?
 6. **Level 2.** When the tally shows kinds that pass silently, what does the silence window look

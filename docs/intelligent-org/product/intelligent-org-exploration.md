@@ -11,7 +11,8 @@ tags: [product, intelligent-org]
 > That decision stands and everything else in this folder now assumes it. The _model_ sketched
 > below — a single org brief, mandates with pots, keeping money on Hypha — was replaced on
 > 11 September by [What it is](./intelligent-org-features.md) (four direction artifacts, one work
-> tree, five proposal kinds, money decided by proposal and settled outside Buzz). Read this for
+> tree, proposals decided by the Shapers together, money kept in Hypha for now and released by
+> contract on the Shapers' vote later). Read this for
 > how we got here, not for what to build.
 
 A short note on what we are trying to build, and which foundation to use.

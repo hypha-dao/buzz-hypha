@@ -15,10 +15,11 @@ we accept or decline them in that app, and the record of what we did with
 each draft is the first real evidence that the four moves work.
 
 Phase 0 ships the intelligent org **inside Buzz**: the protocol in the
-relay, three doors in the desktop behind a flag, and the org agent as a
-managed agent — cut down to the minimum the four moves need, running on a
-real community, used every day by the team. Nothing else — no listening to
-chat, no money, no join, no assistant — until the moves are good.
+relay, three doors in the desktop behind a flag, and the org agent hosted
+by Hypha on the staging relay — cut down to the minimum the four moves need,
+running on a real community, used every day by the team. Nothing else — no
+listening to chat, no money, no join, no assistant — until the moves are
+good.
 
 The four moves, from the [AI Evaluation Plan](./intelligent-org-ai-evaluation.md):
 
@@ -43,12 +44,15 @@ Build the spine and the doors, skip everything that is not under test.
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | Five doors                                 | **Three**: Overview, Work, My Work — plus the project / ticket page                                             |
 | Decisions door                             | Folded into My Work: Shaper cards sit in **Needs your answer**. Door comes later.                               |
-| My Profile                                 | Not yet. The Buzz profile as it is; the Shaper set is `kind:39103`.                                             |
-| Personal Assistant, agent in rooms         | Not yet. The community has channels and DMs because it is a Buzz community — **the agent does not read them.** Direction is written in a form; drafts are cards. |
+| My Profile                                 | **Only About & skills** — one form on the existing Buzz profile that sends `io_profile_set` (`39105`). Everything else on the door waits. The agent's DRI suggestions read it, so it ships before move 1. |
+| Personal Assistant, agent in rooms         | Not yet. The community has channels and DMs because it is a Buzz community — **the agent does not read them.** Direction is written in a form; drafts are cards. The relay-side **membership** does ship (Protocol §6.8): the agent is put in every channel and DM at bootstrap and on every `41010` / channel create, and its pubkey is excluded from the DM identity — so the dogfood community lives with an unlisted member in every conversation from day one and the 1:1-stays-1:1 rule is proven on real DMs before anything reads them. The agent subscribes to none of it in Phase 0. The **receipt read** waits for HEAR — no Phase 0 draft cites a message. |
 | HEAR pass                                  | Not yet. Every move in Phase 0 is gap-derived, not talk-derived.                                                |
-| Money, join, done-from-talk                | Not yet.                                                                                                       |
+| Money, join requests, done-from-talk       | Not yet. Membership is by invite link (any Shaper can mint one), as in the first version generally.           |
 | Protocol: commands, state kinds, projections, scheduler | **Yes** — the full [Protocol](../architecture/intelligent-org-protocol.md) minus the money, join, and done-from-talk commands. Real kinds, real tables. |
-| The org agent                              | **Yes** — THINK and ROUTE only. No HEAR. Triggers are state subscriptions and two timers.                        |
+| The org agent                              | **Yes** — THINK and ROUTE only. No HEAR. Triggers are state subscriptions and two timers. **Hosted by Hypha** from day one; `shapers/agent` is built in the relay but no community exercises it in Phase 0. |
+| Agents door                                | **Stays, empty.** Members can still add their own agents; Fizz, Honey, Pollen, and the retired set are not seeded; the org agent is not listed there. |
+| Project home (room, repository, `30621`)   | **Yes** — created relay-side when a `project` passes, with the room-roster sync (Protocol §6.7). It is what makes the dogfood project's own code land in the org. |
+| Work sync, progress notes (`50102`)        | **Not yet.** Design build-order step 6. The ticket page shows the trail and the home; the work log column is empty until then. |
 
 What stays exactly as designed, because it is what we are testing:
 
@@ -73,12 +77,19 @@ What stays exactly as designed, because it is what we are testing:
 staging relay (or a dedicated dev relay — the relay is the org; pick the
 one people already open every day).
 
-**Shapers:** Vlad and one more. Two, so a confirm is a real decision and
-the `one_other` rule is exercised. **Members:** everyone working on it,
-added as community members. **DRIs:** whoever accepts a project or ticket.
-**The org agent:** one managed agent created by the community owner from
-the Agents view with the built-in _Org agent_ persona, added to the
-community.
+**Shapers:** Vlad and one more. Two, so a confirm is a real decision: on
+the default `majority` rule both must agree, and the second seat has to be
+proposed, passed, and accepted — the Shaper-set path is exercised on day
+one. **Members:** everyone working on it, brought in by invite link — a
+Shaper mints it, so Shaper minting is exercised too. **DRIs:** whoever
+accepts a project or ticket.
+**The org agent:** hosted. The operator's supervisor provisions it when the
+community is created — its own key, its `kind:0` profile, NIP-43 membership,
+one `buzz-org-agent` instance — and the `39103` bootstrap records the pubkey
+in `39103.agent`. Nobody on the team creates, configures, or starts an
+agent; the first thing the founder does is write direction, not run a
+process. In Phase 0 "the operator" is us, by hand, on the staging relay —
+the supervisor is a script until the second community needs it.
 
 ### Direction — written on day one
 
@@ -140,12 +151,14 @@ Login, identity, and membership are Buzz's own. Nothing new.
 
 **Overview.** The four direction cards — mission, vision, objectives,
 strategy — each with its version and who confirmed it, from `kind:39100`.
-A Shaper can open one and write a new version (`io_direction_propose`); the
-other Shaper sees a **direction** card on My Work and taps **Agree** or
-**Decline** (`io_vote`). Objectives are numbered lines with a rough date
-and a stable line id, because move 1 cites them by line. Below the cards:
-who shapes (`39103`), who holds what. No timeline, no proofs, no glance
-numbers yet.
+A Shaper can open one and write a new version (`io_direction_propose`);
+both Shapers see a **direction** card on My Work showing _n of 2_ and tap
+**Agree** or **Decline** (`io_vote`); it is confirmed when the rule is met.
+Objectives are numbered lines with a rough date and a stable line id,
+because move 1 cites them by line. Below the cards: who shapes and by what
+rule (`39103`), with **Add a Shaper**, **Step down**, and **Change the
+rules** (each an `io_shapers_propose` / `io_shaper_step_down`), and who
+holds what. No timeline, no proofs, no glance numbers yet.
 
 **Work.** The tree from `kind:39101`. Every root with its DRI (or _nobody
 yet_), its end date, its children one level down. Open any item → its page.
@@ -176,7 +189,7 @@ That is the whole UI. Empty states say _Nothing needs you._
 
 | Move | Card on Needs your answer                                                                 | Who sees it        | Taps → command                                                       |
 | ---- | ----------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------- |
-| 1    | **Project draft** — title, brief, serves objective N, suggested DRI, end date, why, receipts | Shapers          | Agree / Edit → `io_project_propose` (+ other Shaper's `io_vote`); Decline → `io_draft_decide` |
+| 1    | **Project draft** — title, brief, serves objective N, suggested DRI, end date, why, receipts | Shapers          | Agree / Edit → `io_project_propose` (+ both Shapers' `io_vote`); Decline → `io_draft_decide` |
 | 1    | **DRI suggestion** — for a live project with no holder                                    | Shapers, the named | Offer → `io_offer`; Accept → `io_accept`; Decline                    |
 | 2    | **Ticket draft** — under a project or ticket the reader holds                             | the holder         | Offer to … → `io_ticket_create` with `p`; Edit; Discard              |
 | 2    | **Work offer** — a piece named to the reader                                              | the named person   | Accept → `io_accept`; Not now → `io_decline`                         |
@@ -195,10 +208,13 @@ now_, _other_. They are what the weekly tally counts.
 
 The [Protocol](../architecture/intelligent-org-protocol.md), in the relay.
 Kinds in `buzz-core`, commands in the command executor, relay-signed state,
-`io_*` projections in `buzz-db`, one migration. Phase 0 leaves out
-`io_money_propose`, `io_money_settle`, `io_join_propose`, and the
-done-from-talk rule; everything else is built as specified, because the
-invariants are what the doors and the agent are tested against.
+`io_*` projections in `buzz-db`, one migration. Phase 0 leaves out the
+done-from-talk rule; the money and join kinds (`io_money_propose`,
+`io_money_released`, `io_join_propose`) are reserved but rejected — neither
+is in the first version at all (Protocol §5.6, §5.7). Membership is the
+existing invite link with Shapers added to who may mint one (Protocol
+§6.6). Everything else is built as specified, because the invariants are
+what the doors and the agent are tested against.
 
 | Table               | Phase 0 use                                                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------- |
@@ -208,6 +224,8 @@ invariants are what the doors and the agent are tested against.
 | `io_proposals`, `io_votes` | `direction` and `project` proposals; `kind:39102`                                      |
 | `io_drafts`         | every `kind:50100` with its outcome (`kind:39104`), reason, and what it became                |
 | `io_health`, `io_health_ratings` | the Friday reads and the blind bands                                             |
+| `io_profiles`       | About & skills per member; `kind:39105`; the agent's candidate query (`skills text[]`, GIN)   |
+| `io_hosted_agents`  | community → hosted agent pubkey, written by the operator's provisioning, read at `39103` bootstrap |
 | `io_ledger`         | every command and every rule-driven change                                                    |
 
 Rules enforced in the command executor, not the UI — the same ones the
@@ -223,15 +241,19 @@ L4 is `io_drafts` with its outcome and reason, plus `io_health_ratings`.
 
 ## The agent
 
-`crates/buzz-org-agent`, a long-running binary deployed as a managed
-agent. THINK and ROUTE only. No HEAR: it is not subscribed to any channel's
-messages.
+`crates/buzz-org-agent`, a long-running binary run by the relay operator
+under the community's hosted-agent key (Design § Where it runs; the crate
+itself is specified in the [Org agent design](../architecture/intelligent-org-agent.md)
+— Phase 0 runs its THINK-0 jobs J1–J5 and the expiry notice, `run` mode,
+`IO_HEAR_ENABLED=false`). THINK and ROUTE only. No HEAR: it is not
+subscribed to any channel's messages.
 
 | Trigger                                                 | Runs                                           | Drafts go to          |
 | ------------------------------------------------------- | ---------------------------------------------- | --------------------- |
 | `39100` head replaced (direction confirmed)             | move 1 — gap list, then project drafts         | Shapers               |
 | `39101` root enters `open` with no holder               | move 1 — DRI suggestion                        | Shapers, the named    |
-| `39101` enters `accepted`                               | move 2 — coverage list, then ticket drafts     | that holder           |
+| `39101` enters `accepted`                               | move 2 — ordered coverage list, then ticket drafts for what can start now | that holder |
+| `39101` child enters `done` and a sibling was held behind it | move 2 — the next wave, shaped by the outcome | parent's holder |
 | `39101` enters `done` and it was the parent's last open child | move 3 — done card                       | parent's holder       |
 | `39101` root enters `in_review` (relay date rule)       | move 3 — brief and recommendation              | Shapers               |
 | `39101` root enters `done`                              | move 3 — objectives redraw, if the line moved  | Shapers               |
@@ -255,11 +277,13 @@ them from day one.
 
 ### Tally
 
-A Shapers-only card on Overview, refreshed Friday by the agent (a `50101`
-with `item = community`, or a small `50100 kind=tally` addressed to
-Shapers — pick one and keep it): per move, drafts opened, agreed, amended,
-declined by reason; health agreement; open drafts older than five days.
-The online columns of the evaluation plan's table, on this org, weekly.
+A Shapers-only card on Overview, refreshed Friday by the agent as a
+`kind:50103` agent note with `note=tally` (Protocol §4.7c): per move,
+drafts opened, agreed, amended, declined by reason, **dropped by the
+judge by reason**; health agreement; open drafts older than five days;
+drafts the relay refused for a receipt. The online columns of the
+evaluation plan's table, on this org, weekly. The same kind carries every
+`draft_dropped` the judge produces, which is how the tally can count them.
 
 ---
 
@@ -279,11 +303,11 @@ crates/buzz-core/src/
   intelligent_org.rs               payload types (serde): WorkItem, Proposal, Draft, Health, Shapers
 
 crates/buzz-relay/src/handlers/intelligent_org/
-  mod.rs                           route table for 50001–50018
+  mod.rs                           route table for 50001–50021
   apply.rs                         apply(tx, ledger_row, projection_change, state_event) — the one write path
   authorize.rs                     require_member / require_shaper / require_holder / require_offered_to
   commands/*.rs                    one file per command
-  state.rs                         build + sign 39100–39104 from projection rows
+  state.rs                         build + sign 39100–39105 from projection rows
   scheduler.rs                     io_scheduler: offers, review window, close on date, draft expiry
   drafts.rs                        50100 / 50101 ingest checks (shape, receipts resolve), 39104 open
 
@@ -306,7 +330,7 @@ crates/buzz-org-agent/
   src/judge.rs                     deterministic checks before publish
   src/health_formula.rs            the published score; weights in health-weights.json
   src/route.rs                     needs: resolution (shaper | pubkey)
-  src/publish.rs                   sign + EVENT 50100 / 50101; ledger note on drop
+  src/publish.rs                   sign + EVENT 50100 / 50101; 50103 note on drop
   tests/eval/                      the evaluation plan's harness: seeds, recorded responses, judges
 
 desktop/src/features/org/
@@ -325,18 +349,21 @@ command and the relay says yes or no.
 
 | Command                              | Who may call                                 | Writes (all through `apply()`)                                                                       |
 | ------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `io_shaper_set` (50001)              | owner (bootstrap), then Shapers              | `io_shapers`; `#shapers` membership; `39103`                                                          |
-| `io_direction_propose` (50002)       | Shaper                                       | `io_proposals` (`direction`, open); `39102`; with one Shaper, passes immediately                     |
-| `io_vote` (50003)                    | Shaper (not the proposer under `one_other`)  | `io_votes`; on threshold: `io_direction` row + `39100`, or root item + `39101`; `39102`               |
+| `io_shapers_propose` (50001)         | owner (bootstrap self-add), then Shapers     | `io_proposals` (`shapers`, open); `39102`; on pass: `39103.offered` (add), set + `#shapers` (remove), rules |
+| `io_shaper_accept` (50019)           | the `p` of a passed `shapers/add`            | `io_shapers`; `#shapers` membership; `39103`                                                          |
+| `io_shaper_step_down` (50020)        | a Shaper, not the last                       | `io_shapers`; `#shapers` membership; `39103`                                                          |
+| `io_direction_propose` (50002)       | Shaper                                       | `io_proposals` (`direction`, open, `needed` resolved from `39103.rules`); `39102`                    |
+| `io_vote` (50003)                    | eligible Shaper (not the subject)            | `io_votes`; `agrees ≥ needed` → pass: `io_direction` row + `39100`, or root item + `39101` **with its home** (room, relay-signed `30617` + `30621`, Protocol §6.7), …; `39102` |
 | `io_project_propose` (50004)         | member                                       | `io_proposals` (`project`, open); draft outcome if `e … draft`                                        |
 | `io_ticket_create` (50005)           | holder of `parent`                           | child `open`/`offered`; `39101`; draft outcome                                                       |
 | `io_offer` (50006)                   | holder of parent; Shaper at root             | `offered_to/by/at`; `39101`; draft outcome                                                           |
-| `io_accept` (50007)                  | `offered_to` only                            | `dri`, `state=accepted`; `39101`                                                                     |
+| `io_accept` (50007)                  | `offered_to` only                            | `dri`, `state=accepted`; `39101`; room roster (root holder → admin + `maintainers`; child holder → member) |
 | `io_decline` (50008)                 | `offered_to` only                            | back to `open`; `39101`                                                                              |
 | `io_done` (50009)                    | `dri` only; refuses with open children       | `state=done`, `closed_by=dri`; `39101`; draft outcome                                                |
 | `io_release` (50010), `io_set_due` (50011), `io_reopen` (50018) | as Protocol §3.2                 | `39101`                                                                                              |
 | `io_draft_decide` (50012)            | the draft's `needs` party                    | `io_drafts` outcome + reason; `39104`                                                                |
 | `io_health_rate` (50017)             | Shaper                                       | `io_health_ratings`                                                                                  |
+| `io_profile_set` (50021)             | the signer, for themselves only              | `io_profiles` (whole row replaced, `skills text[]`); `39105`; draft outcome if `e … draft`           |
 
 `apply()` is the only function that writes an `io_*` row, and it will not
 commit without a ledger row and a state event in the same transaction. That
@@ -344,12 +371,12 @@ is the design's "completeness enforced, not hoped for" in one file.
 
 The agent has **no command** in Phase 0 (done-from-talk is a later step).
 It publishes `50100` and `50101`. A test in `buzz-org-agent` asserts that
-the crate never builds a kind in `50001–50018`.
+the crate never builds a kind in `50001–50021`.
 
 ### Reads
 
 REQ filters per door, exactly as Protocol §6.5. Before step 2, verify
-multi-letter tag filters (`#needs`, `#item`, `#parent`, `#status`) are
+multi-letter tag filters (`#needs`, `#item`, `#parent`, `#status`, `#skill`) are
 indexed in `buzz-db`; add the index to the migration if not.
 
 ### The agent pipeline
@@ -383,12 +410,23 @@ trigger  ──▶  context.rs  ──▶  model (structured output, serde schem
 - **Prompts** are markdown files with frontmatter (`move`, `version`,
   `model`, `changed`), compiled in with `include_str!`. A version bump is a
   commit. The same files are what the offline harness runs.
+- **Naming a holder.** When a move may suggest a DRI or holder, `context.rs`
+  adds a **candidate list**, not the membership: an `io_profiles` query for
+  skills near the brief plus members who held items under the same root or
+  objective, each with their `39105` about/skills, open count, and
+  `open_limit`. Never more than ten candidates. The model returns
+  `suggested` + `matched { skills, about, items }` or `null`; the prompt
+  says plainly that _open_ is a good answer. A member with no profile and no
+  past items is not a candidate, so a newcomer who has written nothing is
+  not guessed at.
 - **Judge** (`judge.rs`) is pure and synchronous given the context: schema
   → receipts resolve (a REQ by ids) → `needs` matches depth → dates inside
   parent / objective → no open `39104` with the same `gap` → declined `gap`
-  not reused unless the `39100` version or subtree changed → no `dri` or
-  `state` in payload. Returns `Ok | Err(reason)`. Failures write a
-  `draft_dropped` ledger note through `buzz org ledger note`.
+  not reused unless the `39100` version, subtree, or a candidate's `39105`
+  changed → suggested holder was in the candidate list, `matched.skills` are
+  on their `39105`, they are below `open_limit` → no `dri` or `state` in
+  payload. Returns `Ok | Err(reason)`. Failures write a `draft_dropped`
+  ledger note through `buzz org ledger note`.
 - **Timeouts.** Each trigger runs one move, at most one model call plus the
   judge, under ten seconds. Subscriptions are processed off the relay
   read loop, so a slow model never delays a tap; if a trigger is missed
@@ -399,12 +437,13 @@ trigger  ──▶  context.rs  ──▶  model (structured output, serde schem
 Two kinds, both rules.
 
 **State subscriptions.** On connect the agent opens
-`{kinds:[39100,39101,39102,39103,39104]}` plus a backfill of the current
+`{kinds:[39100,39101,39102,39103,39104,39105]}` plus a backfill of the current
 heads, and diffs each incoming state event against its last seen version
 of the same `d` to derive the trigger (`direction-confirmed`,
 `root-without-holder`, `holder-set`, `item-done`, `entered-review`,
-`root-closed`). Backfill and live must overlap so no transition is
-dropped.
+`root-closed`, `profile-changed` — which re-arms holder suggestions for
+items still without one). Backfill and live must overlap so no transition
+is dropped.
 
 **Timers.** Two, inside the agent, in the community's timezone: Monday
 07:00 runs move 1's weekly scan; Friday 12:00 runs move 4 for every live
@@ -416,9 +455,28 @@ prompt change against the live org before the real run.
 
 - **Relay** (`buzz-test-client`): every command's role check; done refuses
   with open children; one ledger row and one state event per command;
-  scheduler transitions; a client `EVENT` of `39100–39104` is rejected; a
-  `50100` with an unresolved receipt is rejected; `one_other` rejects the
-  proposer's own vote.
+  scheduler transitions; a client `EVENT` of `39100–39105` is rejected; a
+  `50100` with an unresolved receipt is rejected; a vote from a non-eligible
+  pubkey (a non-Shaper, or the proposal's subject) is rejected; `needed` is
+  fixed at opening and a Shaper added mid-vote does not move it; a
+  `shapers/rules` proposal needs every Shaper whatever `rules.shapers` says;
+  so does `shapers/agent`, which rejects a non-member or a Shaper as `p`,
+  and after it passes a `50100` from the previous agent key is rejected and
+  one from the new key accepted — and with no `p` the community is back on
+  the hosted default from `io_hosted_agents`; the bootstrap `39103` carries
+  the hosted pubkey and `agent_hosted=true`; a passed `project` leaves a
+  room, a relay-signed `30617` bound to it with `push:admin` on `main`, a
+  `30621`, and `39101.home` in the same transaction, and a rolled-back
+  transaction leaves none of them; after `io_accept` on the root the holder
+  is the room's admin and the only `maintainers` entry, after `io_accept`
+  on a child the holder is a member, and after `io_release` the former
+  holder is a member and `maintainers` is empty; the last Shaper cannot be
+  removed or step down; a `shapers/add` seat is not
+  live before `io_shaper_accept`; `io_profile_set` for another pubkey is
+  rejected, so is a `profile` draft not addressed to its subject; a draft
+  naming a holder with no `39105` receipt and no held item is rejected; a
+  `skill` tag not on that `39105` is rejected; a holder at `open_limit` is
+  rejected; a client `EVENT` of `39105` is rejected.
 - **Agent unit** (`buzz-org-agent`): judge cases (one per gate); health
   formula monotonicity; redraw operations render; no command kind is ever
   built.
@@ -433,15 +491,19 @@ prompt change against the live org before the real run.
 
 - **Relay:** the staging relay picks up the migration and handlers with
   the normal release. One community is the first org.
-- **Agent:** created from the desktop Agents view as a managed agent with
-  the _Org agent_ persona (which sets the binary to `buzz-org-agent`),
-  owner = the community owner, started like any managed agent. Env:
-  `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG` (injected), the
-  provider variables, `IO_TIMEZONE`.
-- **Desktop:** the `org` feature gate on. Everything else is the normal
-  desktop build.
-- **Seed:** nothing but the first `io_shaper_set` (the owner adding the
-  second Shaper) and the members. Direction is written in the app, not
+- **Agent:** hosted by the operator. One `buzz-org-agent` process for the
+  community, on the same infrastructure as the staging relay, started from
+  a checked-in `scripts/org-agent-provision.sh` that mints the key, publishes
+  the `kind:0` profile, adds the member, writes the `io_hosted_agents` row,
+  and launches the binary. Env: `BUZZ_RELAY_URL`, `BUZZ_PRIVATE_KEY`,
+  `BUZZ_AUTH_TAG`, the provider variables (the operator's — Mesh where the
+  staging relay has it), `IO_TIMEZONE`. Nothing is created from the desktop.
+- **Desktop:** the `org` feature gate on; the sample personas not seeded in
+  the Agents door (the Hypha default, not a flag). Everything else is the
+  normal desktop build.
+- **Seed:** nothing but the bootstrap `io_shapers_propose` (the owner),
+  the `shapers/add` for the second Shaper with their `io_shaper_accept`,
+  and the members. Direction is written in the app, not
   seeded — the first confirm has to be a real one.
 - **Flags:** `IO_MOVE_1_ENABLED` … `IO_MOVE_4_ENABLED` on the agent, read at
   trigger time. Off means THINK runs, the judge runs, and the draft is
@@ -453,7 +515,11 @@ prompt change against the live org before the real run.
 
 No HEAR, no Personal Assistant, no notifications beyond what the Inbox
 already does (My Work is the inbox), no mobile, no money, no join, no
-done-from-talk, no transcript tag.
+done-from-talk, no transcript tag, no receipt read (Protocol §6.8 — nothing
+in Phase 0 cites a message). No self-run org agent in practice: the
+relay executes `shapers/agent`, and a test proves it — including that it
+moves the agent's membership across every room and DM — but the first org
+stays on the hosted one so the moves are judged on one deployment.
 
 ---
 
@@ -480,12 +546,16 @@ first slice is live. If it does not, that is finding number one.
 
 1. **Protocol in the relay.** Five days. Kinds, payload types, the command
    handlers with `apply()`, projections and migration, state emission,
-   `io_scheduler`, `#shapers` sync, `needs_action` sources, `buzz org`
-   CLI, SDK builders, test-client tests per invariant. Seed the community's
-   Shapers with the CLI. No UI, no agent yet.
+   `io_scheduler`, `#shapers` sync, the org agent's membership in every
+   channel and DM with the DM-identity exclusion (Protocol §6.8 — the
+   backfill at bootstrap, the `41010` and channel-create side effects, and a
+   test that a 1:1 is still deduped and named as a 1:1), `needs_action`
+   sources, `buzz org` CLI, SDK builders, test-client tests per invariant.
+   Seed the community's Shapers with the CLI. No UI, no agent yet.
 2. **Overview with the direction form.** Two days. Four cards, write a
-   version, the other Shaper confirms from My Work. This is the first real
-   confirm, and the first trigger.
+   version, both Shapers agree from My Work. This is the first real
+   confirm, and the first trigger. The Shapers card with add / step down /
+   rules ships here too, since the second seat is accepted through it.
 3. **Move 1 with the judge and the harness skeleton.** Four days. Agent
    crate: connect, subscribe, context, judge, publish; the harness with
    the River and Energy seeds; gap list, project drafts, the card on
@@ -498,9 +568,11 @@ first slice is live. If it does not, that is finding number one.
 5. **Move 4 — health.** Two days. Formula over the ledger, paragraph with
    rows, card on the project page. Blind bands on the tally card the same
    week. The first Friday ritual.
-6. **Move 2.** Three days. Coverage list, ticket drafts to the holder,
-   offer to a person, one level down per trigger. From here the tree grows
-   from the agent's drafts.
+6. **Move 2.** Three days. Ordered coverage list (gate first, the rest
+   held), ticket drafts to the holder with `requires` and a holder who has
+   it — or `unfilled`, offer to a person, one level down per trigger, the
+   next wave when a gate goes done. From here the tree grows from the
+   agent's drafts.
 7. **Move 3.** Four days. Done card; the last-fifth brief and
    recommendation (on the scheduler's `in_review`); the objectives redraw
    as line operations. Needs a few closes to have happened — it lands
@@ -552,10 +624,11 @@ Phase 0 ends when for four consecutive Fridays:
 
 Then the record becomes the fourth fixture and the
 [Design](../architecture/intelligent-org-design.md) build order continues
-from step 4 — Decisions and money — and step 5 — HEAR — with a known-good
-agent to plug the listening pass into. The Decisions door, Profile,
-Personal Assistant, money, join, and done-from-talk come back in that
-order, each because a move now needs it, not before.
+from step 4 — Decisions — and step 5 — HEAR — with a known-good agent to
+plug the listening pass into. The Decisions door, Profile, Personal
+Assistant, join, done-from-talk, and finally money with the treasury
+contract come back in that order, each because a move now needs it, not
+before.
 
 If after six weeks a move is still below target, that move goes back to
 the offline harness with this org's declines as its new negative cases and
@@ -574,7 +647,11 @@ Said plainly, so nobody reads too much into a good result:
 - **Talk.** The agent hears nothing, so no talk-derived drafts. Every move
   here is gap-derived. That is the harder path for the model and the one
   we can test without HEAR — but "Lea, can you take covers?" is untested
-  until the listening pass lands.
+  until the listening pass lands. So is the thing members will actually
+  feel about the transparency rule: a receipt that opens someone else's
+  DM. Phase 0 proves the agent can _be_ in every DM without changing what
+  a DM looks like; whether people are at ease with what it may later cite
+  from there is a HEAR-phase question.
 - **Strangers.** We wrote the direction and we know the code. A community
   that did neither is objective 4, not Phase 0.
 - **Self-reference.** The agent drafting "build the deterministic judge"
