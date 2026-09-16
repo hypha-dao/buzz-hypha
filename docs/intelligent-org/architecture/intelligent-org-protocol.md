@@ -1,6 +1,6 @@
 ---
 title: 'The Intelligent Organization — Protocol'
-date: 2026-09-14
+date: 2026-09-16
 status: current
 tags: [architecture, intelligent-org, protocol, nostr, buzz]
 parent: docs/intelligent-org/README.md
@@ -219,8 +219,8 @@ fresh when it is added; it is the `objective_ref` target. A `mission` or
 
 ### 4.2 `kind:39101` — work item
 
-Tags: `["d", <item-uuid>]`, `["state", <state>]`, `["root", <root-uuid>]`,
-`["parent", <parent-uuid>]` (children only), `["p", <dri>]` (when held),
+Tags: `["d", <item-uuid>]`, `["s", <state>]`, `["root", <root-uuid>]`,
+`["u", <parent-uuid>]` (children only), `["p", <dri>]` (when held),
 `["p", <offered_to>, "", "offered"]` (when offered), `["due", "<ts>"]`,
 `["t", "project"]` or `["t", "ticket"]`, `["ref", <objective_ref>]` (roots
 that serve an objective), `["receipt", <event-id>]` for the command that
@@ -279,17 +279,17 @@ Tags (all required unless noted):
 
 | Tag                              | Meaning                                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `["needs", "shaper"]` or `["needs", <pubkey>]` | the one party that may act; the relay checks it on the referencing command   |
-| `["kind", <draft-kind>]`         | `project` \| `dri` \| `ticket` \| `done` \| `review` \| `objectives` \| `direction` \| `profile` \| `money` |
+| `["n", "shaper"]` or `["n", <pubkey>]` | the one party that may act; the relay checks it on the referencing command   |
+| `["t", <draft-kind>]`         | `project` \| `dri` \| `ticket` \| `done` \| `review` \| `objectives` \| `direction` \| `profile` \| `money` |
 | `["move", "1".."4"]`             | which agent move produced it (see the AI evaluation plan)                                 |
 | `["origin", "talk" \| "gap"]`    | heard in a room, or drafted from the gap between direction and the tree                   |
 | `["gap", <gap-key>]`             | dedupe key: an objective line ref, an item uuid, or `<item-uuid>#<covers-slug>`           |
-| `["parent", <item-uuid>]`        | for `ticket` and `done` drafts                                                            |
-| `["item", <item-uuid>]`          | for `dri`, `review`, `money` drafts                                                       |
+| `["u", <item-uuid>]`        | for `ticket` and `done` drafts                                                            |
+| `["i", <item-uuid>]`          | for `dri`, `review`, `money` drafts                                                       |
 | `["p", <pubkey>, "", "needs"]`   | required when `needs` is a pubkey: the same party, so the relay's mention index puts the draft in their inbox (Codebase verification V10). `needs = shaper` drafts carry none; the inbox resolves Shapers from `39103`. |
 | `["p", <pubkey>, "", "suggested"]` | suggested holder, when named (optional)                                                 |
 | `["e", <event-id>, "", "receipt"]`, `["a", <coord>, "", "receipt"]`, `["ref", <line-ref>]` | receipts; at least one required |
-| `["a", "39105:<relay>:<pubkey>", "", "receipt"]`, `["skill", <slug>]` | when a holder is suggested: the profile matched and the skill line(s) it matched on |
+| `["a", "39105:<relay>:<pubkey>", "", "receipt"]`, `["k", <slug>]` | when a holder is suggested: the profile matched and the skill line(s) it matched on |
 | `["shadow", "true"]`             | optional: shown to nobody; recorded for evaluation only                                   |
 | `["expiration", "<ts>"]`         | optional NIP-40 cleanup for drafts nobody decides                                         |
 | `["prompt", "<job>@<version>"]`, `["model", "<id>"]`, `["trace", "<id>"]` | optional, also on `50101`: the prompt version and model that produced it, and the agent's job id for following a card back to its logs (Org agent § 8.4, § 16). Ignored by clients; read by the tally. |
@@ -360,11 +360,11 @@ their shape is fixed here:
 
 ### 4.4 `kind:39102` — proposal
 
-Tags: `["d", <uuid>]`, `["t", <kind>]`, `["status", <status>]`,
+Tags: `["d", <uuid>]`, `["t", <kind>]`, `["s", <status>]`,
 `["p", <opened_by>]`, `["p", <subject>, "", "subject"]` for `dri`, `join`,
 `money`, and `shapers` add/remove (the named person / payee / seat),
 `["p", <eligible>, "", "eligible"]` per eligible Shaper (so My Work can
-filter by `#p`), `["item", <uuid>]` when about an item,
+filter by `#p`), `["i", <uuid>]` when about an item,
 `["receipt", <opening-command-id>]`.
 
 ```jsonc
@@ -452,7 +452,7 @@ work are independent: removal does not touch any item's `dri`.
 
 ### 4.6 `kind:39104` — draft outcome
 
-Tags: `["d", <draft-event-id>]`, `["status", <status>]`, `["p", <decided_by>]`.
+Tags: `["d", <draft-event-id>]`, `["s", <status>]`, `["p", <decided_by>]`.
 
 ```jsonc
 { "draft": "<event-id>", "status": "open|accepted|amended|declined|expired|shadow",
@@ -466,7 +466,7 @@ draft has exactly one outcome coordinate from birth.
 
 ### 4.7 `kind:50101` — health read
 
-Tags: `["item", <uuid>]`, `["week", "2026-W38"]`, `["band", "struggling|wobbly|healthy"]`.
+Tags: `["i", <uuid>]`, `["week", "2026-W38"]`, `["band", "struggling|wobbly|healthy"]`.
 
 ```jsonc
 { "item": "<uuid>", "week": "2026-W38", "pct": 0.62, "band": "wobbly",
@@ -487,7 +487,7 @@ notes are being posted for this project").
 
 ### 4.7b `kind:50102` — progress note
 
-Tags: `["item", <uuid>]`, `["p", <dri>]`, `["ref", "refs/heads/io/7f3a-weekday-hall"]`,
+Tags: `["i", <uuid>]`, `["p", <dri>]`, `["ref", "refs/heads/io/7f3a-weekday-hall"]`,
 `["commit", <sha>]` (one per commit the note covers, newest first, at most
 50), `["hint", "progressing|blocked|ready"]`, `["e", <previous 50102>, "", "prev"]`?
 (the note this one continues from).
@@ -504,19 +504,28 @@ Tags: `["item", <uuid>]`, `["p", <dri>]`, `["ref", "refs/heads/io/7f3a-weekday-h
   "commits": [ { "sha": "<sha>", "title": "Add booking form" } ],
   "files_changed": 7,
   "uncommitted": { "files": 2 },     // seen in the working tree, not pushed; informative only
-  "merged_into": null                // "refs/heads/main" once the ref's head is reachable from it
+  "head_verified": true,             // relay-set: head matched the 30618 oid at ingest
+  "merged_into": null                // relay-set from the push hook, never by the client (D12)
 }
 ```
 
 Relay checks at ingest (§6.1): the item exists and is `accepted` or
 `in_review`; `dri` is the item's holder; the signer is `dri` **or** an agent
 whose NIP-OA owner is `dri` (`is_agent_owner`, the same check the git push
-policy runs); `ref` exists in the root's `home.repo` in this relay's git
-store and every `commit` sha is reachable from it. A note whose receipts do
-not resolve is rejected `invalid: unresolved receipt` — same gate as a
-draft. `summary` is free text; `commits`, `ref`, `head`, and `merged_into`
-are checked against the repository, which is why they are the receipts and
-the summary is not.
+policy runs); `ref` is present in the latest relay-signed `30618` ref-state
+event for `home.repo`, and `head` is compared to that ref's oid — a match
+sets `head_verified = true` on the stored note, a mismatch (the note was
+written before the push landed, or after another push) stores it
+`head_verified = false`; neither rejects. `commits` are not checked at
+ingest. There is no git store to read at ingest — repositories hydrate from
+object storage per request (Codebase verification V15) — so nothing here
+opens a repository. A note whose `ref` is not in `30618` is rejected
+`invalid: unknown ref`. `merged_into` is **never a client field**: the
+relay fills it from its own push hook when a fast-forward to the default
+branch makes `head` reachable, and emits the `39101` refresh (Readiness
+D12). `summary` is free text; `ref`, `head`, and `merged_into` are what the
+relay can verify, which is why they are the receipts and the summary is
+not.
 
 `hint` is what the agent thinks, written down so the org agent and the
 health read can use it. `ready` does not close anything: it makes the item a
@@ -526,9 +535,9 @@ for a nudge to the holder of the parent.
 
 ### 4.7c `kind:50103` — agent note
 
-Tags: `["note", "draft_dropped|trigger_skipped|budget_exhausted|tally"]`,
+Tags: `["t", "draft_dropped|trigger_skipped|budget_exhausted|tally"]`,
 `["move", "1".."4"]`? (which move it concerns), `["gap", <gap-key>]`? (for
-`draft_dropped`), `["item", <uuid>]`? (when about an item),
+`draft_dropped`), `["i", <uuid>]`? (when about an item),
 `["week", "2026-W38"]` (for `tally`), `["trace", <id>]`? (the agent's own
 job id, for following a note back to its logs).
 
@@ -573,8 +582,8 @@ One per member per community, `d = <pubkey>`. Written only from that
 member's own `io_profile_set`; the relay signs it like the other state
 kinds. Community-readable, like the rest of the org.
 
-Tags: `["d", <pubkey>]`, `["p", <pubkey>]`, one `["skill", <slug>]` per
-skill (so `{kinds:[39105], "#skill":["rust"]}` answers "who can do X"),
+Tags: `["d", <pubkey>]`, `["p", <pubkey>]`, one `["k", <slug>]` per
+skill (so `{kinds:[39105], "#k":["rust"]}` answers "who can do X"),
 `["version", "<n>"]`.
 
 ```jsonc
@@ -608,26 +617,26 @@ Commands are small. Tags name the target; content carries the rest.
 
 | Kind    | Tags                                                                 | Content                                                        |
 | ------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `50001` | `["op", "add"\|"remove"\|"rules"\|"agent"]`, `["p", <pubkey>]` for add/remove, and for agent when naming a self-run agent (absent = back to hosted) | `{ why?: "" }` for add/remove/agent; `{ rules, decision_window_secs?, offer_window_secs? }` for rules |
-| `50002` | `["d", <slug>]`, `["base", "<version>"]`, `["e", <draft>, "", "draft"]`? | `{ body, lines?, why? }` — the whole new version               |
+| `50001` | `["op", "add"\|"remove"\|"rules"\|"agent"]`, `["p", <pubkey>]` for add/remove, and for agent when naming a self-run agent (absent = back to hosted), `["vote", "agree"]`? (D1) | `{ why?: "" }` for add/remove/agent; `{ rules, decision_window_secs?, offer_window_secs? }` for rules |
+| `50002` | `["d", <slug>]`, `["base", "<version>"]`, `["e", <draft>, "", "draft"]`?, `["vote", "agree"]`? (D1) | `{ body, lines?, why? }` — the whole new version               |
 | `50003` | `["e", <proposal-uuid>]`, `["vote", "agree"\|"decline"]`             | `{ reason?: "" }` (a decline reason of direction may trigger a strategy draft) |
 | `50019` | `["e", <proposal-uuid>]`                                             | `{}` — the seat the passed `shapers/add` offered                |
 | `50020` | —                                                                    | `{ why?: "" }`                                                 |
-| `50004` | `["e", <draft>, "", "draft"]`?                                       | `{ title, brief, due_at, objective_ref?, suggested_dri? }`     |
-| `50005` | `["parent", <uuid>]`, `["p", <offer_to>]`?, `["e", <draft>, "", "draft"]`? | `{ title, brief, due_at, after?: ["<sibling-uuid>"] }`   |
-| `50006` | `["item", <uuid>]`, `["p", <pubkey>]`, `["e", <draft>, "", "draft"]`? | `{}`                                                          |
-| `50007` | `["item", <uuid>]`                                                   | `{}`                                                           |
-| `50008` | `["item", <uuid>]`                                                   | `{}` — no reason is recorded; decline is private to the person |
-| `50009` | `["item", <uuid>]`, `["e", <message-id>, "", "receipt"]`?, `["e", <draft>, "", "draft"]`? | `{}`                                     |
-| `50010` | `["item", <uuid>]`                                                   | `{ why?: "" }`                                                 |
-| `50011` | `["item", <uuid>]`, `["due", "<ts>"]`                                | `{ why?: "" }`                                                 |
+| `50004` | `["e", <draft>, "", "draft"]`?, `["vote", "agree"]`? (D1)             | `{ title, brief, due_at, objective_ref?, suggested_dri? }`     |
+| `50005` | `["u", <uuid>]`, `["p", <offer_to>]`?, `["e", <draft>, "", "draft"]`? | `{ title, brief, due_at, after?: ["<sibling-uuid>"] }`   |
+| `50006` | `["i", <uuid>]`, `["p", <pubkey>]`, `["e", <draft>, "", "draft"]`? | `{}`                                                          |
+| `50007` | `["i", <uuid>]`                                                   | `{}`                                                           |
+| `50008` | `["i", <uuid>]`                                                   | `{}` — no reason is recorded; decline is private to the person |
+| `50009` | `["i", <uuid>]`, `["e", <message-id>, "", "receipt"]`?, `["e", <draft>, "", "draft"]`? | `{}`                                     |
+| `50010` | `["i", <uuid>]`                                                   | `{ why?: "" }`                                                 |
+| `50011` | `["i", <uuid>]`, `["due", "<ts>"]`                                | `{ why?: "" }`                                                 |
 | `50012` | `["e", <draft>]`, `["outcome", "accept"\|"decline"]`, `["reason", <reason>]`? | `{}`                                                  |
-| `50013` | `["item", <uuid>]`, `["p", <payee>]`, `["e", <draft>, "", "draft"]`? | `{ amount, currency, note?, agreed?: { amount, heard } }` — reserved |
+| `50013` | `["i", <uuid>]`, `["p", <payee>]`, `["e", <draft>, "", "draft"]`? | `{ amount, currency, note?, agreed?: { amount, heard } }` — reserved |
 | `50014` | `["e", <proposal-uuid>]`, `["tx", <chain-tx-id>]`                    | `{ chain, contract, amount, currency }` — reserved; signed by the treasury bridge key |
-| `50015` | `["item", <uuid>]`, `["p", <pubkey>]`, `["e", <draft>, "", "draft"]`? | `{ why?: "" }`                                                |
+| `50015` | `["i", <uuid>]`, `["p", <pubkey>]`, `["e", <draft>, "", "draft"]`?, `["vote", "agree"]`? (D1) | `{ why?: "" }`                                                |
 | `50016` | `["p", <pubkey>]`                                                    | `{ note?: "" }`                                                |
-| `50017` | `["item", <uuid>]`, `["week", "<iso-week>"]`, `["band", <band>]`    | `{}`                                                           |
-| `50018` | `["item", <uuid>]`                                                   | `{ why?: "" }`                                                 |
+| `50017` | `["i", <uuid>]`, `["week", "<iso-week>"]`, `["band", <band>]`    | `{}`                                                           |
+| `50018` | `["i", <uuid>]`                                                   | `{ why?: "" }`                                                 |
 | `50021` | `["e", <draft>, "", "draft"]`?                                       | `{ about, skills: [""], open_limit?: n }` — the whole profile; `pubkey` is the signer, never a tag |
 
 ---
@@ -712,8 +721,15 @@ proposal (a second vote from the same Shaper replaces the first while the
 proposal is `open`; ledger `vote_changed`). The relay evaluates after every
 vote: `agrees ≥ needed` → `passed`; `declines > eligible.len() − needed` →
 `rejected` (it can no longer pass). The proposer does not get an automatic
-agree; opening and agreeing are two taps, so a proposer can open something
-for the others to weigh without pre-committing. `expired` is a scheduler
+agree: opening and agreeing are two acts, so a proposer can open something
+for the others to weigh without pre-committing. An opener who _is_ eligible
+and does want to commit adds `["vote", "agree"]` to the opening command
+(`50001`, `50002`, `50004`, `50015`); the relay records that agree in the
+same transaction as the opening (ledger `vote_cast`, `detail.with_open =
+true`) and evaluates the rule at once, so a one-Shaper community passes its
+own proposal in one act and the review card's _Open the follow-up_ is one
+tap. The tag from a non-eligible opener is ignored, not rejected. (Readiness
+D1.) `expired` is a scheduler
 transition at `expires_at` (§6.3) and notifies `opened_by`; an expired
 proposal may be reopened as a new one.
 
@@ -757,7 +773,7 @@ No states — one object per member, replaced whole by each `io_profile_set`
   profile for someone else.
 - A draft that names a suggested holder must carry a `39105` receipt for
   that pubkey **or** an `e` receipt to an item they held; a name with neither
-  is `invalid: unresolved receipt`. If it carries `skill` tags they must be
+  is `invalid: unresolved receipt`. If it carries `k` (skill) tags they must be
   slugs present on that `39105` at ingest time. The relay also rejects a
   suggested holder whose `open_limit` is set and already met by their
   `accepted` items (`invalid: holder at limit`) — the limit is theirs and
@@ -880,11 +896,11 @@ Reserved so the kind and the proposal shape do not move:
   relay writes the matching ledger row. A `50103` from any other pubkey
   is rejected `restricted: not the org agent`.
 - Progress notes (`50102`) are stored after the checks in §4.7b — holder or
-  attested agent, item held, `ref` and every `commit` present in the home
-  repository. The relay then sets `last_progress` on the `39101` and emits
-  it (ledger `progress_noted`, `actor` = the signer, `detail.for` = `dri`).
-  This is the one place ingest reads the git store; it reads refs and
-  reachability, never content.
+  attested agent, item held, `ref` present in the home repository's latest
+  `30618`, `head` compared and flagged. The relay then sets `last_progress`
+  on the `39101` and emits it (ledger `progress_noted`, `actor` = the
+  signer, `detail.for` = `dri`). Ingest never opens a repository; the push
+  hook fills `merged_into` later (D12).
 - Client `EVENT` of `39100–39105` is rejected `restricted: relay-only kind`.
 
 ### 6.2 Projections
@@ -932,8 +948,11 @@ Ledger rows for rule-driven changes (`offer_expired`, `item_closed_by_rule`,
 One relay job, `io_scheduler`, runs every five minutes per community (same
 worker pattern as `admin_action_worker`):
 
-1. Offers past half their window → renotify (`kind:44100`-style notification
-   to `offered_to`; ledger `offer_renotified`). Past the window → return to
+1. Offers past half their window → renotify: the relay writes the ledger
+   row `offer_renotified` and re-emits the unchanged `39101` (a new
+   `created_at`, same content), so every live subscription and the Inbox's
+   `needs_action` bucket refresh and the offer surfaces again for
+   `offered_to`; no new kind (Readiness D6). Past the window → return to
    `open`.
 2. Roots in `accepted` with `now ≥ due_at − 0.2 × (due_at − approved_at)`
    (floor two days) → `in_review`.
@@ -978,27 +997,28 @@ No new HTTP endpoint. The doors are REQ filters:
 | Door              | Filter                                                                                  |
 | ----------------- | --------------------------------------------------------------------------------------- |
 | Overview          | `{kinds:[39100]}`, `{kinds:[39103]}`, `{kinds:[39101], "#t":["project"]}`                |
-| Work              | `{kinds:[39101]}` (tree assembled client-side from `root`/`parent`), `{kinds:[50101], "#item":[…]}`; `last_progress` on each row is enough for the _last moved_ column |
-| Item page         | `{kinds:[39101], "#d":[id]}`, `{kinds:[39101], "#parent":[id]}`, `{kinds:[50001–50021], "#item":[id]}` for the trail, `{kinds:[50102], "#item":[id]}` for the **work log**; commits link into the repo browser at `home.repo` |
-| Decisions         | `{kinds:[39102]}` with `#t` / `#status`; each card renders `votes.len(agree)` of `needed` |
-| My Work           | `{kinds:[39101], "#p":[me]}`, `{kinds:[50100], "#needs":[me]}`, `{kinds:[39102], "#p":[me], "#status":["open"]}` (as eligible voter or offered seat); Shapers add `{kinds:[50100], "#needs":["shaper"]}` |
-| Direction page    | `{kinds:[39100], "#d":[slug]}` plus `{kinds:[39102], "#t":["direction"], "#status":["passed"]}` for history |
-| Profile           | `{kinds:[39105], "#d":[pubkey]}`, `{kinds:[39101], "#p":[pubkey]}`, `{kinds:[39102], "#p":[pubkey]}`; "who can do X" is `{kinds:[39105], "#skill":[slug]}` |
+| Work              | `{kinds:[39101]}` (tree assembled client-side from `root`/`parent`), `{kinds:[50101], "#i":[…]}`; `last_progress` on each row is enough for the _last moved_ column |
+| Item page         | `{kinds:[39101], "#d":[id]}`, `{kinds:[39101], "#u":[id]}`, `{kinds:[50001–50021], "#i":[id]}` for the trail, `{kinds:[50102], "#i":[id]}` for the **work log**; commits link into the repo browser at `home.repo` |
+| Decisions         | `{kinds:[39102]}` with `#t` / `#s`; each card renders `votes.len(agree)` of `needed` |
+| My Work           | `{kinds:[39101], "#p":[me]}`, `{kinds:[50100], "#n":[me]}`, `{kinds:[39102], "#p":[me], "#s":["open"]}` (as eligible voter or offered seat); Shapers add `{kinds:[50100], "#n":["shaper"]}` |
+| Direction page    | `{kinds:[39100], "#d":[slug]}` plus `{kinds:[39102], "#t":["direction"], "#s":["passed"]}` for history |
+| Profile           | `{kinds:[39105], "#d":[pubkey]}`, `{kinds:[39101], "#p":[pubkey]}`, `{kinds:[39102], "#p":[pubkey]}`; "who can do X" is `{kinds:[39105], "#k":[slug]}` |
 
-**Verified 15 Sep ([Codebase verification V2](./intelligent-org-codebase-verification.md#v2--multi-letter-tag-filters-cs-1)):
-the relay's filter type cannot express multi-letter tag filters at all.**
-`#needs`, `#item`, `#parent`, `#status`, `#skill` above are therefore
-placeholders for the single-letter tags decided in
-[Readiness D11](../plans/intelligent-org-readiness.md#3-decisions-to-pin)
-— `n`, `i`, `u`, `s`, `k` — and this table and the § 4 tag tables are
-rewritten with those letters in the D-decisions PR. `#t`, `#d`, `#p` are
-native. Only `#e`, single-value `#p`, `#d`, and `#h` are pushed into SQL
-today; the rest are matched after the page, which R-2 of the Development
-plan fixes with generic tag pushdown.
+**Filter tags are single letters** ([Codebase verification V2](./intelligent-org-codebase-verification.md#v2--multi-letter-tag-filters-cs-1),
+[Readiness D11](../plans/intelligent-org-readiness.md#3-decisions-to-pin)):
+the relay's filter type cannot express multi-letter tag filters, so every
+tag a door filters on is one letter. The mapping, used throughout this
+document: `i` item, `u` parent, `s` status (one tag for the state of
+`39101`, `39102`, `39104` — D4), `n` needs, `k` skill, `t` type (the item
+kind on `39101`/`39102`, the draft kind on `50100` — D5, the note type on
+`50103`). `d`, `e`, `p`, `a`, `h` are native. Content JSON keeps the full
+field names (`state`, `parent`, `skills`). Only `#e`, single-value `#p`,
+`#d`, and `#h` are pushed into SQL today; the rest are matched after the
+page, which R-2 of the Development plan fixes with generic tag pushdown.
 
 The Home feed's `needs_action` bucket (`buzz-db/src/store/feed.rs`,
 `query_needs_action`) gains three sources: `39101` where `#p … "offered"` is
-the viewer, `50100` where `#needs` is the viewer (or `shaper` for Shapers),
+the viewer, `50100` where `#n` is the viewer (or `shaper` for Shapers),
 and open `39102` for Shapers.
 
 ### 6.6 Membership — invite links
@@ -1016,6 +1036,15 @@ on a claim. The ledger notes `member_joined` with `actor = <claimant>`,
 `detail.via = "invite"`, `detail.minted_by = <pubkey>` so Overview can show
 who invited whom, and the org agent greets the new member in a DM (a
 `kind:9`/DM message, not an `io_*` event).
+
+**The transparency notice** (Features 6a) is fixed text in the relay's
+`/invite/<code>` landing page, rendered for every community on this relay
+that has an `io_hosted_agents` row or a `39103`: the org agent is a member
+of every room and DM, what it reads, and what it may and may not do. It is
+the relay operator's text, the same for every community, and a community
+cannot turn it off or edit it — it states a rule the community cannot
+change. The community's own description appears alongside it, never in
+its place. (Readiness D7.)
 
 Owners and admins keep Buzz's direct add (`kind:9030`) and remove; those are
 relay administration, outside the org's decisions. When `join` proposals
@@ -1116,12 +1145,23 @@ membership.
 
 **Not a participant, for display.** `39103.agent` is excluded from the
 **DM identity**: the participant set that dedupes `41010` opens (two people
-opening "the DM between us" find the same one), that names the conversation
-in the sidebar, and that the channel-summary sidecar (`40901`) reports as
-`participants`, is computed without it. Membership lists (`39002`) do carry
-the agent — they are the truth — and clients filter `39103.agent` out of
-participant renderings and member counts. A 1:1 stays a 1:1; a room with
-five people shows five.
+opening "the DM between us" find the same one), that the relay writes as
+the `p` tags of the DM's `39000`, and that the `41010` system message lists
+as `participants`, is computed without it; the 2–9 participant cap counts
+humans only. Membership lists (`39002`) do carry the agent — they are the
+truth. All of this is relay-side (Codebase verification V5); a client that
+renders a member count from `39002` subtracts `39103.agent`. A 1:1 stays a
+1:1; a room with five people shows five.
+
+**The agent DM.** A member's DM with the org agent is the DM whose
+participant set minus `39103.agent` is exactly that member: its identity
+is `{member}`. `handle_dm_open` treats a `41010` with `p = [member]`
+(the member alone) and one with `p = [member, agent]` as the same DM, and
+never as a self-DM error; the relay adds the agent if it is missing.
+Opening it twice finds the same channel. The sidebar names it from the
+agent's `kind:0` ("Org agent"). It is the Personal Assistant surface
+(Design § Surfaces) and the only DM the agent listens to passively.
+(Readiness D2.)
 
 **Receipt read.** Every event this protocol defines is community-global
 (§1), so a member can always see a draft, a proposal, an item, or a health
@@ -1152,7 +1192,7 @@ builds, through receipts, not of the rooms themselves.
   `EVENT` path or `POST /events`. They never construct `39100–39105`.
 - Clients render state from `39100–39105` and drafts from `50100`
   + `39104`; they do not derive state from commands. The trail on an item
-  page is the commands with `["item", id]`, newest first.
+  page is the commands with `["i", id]`, newest first.
 - A card's primary tap builds the command **and** carries the draft `e` tag
   so settlement is atomic (§3.2). The secondary tap (Decline / Not yet) is
   `io_draft_decide`.

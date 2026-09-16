@@ -493,9 +493,11 @@ Ahead of the date the agent writes the brief and says which.
      Either way, one line of reasoning with receipts.
 4. Click **Open the follow-up** or **Nothing more**. The project closes on
    its date either way — the buttons are only about what comes next.
-   Opening the follow-up _is_ the project approval: it goes live under
-   **Work** with the suggested DRI offered, and is recorded under
-   **Decisions → Decided** like any other approval. No second vote.
+   Opening the follow-up opens the project proposal with your agree
+   already on it (one act, Protocol §5.3): with one Shaper it passes at
+   once and goes live under **Work** with the suggested DRI offered; with
+   more Shapers it waits for the rule like any other proposal. Either way
+   it is recorded under **Decisions → Decided**, and you never vote twice.
 5. Override is available but not the default: **Keep it open until …** sets a
    new end date instead. The close on the date is the relay's rule, running
    on a date a Shaper set; the agent never closes, extends, or opens a

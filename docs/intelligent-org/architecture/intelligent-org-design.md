@@ -728,9 +728,10 @@ Ranked, with where each is addressed:
    the thing that breaks that. Per-key dedupe and suppression are relay-enforced, the judge
    drops weak drafts, and the evaluation plan's acceptance bars gate every widening from
    shadow to cards. (Agent section; AI evaluation plan.)
-3. **Tag-filter coverage.** The doors rely on `#needs`, `#item`, `#parent`, `#status`
-   filters. Single-letter tags are indexed natively; verify multi-letter tag filtering in
-   `buzz-db` and add an index migration if needed before step 2. (Protocol §6.5.)
+3. **Tag-filter coverage.** The doors rely on `#n`, `#i`, `#u`, `#s`, `#k` filters
+   (single letters by Readiness D11 — the relay's filter type cannot express longer names,
+   Codebase verification V2). They match in memory today; R-2 of the Development plan pushes
+   them into SQL on the existing GIN index. (Protocol §6.5.)
 4. **Model cost and auditability.** The agent is in every conversation; without the two
    listening modes THINK would run on every batch of chat in the community with unbounded
    cost and become a model-as-trigger. Passive screening is confined to the rooms that exist

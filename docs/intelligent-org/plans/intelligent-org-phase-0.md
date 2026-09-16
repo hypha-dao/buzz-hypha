@@ -73,11 +73,13 @@ What stays exactly as designed, because it is what we are testing:
 
 ## The first org
 
-**Community:** one Buzz community for the team building this, on the
-staging relay (or a dedicated dev relay — the relay is the org; pick the
-one people already open every day).
+**Community:** the Hypha team's own community on the **staging relay** —
+the one people already open every day (the relay is the org; a dedicated
+dev relay would make dogfood a chore). Decided (Readiness D9).
 
-**Shapers:** Vlad and one more. Two, so a confirm is a real decision: on
+**Shapers:** Vlad and the teammate leading the desktop work — they are in
+the app daily and can run the Friday ritual when Vlad is away (Readiness
+D9). Two, so a confirm is a real decision: on
 the default `majority` rule both must agree, and the second seat has to be
 proposed, passed, and accepted — the Shaper-set path is exercised on day
 one. **Members:** everyone working on it, brought in by invite link — a
@@ -375,9 +377,9 @@ the crate never builds a kind in `50001–50021`.
 
 ### Reads
 
-REQ filters per door, exactly as Protocol §6.5. Before step 2, verify
-multi-letter tag filters (`#needs`, `#item`, `#parent`, `#status`, `#skill`) are
-indexed in `buzz-db`; add the index to the migration if not.
+REQ filters per door, exactly as Protocol §6.5, on single-letter tags
+(`#n`, `#i`, `#u`, `#s`, `#k` — Readiness D11). Generic tag pushdown into
+SQL lands in Development plan R-2; until then they match after the page.
 
 ### The agent pipeline
 
@@ -390,7 +392,14 @@ trigger  ──▶  context.rs  ──▶  model (structured output, serde schem
 - **Provider.** The same configuration `buzz-agent` reads
   (`BUZZ_AGENT_PROVIDER`, `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY`,
   `OPENAI_COMPAT_MODEL`). Buzz Mesh works unchanged. Never an `auto` model
-  id.
+  id. **Pinned for Phase 0 (Readiness D10):** an OpenAI-compatible gateway
+  with provider-prefixed ids so a swap is a config change — `IO_MODEL_DRAFT
+  = anthropic/claude-sonnet-4.5` (THINK), `IO_MODEL_FAST =
+  anthropic/claude-haiku-4.5` (HEAR classify, later), `IO_MODEL_JUDGE =
+  openai/gpt-5` (a different family from the generator, as the evaluation
+  plan requires). The ids live in each prompt file's frontmatter and the
+  harness re-records when they change; this paragraph records the choice,
+  the frontmatter is the truth.
 - **Call shape.** Structured output validated against the move's serde
   schema. Free text is not a draft; a parse failure is noted and produces
   nothing.
@@ -475,7 +484,7 @@ prompt change against the live org before the real run.
   live before `io_shaper_accept`; `io_profile_set` for another pubkey is
   rejected, so is a `profile` draft not addressed to its subject; a draft
   naming a holder with no `39105` receipt and no held item is rejected; a
-  `skill` tag not on that `39105` is rejected; a holder at `open_limit` is
+  `k` (skill) tag not on that `39105` is rejected; a holder at `open_limit` is
   rejected; a client `EVENT` of `39105` is rejected.
 - **Agent unit** (`buzz-org-agent`): judge cases (one per gate); health
   formula monotonicity; redraw operations render; no command kind is ever
@@ -513,7 +522,8 @@ prompt change against the live org before the real run.
 
 ### Out of scope, deliberately
 
-No HEAR, no Personal Assistant, no notifications beyond what the Inbox
+No HEAR, no Personal Assistant, no notifications beyond J12 (the newcomer
+greeting) and J13 (templated notices — Readiness D3) and what the Inbox
 already does (My Work is the inbox), no mobile, no money, no join, no
 done-from-talk, no transcript tag, no receipt read (Protocol §6.8 — nothing
 in Phase 0 cites a message). No self-run org agent in practice: the

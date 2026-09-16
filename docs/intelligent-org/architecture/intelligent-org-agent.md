@@ -1181,7 +1181,7 @@ Small, and listed so they are decided rather than assumed:
 | **`buzz-agent`**         | Make `llm` public (or move `Llm` into `pub mod llm`), add `temperature: Option<f32>` and `tool_choice: Option<String>` to the request path.               | The org agent reuses the provider matrix rather than forking it. Neither changes `buzz-agent`'s own behaviour. |
 | **`buzz-ws-client`** (later) | Extract `RelayLink` (reconnect, watermarks, REQ set) so `buzz-acp` and `buzz-org-agent` share it.                                                    | Two copies of reconnect logic is one too many; not blocking. |
 | **Relay**                | Confirm the NIP-43 membership list event is emitted on invite claims so `MemberJoined` has a stream (Protocol §6.6 already writes `member_joined` to the ledger). | J12 needs an event, not a ledger row.            |
-| **Desktop**              | None beyond Phase 0's tally card, which reads `{kinds:[50103], "#note":["tally"]}`. The doors already render `50100`/`50101`/`39104`.                  |                                                       |
+| **Desktop**              | None beyond Phase 0's tally card, which reads `{kinds:[50103], "#t":["tally"]}`. The doors already render `50100`/`50101`/`39104`.                  |                                                       |
 
 ---
 
