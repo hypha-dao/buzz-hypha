@@ -83,6 +83,46 @@ export const KIND_GIT_STATUS_DRAFT = 1633;
 // h-tags = currently-hidden DM channel ids).
 export const KIND_DM_VISIBILITY = 30622;
 
+// Intelligent organization (docs/intelligent-org/architecture/intelligent-org-protocol.md §3).
+// Mirror of buzz-core's KIND_IO_* — `scripts/check-org-kinds-parity.mjs` fails
+// CI if this block and `mobile/lib/shared/relay/nostr_models.dart` drift from
+// `crates/buzz-core/src/kind.rs`. All three families are community-global.
+// State (relay-signed, addressable; d = object id). Filter tags are single
+// letters: i item, u parent, s status, n needs, k skill, t type.
+export const KIND_IO_DIRECTION = 39100;
+export const KIND_IO_WORK_ITEM = 39101;
+export const KIND_IO_PROPOSAL = 39102;
+export const KIND_IO_SHAPERS = 39103;
+export const KIND_IO_DRAFT_OUTCOME = 39104;
+export const KIND_IO_PROFILE = 39105;
+// Commands (person-signed, executed transactionally by the relay).
+export const KIND_IO_SHAPERS_PROPOSE = 50001;
+export const KIND_IO_DIRECTION_PROPOSE = 50002;
+export const KIND_IO_VOTE = 50003;
+export const KIND_IO_PROJECT_PROPOSE = 50004;
+export const KIND_IO_TICKET_CREATE = 50005;
+export const KIND_IO_OFFER = 50006;
+export const KIND_IO_ACCEPT = 50007;
+export const KIND_IO_DECLINE = 50008;
+export const KIND_IO_DONE = 50009;
+export const KIND_IO_RELEASE = 50010;
+export const KIND_IO_SET_DUE = 50011;
+export const KIND_IO_DRAFT_DECIDE = 50012;
+export const KIND_IO_MONEY_PROPOSE = 50013; // reserved — rejected by the relay today
+export const KIND_IO_MONEY_RELEASED = 50014; // reserved — treasury bridge only
+export const KIND_IO_DRI_PROPOSE = 50015;
+export const KIND_IO_JOIN_PROPOSE = 50016; // reserved — rejected by the relay today
+export const KIND_IO_HEALTH_RATE = 50017;
+export const KIND_IO_REOPEN = 50018;
+export const KIND_IO_SHAPER_ACCEPT = 50019;
+export const KIND_IO_SHAPER_STEP_DOWN = 50020;
+export const KIND_IO_PROFILE_SET = 50021;
+// Drafts and reads (agent- or person-signed; never change state).
+export const KIND_IO_DRAFT = 50100;
+export const KIND_IO_HEALTH = 50101;
+export const KIND_IO_PROGRESS = 50102;
+export const KIND_IO_AGENT_NOTE = 50103;
+
 // Human-visible "new content" message kinds. Used as the unread trigger set
 // (sidebar badges, catch-up queries) and as the Home-feed mention query.
 // Reactions, edits, diffs, deletions, and system messages are deliberately

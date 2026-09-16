@@ -633,6 +633,176 @@ pub const KIND_GIT_STATUS_DRAFT: u32 = 1633;
 /// announcement, never a project. See `docs/nips/NIP-MP.md`.
 pub const KIND_PROJECT: u32 = 30621;
 
+// Intelligent organization (39100–39149 state, 50000–50149 commands and drafts).
+// See docs/intelligent-org/architecture/intelligent-org-protocol.md §3 (kinds)
+// and §4 (content schemas). Three families, one pattern:
+// person-signed commands are executed transactionally by the relay; the relay
+// answers with relay-signed addressable state; the org agent (or a member)
+// publishes drafts and reads that never change state. All three families are
+// community-global (`channel_id = NULL`, no `h` tag).
+
+/// Lower bound of the intelligent-org relay-signed state range (39100–39149).
+pub const IO_STATE_KIND_MIN: u32 = 39100;
+/// Upper bound of the intelligent-org relay-signed state range (39100–39149).
+pub const IO_STATE_KIND_MAX: u32 = 39149;
+/// Lower bound of the intelligent-org person-signed command range (50000–50049).
+pub const IO_COMMAND_KIND_MIN: u32 = 50000;
+/// Upper bound of the intelligent-org person-signed command range (50000–50049).
+pub const IO_COMMAND_KIND_MAX: u32 = 50049;
+/// Lower bound of the intelligent-org drafts-and-reads range (50100–50149).
+pub const IO_READ_KIND_MIN: u32 = 50100;
+/// Upper bound of the intelligent-org drafts-and-reads range (50100–50149).
+pub const IO_READ_KIND_MAX: u32 = 50149;
+
+// State (relay-signed, addressable; `d` = object id). Protocol §3.1, §4.
+/// IO state: latest confirmed direction artifact; `d` ∈ mission | vision | objectives | strategy.
+pub const KIND_IO_DIRECTION: u32 = 39100;
+/// IO state: one work item (project or ticket); `d` = item UUID.
+pub const KIND_IO_WORK_ITEM: u32 = 39101;
+/// IO state: one proposal and its votes; `d` = proposal UUID.
+pub const KIND_IO_PROPOSAL: u32 = 39102;
+/// IO state: the Shaper set and decision rules; `d` = `shapers`.
+pub const KIND_IO_SHAPERS: u32 = 39103;
+/// IO state: the outcome of one draft; `d` = draft event id.
+pub const KIND_IO_DRAFT_OUTCOME: u32 = 39104;
+/// IO state: one member's org profile — about, skills, limit; `d` = member pubkey.
+pub const KIND_IO_PROFILE: u32 = 39105;
+
+// Commands (person-signed, executed transactionally). Protocol §3.2, §4.8.
+/// IO command `io_shapers_propose`: open a `shapers` proposal (op add / remove / rules / agent).
+pub const KIND_IO_SHAPERS_PROPOSE: u32 = 50001;
+/// IO command `io_direction_propose`: open a `direction` proposal.
+pub const KIND_IO_DIRECTION_PROPOSE: u32 = 50002;
+/// IO command `io_vote`: agree / decline on a proposal; executes on rule met.
+pub const KIND_IO_VOTE: u32 = 50003;
+/// IO command `io_project_propose`: open a `project` proposal.
+pub const KIND_IO_PROJECT_PROPOSE: u32 = 50004;
+/// IO command `io_ticket_create`: create a child item under a held parent.
+pub const KIND_IO_TICKET_CREATE: u32 = 50005;
+/// IO command `io_offer`: offer an item to one pubkey.
+pub const KIND_IO_OFFER: u32 = 50006;
+/// IO command `io_accept`: the offered pubkey takes the item.
+pub const KIND_IO_ACCEPT: u32 = 50007;
+/// IO command `io_decline`: the offered pubkey returns the item.
+pub const KIND_IO_DECLINE: u32 = 50008;
+/// IO command `io_done`: the holder closes the item (or the agent relays the holder's words, §5.5).
+pub const KIND_IO_DONE: u32 = 50009;
+/// IO command `io_release`: the holder gives the item back.
+pub const KIND_IO_RELEASE: u32 = 50010;
+/// IO command `io_set_due`: move an item's `due_at`.
+pub const KIND_IO_SET_DUE: u32 = 50011;
+/// IO command `io_draft_decide`: decline (or standalone-accept) a draft.
+pub const KIND_IO_DRAFT_DECIDE: u32 = 50012;
+/// IO command `io_money_propose` — reserved for the next version; rejected today.
+pub const KIND_IO_MONEY_PROPOSE: u32 = 50013;
+/// IO command `io_money_released` — reserved for the treasury bridge; rejected today.
+pub const KIND_IO_MONEY_RELEASED: u32 = 50014;
+/// IO command `io_dri_propose`: open a `dri` proposal naming a holder for an unheld item.
+pub const KIND_IO_DRI_PROPOSE: u32 = 50015;
+/// IO command `io_join_propose` — reserved for a later version; rejected today.
+pub const KIND_IO_JOIN_PROPOSE: u32 = 50016;
+/// IO command `io_health_rate`: a Shaper's blind band for an item and week.
+pub const KIND_IO_HEALTH_RATE: u32 = 50017;
+/// IO command `io_reopen`: the holder undoes a `done` within seven days.
+pub const KIND_IO_REOPEN: u32 = 50018;
+/// IO command `io_shaper_accept`: the named person takes a passed `shapers/add` seat.
+pub const KIND_IO_SHAPER_ACCEPT: u32 = 50019;
+/// IO command `io_shaper_step_down`: a Shaper leaves the set (never the last one).
+pub const KIND_IO_SHAPER_STEP_DOWN: u32 = 50020;
+/// IO command `io_profile_set`: a member replaces their own org profile.
+pub const KIND_IO_PROFILE_SET: u32 = 50021;
+
+// Drafts and reads (agent- or person-signed, regular, never change state). Protocol §3.3.
+/// IO read `io_draft`: a suggestion addressed to one party (`n` tag).
+pub const KIND_IO_DRAFT: u32 = 50100;
+/// IO read `io_health`: one project's health read for one week.
+pub const KIND_IO_HEALTH: u32 = 50101;
+/// IO read `io_progress`: a holder's (or their Work sync agent's) progress note.
+pub const KIND_IO_PROGRESS: u32 = 50102;
+/// IO read `io_agent_note`: what the org agent did *not* publish, and its weekly tally.
+pub const KIND_IO_AGENT_NOTE: u32 = 50103;
+
+/// Every registered intelligent-org kind, in Protocol order.
+///
+/// The parity script (`scripts/check-org-kinds-parity.mjs`) compares this
+/// set — read from the constants above — against the desktop and mobile
+/// mirrors, so a kind added here must land in `kinds.ts` and
+/// `nostr_models.dart` in the same change.
+pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
+    KIND_IO_DIRECTION,
+    KIND_IO_WORK_ITEM,
+    KIND_IO_PROPOSAL,
+    KIND_IO_SHAPERS,
+    KIND_IO_DRAFT_OUTCOME,
+    KIND_IO_PROFILE,
+    KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_DIRECTION_PROPOSE,
+    KIND_IO_VOTE,
+    KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_TICKET_CREATE,
+    KIND_IO_OFFER,
+    KIND_IO_ACCEPT,
+    KIND_IO_DECLINE,
+    KIND_IO_DONE,
+    KIND_IO_RELEASE,
+    KIND_IO_SET_DUE,
+    KIND_IO_DRAFT_DECIDE,
+    KIND_IO_MONEY_PROPOSE,
+    KIND_IO_MONEY_RELEASED,
+    KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE,
+    KIND_IO_HEALTH_RATE,
+    KIND_IO_REOPEN,
+    KIND_IO_SHAPER_ACCEPT,
+    KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_PROFILE_SET,
+    KIND_IO_DRAFT,
+    KIND_IO_HEALTH,
+    KIND_IO_PROGRESS,
+    KIND_IO_AGENT_NOTE,
+];
+
+/// Returns `true` for a registered intelligent-org **state** kind (`39100–39105`).
+///
+/// These are relay-signed and addressable; a client `EVENT` of one is
+/// rejected (`is_relay_only_kind`). Only registered constants match — the rest
+/// of the `39100–39149` range is reserved, not live.
+pub const fn is_intelligent_org_state_kind(kind: u32) -> bool {
+    matches!(
+        kind,
+        KIND_IO_DIRECTION
+            | KIND_IO_WORK_ITEM
+            | KIND_IO_PROPOSAL
+            | KIND_IO_SHAPERS
+            | KIND_IO_DRAFT_OUTCOME
+            | KIND_IO_PROFILE
+    )
+}
+
+/// Returns `true` for a registered intelligent-org **command** kind (`50001–50021`).
+///
+/// Includes the reserved money and join commands (`50013`, `50014`, `50016`):
+/// they route to the executor like every other command so it can reject them
+/// with the fixed `restricted:` reasons of Protocol §3.2.
+pub const fn is_intelligent_org_command_kind(kind: u32) -> bool {
+    kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET
+}
+
+/// Returns `true` for a registered intelligent-org **draft or read** kind (`50100–50103`).
+pub const fn is_intelligent_org_read_kind(kind: u32) -> bool {
+    kind >= KIND_IO_DRAFT && kind <= KIND_IO_AGENT_NOTE
+}
+
+/// Returns `true` for any registered intelligent-org kind (state, command, or read).
+///
+/// Every one of them is community-global: `handlers/ingest.rs::is_global_only_kind`
+/// consults this so a client-supplied `h` tag can never channel-scope them.
+pub const fn is_intelligent_org_kind(kind: u32) -> bool {
+    is_intelligent_org_state_kind(kind)
+        || is_intelligent_org_command_kind(kind)
+        || is_intelligent_org_read_kind(kind)
+}
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -766,6 +936,39 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIT_STATUS_CLOSED,
     KIND_GIT_STATUS_DRAFT,
     KIND_PROJECT,
+    // Intelligent organization — keep in step with `INTELLIGENT_ORG_KINDS`
+    // (`intelligent_org_kinds_are_all_registered` binds the two).
+    KIND_IO_DIRECTION,
+    KIND_IO_WORK_ITEM,
+    KIND_IO_PROPOSAL,
+    KIND_IO_SHAPERS,
+    KIND_IO_DRAFT_OUTCOME,
+    KIND_IO_PROFILE,
+    KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_DIRECTION_PROPOSE,
+    KIND_IO_VOTE,
+    KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_TICKET_CREATE,
+    KIND_IO_OFFER,
+    KIND_IO_ACCEPT,
+    KIND_IO_DECLINE,
+    KIND_IO_DONE,
+    KIND_IO_RELEASE,
+    KIND_IO_SET_DUE,
+    KIND_IO_DRAFT_DECIDE,
+    KIND_IO_MONEY_PROPOSE,
+    KIND_IO_MONEY_RELEASED,
+    KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE,
+    KIND_IO_HEALTH_RATE,
+    KIND_IO_REOPEN,
+    KIND_IO_SHAPER_ACCEPT,
+    KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_PROFILE_SET,
+    KIND_IO_DRAFT,
+    KIND_IO_HEALTH,
+    KIND_IO_PROGRESS,
+    KIND_IO_AGENT_NOTE,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -815,6 +1018,10 @@ pub const fn is_identity_archive_request_kind(kind: u32) -> bool {
 }
 
 /// Returns `true` if `kind` is a Buzz command kind that requires transactional execution.
+///
+/// Intelligent-org commands (`50001–50021`) are members: they route to the
+/// command executor, which owns their role checks and rejections
+/// (Protocol §3.2, §6.1).
 pub const fn is_command_kind(kind: u32) -> bool {
     matches!(
         kind,
@@ -825,11 +1032,14 @@ pub const fn is_command_kind(kind: u32) -> bool {
             | KIND_WORKFLOW_TRIGGER
             | KIND_APPROVAL_GRANT
             | KIND_APPROVAL_DENY
-    )
+    ) || is_intelligent_org_command_kind(kind)
 }
 
 /// Returns `true` if `kind` may only be authored by the relay.
 /// Client submission of these kinds must be rejected.
+///
+/// Intelligent-org state (`39100–39105`) is relay-signed: a client `EVENT` of
+/// one is rejected `restricted: relay-only kind` (Protocol §3.1, §6.1).
 pub const fn is_relay_only_kind(kind: u32) -> bool {
     matches!(
         kind,
@@ -839,7 +1049,7 @@ pub const fn is_relay_only_kind(kind: u32) -> bool {
             | KIND_DM_VISIBILITY
             | KIND_THREAD_SUMMARY
             | KIND_WINDOW_BOUNDS
-    )
+    ) || is_intelligent_org_state_kind(kind)
 }
 
 /// Extract the kind from a nostr Event as u32.
@@ -897,6 +1107,24 @@ const _: () = assert!(!is_ephemeral(KIND_REPORT));
 const _: () = assert!(is_moderation_command_kind(KIND_MODERATION_BAN));
 const _: () = assert!(is_moderation_command_kind(KIND_MODERATION_RESOLVE_REPORT));
 const _: () = assert!(!is_moderation_command_kind(KIND_REPORT));
+// Intelligent organization: state is parameterized replaceable (`d`-keyed,
+// relay-signed); commands and reads are regular stored events.
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_DIRECTION)); // 39100
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_WORK_ITEM)); // 39101
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_PROPOSAL)); // 39102
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_SHAPERS)); // 39103
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_DRAFT_OUTCOME)); // 39104
+const _: () = assert!(is_parameterized_replaceable(KIND_IO_PROFILE)); // 39105
+const _: () =
+    assert!(KIND_IO_DIRECTION >= IO_STATE_KIND_MIN && KIND_IO_PROFILE <= IO_STATE_KIND_MAX);
+const _: () = assert!(
+    KIND_IO_SHAPERS_PROPOSE > IO_COMMAND_KIND_MIN && KIND_IO_PROFILE_SET <= IO_COMMAND_KIND_MAX
+);
+const _: () = assert!(KIND_IO_DRAFT >= IO_READ_KIND_MIN && KIND_IO_AGENT_NOTE <= IO_READ_KIND_MAX);
+const _: () = assert!(!is_ephemeral(KIND_IO_PROFILE_SET) && !is_replaceable(KIND_IO_PROFILE_SET));
+const _: () = assert!(!is_parameterized_replaceable(KIND_IO_PROFILE_SET));
+const _: () = assert!(!is_parameterized_replaceable(KIND_IO_AGENT_NOTE));
+const _: () = assert!(KIND_IO_AGENT_NOTE <= u16::MAX as u32);
 
 #[cfg(test)]
 mod tests {
@@ -933,6 +1161,106 @@ mod tests {
                 !(is_replaceable(kind) && is_parameterized_replaceable(kind)),
                 "kind {kind} is both replaceable and parameterized replaceable"
             );
+        }
+    }
+
+    // ── Intelligent organization (Protocol §3, Development plan R-1) ─────
+
+    const IO_STATE: [u32; 6] = [39100, 39101, 39102, 39103, 39104, 39105];
+    const IO_COMMANDS: [u32; 21] = [
+        50001, 50002, 50003, 50004, 50005, 50006, 50007, 50008, 50009, 50010, 50011, 50012, 50013,
+        50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021,
+    ];
+    const IO_READS: [u32; 4] = [50100, 50101, 50102, 50103];
+
+    #[test]
+    fn intelligent_org_kinds_are_all_registered() {
+        // The Protocol's integer list, spelled out so a renamed or renumbered
+        // constant cannot silently satisfy this test.
+        let expected: Vec<u32> = IO_STATE
+            .iter()
+            .chain(IO_COMMANDS.iter())
+            .chain(IO_READS.iter())
+            .copied()
+            .collect();
+        assert_eq!(INTELLIGENT_ORG_KINDS, expected.as_slice());
+        for kind in expected {
+            assert!(
+                ALL_KINDS.contains(&kind),
+                "kind {kind} missing from ALL_KINDS"
+            );
+            assert!(is_intelligent_org_kind(kind), "kind {kind} not an IO kind");
+        }
+    }
+
+    #[test]
+    fn intelligent_org_state_kinds_are_relay_only_and_addressable() {
+        for kind in IO_STATE {
+            assert!(is_intelligent_org_state_kind(kind), "{kind}");
+            assert!(is_relay_only_kind(kind), "{kind} must reject client EVENT");
+            assert!(is_parameterized_replaceable(kind), "{kind} must be d-keyed");
+            assert!(!is_command_kind(kind), "{kind} is state, not a command");
+            assert!(!is_intelligent_org_read_kind(kind), "{kind}");
+        }
+        // The rest of the state range is reserved, not registered.
+        for kind in [39106, 39149, 39099, 39150] {
+            assert!(!is_intelligent_org_state_kind(kind), "{kind}");
+            assert!(!is_relay_only_kind(kind), "{kind}");
+        }
+    }
+
+    #[test]
+    fn intelligent_org_commands_route_to_the_executor() {
+        for kind in IO_COMMANDS {
+            assert!(is_intelligent_org_command_kind(kind), "{kind}");
+            assert!(is_command_kind(kind), "{kind} must route to the executor");
+            assert!(!is_relay_only_kind(kind), "{kind} is person-signed");
+            assert!(
+                !is_parameterized_replaceable(kind),
+                "{kind} is a regular event"
+            );
+        }
+        // 50000 is not a kind; 50022+ is reserved.
+        for kind in [50000, 50022, 50049, 50050] {
+            assert!(!is_intelligent_org_command_kind(kind), "{kind}");
+            assert!(!is_command_kind(kind), "{kind}");
+        }
+        // The reserved money/join commands still route so the executor can
+        // reject them with the fixed reasons (Protocol §3.2).
+        assert!(is_command_kind(KIND_IO_MONEY_PROPOSE));
+        assert!(is_command_kind(KIND_IO_MONEY_RELEASED));
+        assert!(is_command_kind(KIND_IO_JOIN_PROPOSE));
+    }
+
+    #[test]
+    fn intelligent_org_reads_are_plain_stored_events() {
+        for kind in IO_READS {
+            assert!(is_intelligent_org_read_kind(kind), "{kind}");
+            assert!(!is_command_kind(kind), "{kind} never changes state");
+            assert!(
+                !is_relay_only_kind(kind),
+                "{kind} is agent- or person-signed"
+            );
+            assert!(!is_ephemeral(kind) && !is_replaceable(kind), "{kind}");
+        }
+        for kind in [50099, 50104, 50149, 50150] {
+            assert!(!is_intelligent_org_read_kind(kind), "{kind}");
+        }
+    }
+
+    #[test]
+    fn intelligent_org_families_are_disjoint() {
+        for kind in 0..=65535u32 {
+            let families = [
+                is_intelligent_org_state_kind(kind),
+                is_intelligent_org_command_kind(kind),
+                is_intelligent_org_read_kind(kind),
+            ]
+            .iter()
+            .filter(|f| **f)
+            .count();
+            assert!(families <= 1, "kind {kind} is in {families} IO families");
+            assert_eq!(is_intelligent_org_kind(kind), families == 1, "{kind}");
         }
     }
 

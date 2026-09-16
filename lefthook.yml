@@ -91,6 +91,10 @@ pre-push:
       # The ratchet computes its own merge-base diff, so path filtering here
       # would only duplicate policy and create another place for coverage drift.
       run: just file-size-check
+    org-kinds-check:
+      files: git diff --name-only origin/main...HEAD
+      glob: ["crates/buzz-core/src/kind.rs", "desktop/src/shared/constants/kinds.ts", "mobile/lib/shared/relay/nostr_models.dart", "docs/intelligent-org/**", "desktop/src/features/org/**", "crates/buzz-cli/**", "scripts/check-org-kinds-parity*.mjs"]
+      run: just org-kinds-check
     rust-tests:
       files: git diff --name-only origin/main...HEAD
       glob: ["crates/**", "migrations/**", "schema/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "deny.toml", "scripts/run-tests.sh", "Justfile"]

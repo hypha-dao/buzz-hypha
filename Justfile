@@ -93,7 +93,13 @@ build-release:
     cargo build --workspace --release
 
 # Run repo lint, formatting, and repository policy checks
-check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check
+check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check org-kinds-check
+
+# Intelligent-org kind parity across kind.rs / kinds.ts / nostr_models.dart,
+# plus the retired-tag-name guard over org-facing sources (Development plan R-1).
+org-kinds-check:
+    node --test scripts/check-org-kinds-parity.test.mjs
+    node scripts/check-org-kinds-parity.mjs
 
 # Validate the trusted security-review workflow support and renderer contract.
 security-review-check:
