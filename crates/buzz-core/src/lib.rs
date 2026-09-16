@@ -20,6 +20,9 @@ pub mod event;
 pub mod filter;
 /// Git permission types — ref patterns, protection rules, policy evaluation.
 pub mod git_perms;
+/// Intelligent organization — content schemas for the `39100–39105`,
+/// `50001–50021`, and `50100–50103` event kinds (Protocol §4).
+pub mod intelligent_org;
 /// Shared invite-link contract constants.
 pub mod invite;
 /// Buzz kind number registry — custom event type constants.
