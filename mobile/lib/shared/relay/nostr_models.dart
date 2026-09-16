@@ -48,6 +48,45 @@ abstract final class EventKind {
   static const huddleParticipantLeft = 48102;
   static const huddleEnded = 48103;
 
+  // Intelligent organization — mirror of buzz-core's KIND_IO_* constants
+  // (docs/intelligent-org/architecture/intelligent-org-protocol.md §3).
+  // `scripts/check-org-kinds-parity.mjs` fails CI if this block drifts from
+  // `crates/buzz-core/src/kind.rs`. Nothing renders these on mobile yet.
+  // State (relay-signed, addressable; `d` = object id).
+  static const ioDirection = 39100;
+  static const ioWorkItem = 39101;
+  static const ioProposal = 39102;
+  static const ioShapers = 39103;
+  static const ioDraftOutcome = 39104;
+  static const ioProfile = 39105;
+  // Commands (person-signed, executed transactionally by the relay).
+  static const ioShapersPropose = 50001;
+  static const ioDirectionPropose = 50002;
+  static const ioVote = 50003;
+  static const ioProjectPropose = 50004;
+  static const ioTicketCreate = 50005;
+  static const ioOffer = 50006;
+  static const ioAccept = 50007;
+  static const ioDecline = 50008;
+  static const ioDone = 50009;
+  static const ioRelease = 50010;
+  static const ioSetDue = 50011;
+  static const ioDraftDecide = 50012;
+  static const ioMoneyPropose = 50013; // reserved — rejected by the relay today
+  static const ioMoneyReleased = 50014; // reserved — treasury bridge only
+  static const ioDriPropose = 50015;
+  static const ioJoinPropose = 50016; // reserved — rejected by the relay today
+  static const ioHealthRate = 50017;
+  static const ioReopen = 50018;
+  static const ioShaperAccept = 50019;
+  static const ioShaperStepDown = 50020;
+  static const ioProfileSet = 50021;
+  // Drafts and reads (agent- or person-signed; never change state).
+  static const ioDraft = 50100;
+  static const ioHealth = 50101;
+  static const ioProgress = 50102;
+  static const ioAgentNote = 50103;
+
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [
     streamMessage, // 9

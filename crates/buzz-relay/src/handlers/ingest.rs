@@ -701,6 +701,11 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // NIP-PL leases are author-owned, addressable global state.
             | super::push_lease::KIND_PUSH_LEASE
     )
+    // Intelligent organization: state (39100–39105), commands (50001–50021),
+    // and drafts/reads (50100–50103) are all community-global — the
+    // community is the org and the relay host is the boundary. A stray `h`
+    // tag must never channel-scope them (Protocol §1, §3.4).
+    || buzz_core::kind::is_intelligent_org_kind(kind)
 }
 
 /// Kinds that require an `h` tag for channel scoping.
@@ -3839,6 +3844,23 @@ mod postgres_tests {
                 assert_eq!(message, "invalid: unknown executor key")
             }
             _ => panic!("validation failure did not become a protocol rejection"),
+        }
+    }
+
+    #[test]
+    fn intelligent_org_kinds_are_global_only() {
+        // Protocol §1: all three IO families are community-global. A stray
+        // `h` tag must never channel-scope them, and none requires one.
+        for &kind in buzz_core::kind::INTELLIGENT_ORG_KINDS {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h tag"
+            );
+        }
+        // Neighbours outside the registered set are untouched.
+        for kind in [39099, 39106, 50000, 50022, 50099, 50104] {
+            assert!(!is_global_only_kind(kind), "kind {kind} is not registered");
         }
     }
 
