@@ -183,7 +183,7 @@ async fn acquire_channel_membership_lock(
     community_id: CommunityId,
     channel_id: Uuid,
 ) -> Result<()> {
-    acquire_channel_membership_lock_on(&mut **tx, community_id, channel_id).await
+    acquire_channel_membership_lock_on(tx, community_id, channel_id).await
 }
 
 /// [`acquire_channel_membership_lock`] on a caller-owned connection that is

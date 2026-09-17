@@ -60,7 +60,7 @@ pub enum Projection {
     /// §4.4 marker tags; `receipt` is the opening command.
     Proposal {
         /// Canonical §4.4 content.
-        proposal: Proposal,
+        proposal: Box<Proposal>,
         /// The named person / payee / seat, when the kind has one.
         subject: Option<String>,
         /// The work item it is about, when it is about one.
@@ -211,7 +211,7 @@ pub async fn apply(
     for projection in projections {
         let draft = projection.draft()?;
         let head = store::state_head_created_at(
-            &mut **tx,
+            tx,
             ctx.community,
             draft.kind,
             &relay_pubkey,
@@ -225,11 +225,11 @@ pub async fn apply(
 
         match projection {
             Projection::Shapers(shapers) => {
-                let changes = write_shapers(&mut **tx, ctx, shapers, &event_id, created_at).await?;
+                let changes = write_shapers(tx, ctx, shapers, &event_id, created_at).await?;
                 applied.roster.extend(changes);
             }
             Projection::Proposal { proposal, .. } => {
-                write_proposal(&mut **tx, ctx, proposal, &event_id, created_at).await?;
+                write_proposal(tx, ctx, proposal, &event_id, created_at).await?;
             }
         }
 
@@ -254,7 +254,7 @@ pub async fn apply(
     }
 
     for entry in ledger {
-        store::insert_ledger(&mut **tx, ctx.community, entry)
+        store::insert_ledger(tx, ctx.community, entry)
             .await
             .map_err(|e| internal("write io_ledger", e))?;
     }

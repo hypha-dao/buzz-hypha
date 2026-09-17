@@ -77,7 +77,7 @@ async fn current_shapers(
     tx: &mut Transaction<'static, Postgres>,
     cmd: &Command<'_>,
 ) -> Result<Option<Shapers>, IngestError> {
-    Ok(store::get_shapers(&mut **tx, cmd.tenant.community())
+    Ok(store::get_shapers(tx, cmd.tenant.community())
         .await
         .map_err(|e| internal("read io_shapers", e))?
         .map(|row| row.content))
@@ -277,7 +277,7 @@ async fn bootstrap(
     };
     let projections = [
         Projection::Proposal {
-            proposal,
+            proposal: Box::new(proposal),
             subject: Some(cmd.actor_hex.clone()),
             item: None,
             receipt,
