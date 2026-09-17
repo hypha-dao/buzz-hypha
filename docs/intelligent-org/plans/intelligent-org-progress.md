@@ -127,6 +127,17 @@ absorb an item into an unrelated slice.
   agent only in `#shapers`. R-8 should add the backfill to
   `shapers::bootstrap` inside the same transaction, not as a post-commit
   sweep.
+- **`buzz-db runtime::postgres_tests::writer_pool_rejects_non_read_committed_database_default`
+  hangs forever** on a native Postgres 16 (no Docker) host — `Db::new` never
+  returns the expected `requires READ COMMITTED` / `pool timed out` error
+  after the scratch database's default isolation is set to `repeatable
+  read`. Reproduced on clean `main` (`b4924027`) and on R-3; not org work.
+  The `postgres-ci` nextest profile has `slow-timeout = "60s"` but no
+  `terminate-after`, so the whole lane waits on it. Until fixed, run the
+  lane with `-E 'not test(/writer_pool_rejects_non_read_committed/)'` or
+  kill that one test process; the other 401 tests pass (R-3 run). Fix
+  candidates: a `terminate-after` on the profile, and a bounded connect in
+  the test.
 - **The relay refuses to start without MinIO/S3** — the git object-store
   conformance probe runs at boot and is fatal. `BUZZ_GIT_CONFORMANCE_PROBE=false`
   skips it for local org work that never touches media (recipe below).
@@ -161,9 +172,20 @@ scripts/postgres-test-run.sh               # whole lane, ~1 min after build
 scripts/postgres-test-run.sh -p buzz-db --lib -E 'test(/intelligent_org/)'   # one slice
 ```
 
+`cargo install cargo-nextest --locked` puts the binary in Hermit's
+`CARGO_HOME` (`.hermit/rust/bin`, already on `PATH` once activated). Native
+`createdb`/`dropdb` from a host Postgres install satisfy the client-tool
+requirement. R-3 ran the whole lane this way (401/402; see the
+`writer_pool_rejects…` follow-up for the one hang) and, scoped:
+
+```bash
+scripts/postgres-test-run.sh -p buzz-db -p buzz-relay --lib \
+  -E 'test(/intelligent_org|relay_rooms|channel_members|replaceable/)'   # 50 tests
+```
+
 Without nextest, the same tests run under plain `cargo test` with
-`--include-ignored` (they carry `#[ignore = "requires Postgres"]`); this is
-what R-3 used:
+`--include-ignored` (they carry `#[ignore = "requires Postgres"]`), against
+the shared dev database rather than a per-test copy:
 
 ```bash
 export DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz
