@@ -1058,6 +1058,33 @@ fn filter_to_query_params(
         (None, None)
     };
 
+    // Generic single-letter tag pushdown (Development plan R-2, Codebase
+    // verification V2). Every tag the dedicated columns above did not take —
+    // `#t`, `#n`, `#i`, `#u`, `#s`, `#k`, `#a`, multi-value `#p`, `#d` on
+    // non-NIP-33 filters — is rendered as JSONB containment before `LIMIT`, so
+    // a filter such as `{kinds:[50100], "#n":[me]}` finds the one matching
+    // draft on a page of hundreds instead of paging past it. `#h` is the
+    // channel scope (applied by the caller); `#e` and single-value `#p` keep
+    // their indexed columns. Containment is a superset match, so
+    // `filters_match` stays as the exact post-check on every read path.
+    let h_tag = nostr::SingleLetterTag::lowercase(nostr::Alphabet::H);
+    let custom_tags: Vec<(String, Vec<String>)> = filter
+        .generic_tags
+        .iter()
+        .filter(|(key, _)| {
+            **key != h_tag
+                && **key != e_tag_key
+                && !(**key == p_tag && p_tag_hex.is_some())
+                && !(**key == d_tag_key && (d_tag.is_some() || d_tags.is_some()))
+        })
+        .map(|(key, values)| {
+            (
+                key.to_string(),
+                values.iter().map(ToString::to_string).collect(),
+            )
+        })
+        .collect();
+
     EventQuery {
         channel_id,
         kinds,
@@ -1071,6 +1098,7 @@ fn filter_to_query_params(
         authors,
         ids,
         e_tags,
+        custom_tags,
         ..EventQuery::for_community(community)
     }
 }
@@ -2541,5 +2569,206 @@ mod tests {
         ));
         // No #p tag — fallback required.
         assert!(!result_gated_count_safe_for_pushdown(&f, &owner));
+    }
+}
+
+#[cfg(test)]
+mod custom_tag_pushdown_tests {
+    use super::*;
+
+    fn community() -> buzz_core::tenant::CommunityId {
+        buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::nil())
+    }
+
+    fn pushed(query: &EventQuery, name: &str) -> Option<Vec<String>> {
+        query
+            .custom_tags
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, values)| values.clone())
+    }
+
+    #[test]
+    fn every_single_letter_tag_without_a_dedicated_column_is_pushed() {
+        let me = "a".repeat(64);
+        let filter: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [50100, 39101],
+            "#n": [me],
+            "#t": ["ticket", "project"],
+            "#i": ["item-1"],
+            "#s": ["open"],
+            "#k": ["rust"],
+            "#a": ["39105:relay:pk"],
+        }))
+        .unwrap();
+        let query = filter_to_query_params(&filter, None, community());
+
+        assert_eq!(pushed(&query, "n"), Some(vec![me.clone()]));
+        assert_eq!(
+            pushed(&query, "t"),
+            Some(vec!["project".to_string(), "ticket".to_string()])
+        );
+        assert_eq!(pushed(&query, "i"), Some(vec!["item-1".to_string()]));
+        assert_eq!(pushed(&query, "s"), Some(vec!["open".to_string()]));
+        assert_eq!(pushed(&query, "k"), Some(vec!["rust".to_string()]));
+        assert_eq!(
+            pushed(&query, "a"),
+            Some(vec!["39105:relay:pk".to_string()])
+        );
+        assert_eq!(query.custom_tags.len(), 6);
+    }
+
+    #[test]
+    fn tags_with_dedicated_columns_are_not_pushed_twice() {
+        let channel = uuid::Uuid::new_v4();
+        let single_p = "b".repeat(64);
+        let filter: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [39101],
+            "#h": [channel.to_string()],
+            "#e": ["c".repeat(64)],
+            "#p": [single_p],
+            "#d": ["item-1"],
+        }))
+        .unwrap();
+        let query = filter_to_query_params(&filter, Some(channel), community());
+
+        assert!(
+            query.p_tag_hex.is_some(),
+            "single #p keeps the mentions join"
+        );
+        assert!(query.e_tags.is_some(), "#e keeps its containment column");
+        assert!(query.d_tag.is_some(), "NIP-33 #d keeps the d_tag column");
+        assert!(
+            query.custom_tags.is_empty(),
+            "nothing left for the generic path: {:?}",
+            query.custom_tags
+        );
+    }
+
+    #[test]
+    fn multi_value_p_and_non_nip33_d_fall_through_to_the_generic_path() {
+        let filter: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [50100],
+            "#p": ["d".repeat(64), "e".repeat(64)],
+            "#d": ["not-a-nip33-kind"],
+        }))
+        .unwrap();
+        let query = filter_to_query_params(&filter, None, community());
+
+        assert!(query.p_tag_hex.is_none());
+        assert_eq!(pushed(&query, "p").map(|v| v.len()), Some(2));
+        assert!(query.d_tag.is_none() && query.d_tags.is_none());
+        assert_eq!(
+            pushed(&query, "d"),
+            Some(vec!["not-a-nip33-kind".to_string()])
+        );
+    }
+}
+
+#[cfg(test)]
+mod postgres_tests {
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+    async fn pushdown_test_context() -> (buzz_db::Db, buzz_core::tenant::CommunityId) {
+        let url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1 -- local test-only credentials
+        let pool = sqlx::PgPool::connect(&url)
+            .await
+            .expect("connect tag pushdown test database");
+        let db = buzz_db::Db::from_pool(pool);
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            db.migrate()
+                .await
+                .expect("migrate tag pushdown test database");
+        }
+        let host = format!("io-pushdown-{}.example", uuid::Uuid::new_v4().simple());
+        let community = db
+            .ensure_configured_community(&host)
+            .await
+            .expect("create tag pushdown test community")
+            .id;
+        (db, community)
+    }
+
+    /// Development plan R-2 "Proves": a REQ `{kinds:[50100], "#n":[me]}` over a
+    /// page of 600 drafts where only the last (oldest) one needs `me` returns
+    /// it. Bound to the production seam — `filter_to_query_params` feeding
+    /// `query_events`, then `filters_match` — not to a test helper. The control
+    /// query clears `custom_tags` and must miss, which is exactly the pre-R-2
+    /// behaviour (Codebase verification V2): the page filled with 500 newer
+    /// drafts for other people and the match fell past `LIMIT`.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn needs_me_draft_is_found_past_the_page_limit() {
+        let (db, community) = pushdown_test_context().await;
+        let agent = Keys::generate();
+        let me = Keys::generate().public_key().to_hex();
+        let someone_else = Keys::generate().public_key().to_hex();
+        let base = Timestamp::now().as_secs() - 10_000;
+
+        let draft_kind = Kind::Custom(buzz_core::kind::KIND_IO_DRAFT as u16);
+        let mut mine: Option<nostr::EventId> = None;
+        for i in 0..600u64 {
+            let needs = if i == 0 {
+                me.as_str()
+            } else {
+                someone_else.as_str()
+            };
+            let event = EventBuilder::new(draft_kind, "{}")
+                .tags([
+                    Tag::parse(["n", needs]).expect("n tag"),
+                    Tag::parse(["t", "ticket"]).expect("t tag"),
+                    Tag::parse(["gap", &format!("gap-{i}")]).expect("gap tag"),
+                ])
+                .custom_created_at(Timestamp::from_secs(base + i))
+                .sign_with_keys(&agent)
+                .expect("sign draft");
+            if i == 0 {
+                mine = Some(event.id);
+            }
+            db.insert_event(community, &event, None)
+                .await
+                .expect("store draft");
+        }
+        let mine = mine.expect("the oldest draft");
+
+        let filter: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [buzz_core::kind::KIND_IO_DRAFT],
+            "#n": [me],
+            "limit": 500,
+        }))
+        .expect("door filter");
+
+        let query = filter_to_query_params(&filter, None, community);
+        let page = db.query_events(&query).await.expect("query drafts");
+        let matched: Vec<_> = page
+            .iter()
+            .filter(|stored| filters_match(std::slice::from_ref(&filter), stored))
+            .collect();
+        assert_eq!(
+            matched.len(),
+            1,
+            "the pushdown must surface exactly the one draft that needs me"
+        );
+        assert_eq!(matched[0].event.id, mine);
+
+        // Control: the same query without the generic pushdown pages through 500
+        // newer drafts for someone else and never reaches mine.
+        let mut without_pushdown = query.clone();
+        without_pushdown.custom_tags.clear();
+        let page = db
+            .query_events(&without_pushdown)
+            .await
+            .expect("query drafts without pushdown");
+        assert_eq!(page.len(), 500);
+        assert!(
+            !page
+                .iter()
+                .any(|stored| filters_match(std::slice::from_ref(&filter), stored)),
+            "without the pushdown the needs-me draft falls past LIMIT — the test would not \
+             be falsifiable otherwise"
+        );
     }
 }
