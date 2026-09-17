@@ -30,9 +30,13 @@ and runtime evidence answer different questions.
 `hypha-dao/buzz-hypha` is Block's Buzz plus the **intelligent organization**
 feature set. Before working on anything under that heading, read
 [docs/intelligent-org/README.md](docs/intelligent-org/README.md) — it orders the
-product, architecture, and plan documents. A clickable prototype of the target
-UI is in [prototypes/org-preview](prototypes/org-preview/README.md); it is a
-standalone Next.js app, deliberately outside the pnpm workspace.
+product, architecture, and plan documents. Then read
+[docs/intelligent-org/plans/intelligent-org-progress.md](docs/intelligent-org/plans/intelligent-org-progress.md)
+— which slices of the development plan are merged, the follow-ups they left,
+and how to run the checks on this fork; every slice PR updates it. A clickable
+prototype of the target UI is in
+[prototypes/org-preview](prototypes/org-preview/README.md); it is a standalone
+Next.js app, deliberately outside the pnpm workspace.
 
 Three fork-level decisions that touch existing Buzz surfaces: the **org agent is
 hosted** by the relay operator by default (one key per community, replaceable
