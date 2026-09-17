@@ -81,6 +81,21 @@ pub struct EventQuery {
     /// Restrict results to events with an exact custom tag pair.
     /// Uses JSONB containment against `tags` before SQL `LIMIT`.
     pub custom_tag: Option<(String, String)>,
+    /// Generic single-letter tag pushdown (Development plan R-2, Codebase
+    /// verification V2): one entry per filter tag, `(name, values)`, rendered
+    /// as `AND (tags @> [[name,v1]] OR tags @> [[name,v2]] …)` before SQL
+    /// `LIMIT` on the existing `idx_events_tags_gin` (migration 0004,
+    /// jsonb_path_ops) — no new index.
+    ///
+    /// Containment is a *superset* match: `[["n","x"]]` is contained in
+    /// `["n","x"]` and also in `["n","y","x"]` (array containment ignores
+    /// position). It can therefore never drop a true match — a tag whose second
+    /// element is `x` always contains `[name, x]` — but may admit a row whose
+    /// value sits elsewhere in the tag; `filters_match` remains the exact
+    /// second check after the page. Callers fill this for every tag that is
+    /// not already pushed by a dedicated column (`#e`, single-value `#p`,
+    /// NIP-33 `#d`, `#h`). An entry with an empty value list matches nothing.
+    pub custom_tags: Vec<(String, Vec<String>)>,
     /// Restrict results to events in any of these channels. By default,
     /// channel-less global events are retained so this can enforce a viewer's
     /// accessible-channel scope without hiding global events. Set
@@ -140,6 +155,7 @@ impl EventQuery {
             ids: None,
             e_tags: None,
             custom_tag: None,
+            custom_tags: Vec::new(),
             channel_ids: None,
             channel_ids_include_global: true,
             max_limit: None,
@@ -486,6 +502,9 @@ pub(crate) async fn query_events_on(
     if q.e_tags.as_deref().is_some_and(|e| e.is_empty()) {
         return Ok(vec![]);
     }
+    if q.custom_tags.iter().any(|(_, values)| values.is_empty()) {
+        return Ok(vec![]);
+    }
 
     let clamp = q.max_limit.unwrap_or(DEFAULT_MAX_PAGE_LIMIT);
     let limit_val = q.limit.unwrap_or(100).min(clamp);
@@ -618,6 +637,8 @@ pub(crate) async fn query_events_on(
             .push_bind(containment);
     }
 
+    push_custom_tags(&mut qb, col_prefix, &q.custom_tags);
+
     if let Some(s) = q.since {
         qb.push(format!(" AND {col_prefix}created_at >= "))
             .push_bind(s);
@@ -705,6 +726,33 @@ pub(crate) async fn query_events_on(
     Ok(out)
 }
 
+/// Render [`EventQuery::custom_tags`]: one `AND (…)` group per tag, each an
+/// `OR` of JSONB containment probes served by `idx_events_tags_gin`.
+///
+/// Callers have already returned early for an entry with no values, so every
+/// group rendered here has at least one probe.
+fn push_custom_tags(
+    qb: &mut QueryBuilder<sqlx::Postgres>,
+    col_prefix: &str,
+    custom_tags: &[(String, Vec<String>)],
+) {
+    for (name, values) in custom_tags {
+        if values.is_empty() {
+            continue;
+        }
+        qb.push(" AND (");
+        for (i, value) in values.iter().enumerate() {
+            if i > 0 {
+                qb.push(" OR ");
+            }
+            let containment = serde_json::json!([[name, value]]);
+            qb.push(format!("{col_prefix}tags @> "));
+            qb.push_bind(containment);
+        }
+        qb.push(")");
+    }
+}
+
 pub(crate) fn row_to_stored_event(row: sqlx::postgres::PgRow) -> Result<Option<StoredEvent>> {
     let id_bytes: Vec<u8> = row.try_get("id")?;
     let pubkey_bytes: Vec<u8> = row.try_get("pubkey")?;
@@ -775,6 +823,9 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
         return Ok(0);
     }
     if q.e_tags.as_deref().is_some_and(|e| e.is_empty()) {
+        return Ok(0);
+    }
+    if q.custom_tags.iter().any(|(_, values)| values.is_empty()) {
         return Ok(0);
     }
 
@@ -880,6 +931,8 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
             qb.push(")");
         }
     }
+
+    push_custom_tags(&mut qb, col_prefix, &q.custom_tags);
 
     if let Some(s) = q.since {
         qb.push(format!(" AND {col_prefix}created_at >= "))
