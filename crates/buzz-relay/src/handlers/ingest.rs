@@ -542,6 +542,11 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
+        // Intelligent organization commands (50001–50021): person-signed,
+        // community-global. Scope proves the transport may submit writes;
+        // the §3.2 role checks live in `handlers/intelligent_org`. The
+        // agent-facing reads (50100–50103) stay unknown until R-7 ingests them.
+        k if buzz_core::kind::is_intelligent_org_command_kind(k) => Ok(Scope::MessagesWrite),
         _ => Err("restricted: unknown event kind"),
     }
 }

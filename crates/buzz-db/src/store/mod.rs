@@ -44,6 +44,8 @@ pub mod relay_invite;
 pub mod relay_members;
 /// Deployment-global relay operator/moderator roster persistence.
 pub mod relay_operators;
+/// Relay-managed rooms: transaction-scoped channel and roster writes.
+pub mod relay_rooms;
 /// Event-reminder delivery query, claim, and release persistence.
 pub mod reminder;
 /// Replaceable-event persistence and coordinate locking.

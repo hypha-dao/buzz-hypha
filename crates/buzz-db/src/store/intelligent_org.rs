@@ -88,6 +88,57 @@ fn content<T: DeserializeOwned>(row: &sqlx::postgres::PgRow, column: &str) -> Re
     Ok(serde_json::from_value(value)?)
 }
 
+// ── Executor serialization ────────────────────────────────────────────────────
+
+const IO_EXECUTOR_LOCK_NAMESPACE: &str = "buzz_io_executor:";
+
+/// Take the community's intelligent-org executor lock for the rest of the
+/// caller's transaction (`pg_advisory_xact_lock`).
+///
+/// Every command that reads a projection and then writes it — bootstrap,
+/// a seat accept, a step-down, a vote — takes this first, so two commands on
+/// the same community serialize and the second sees the first's committed
+/// state instead of a stale read (Protocol §6.1: one write path).
+pub async fn lock_executor(conn: &mut PgConnection, community_id: CommunityId) -> Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!(
+            "{IO_EXECUTOR_LOCK_NAMESPACE}{}",
+            community_id.as_uuid()
+        ))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// `created_at` (unix seconds) of the live head of a relay-signed state
+/// coordinate — `(kind, relay pubkey, d tag)` — or `None` when never written.
+///
+/// The executor emits every new head strictly after the previous one so
+/// NIP-33 ordering never drops a same-second rewrite on a random id tiebreak.
+pub async fn state_head_created_at(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    kind: u32,
+    relay_pubkey: &[u8],
+    d_tag: &str,
+) -> Result<Option<u64>> {
+    let kind = i32::try_from(kind)
+        .map_err(|_| DbError::InvalidData(format!("state kind {kind} overflows i32")))?;
+    let value: Option<DateTime<Utc>> = sqlx::query_scalar(
+        "SELECT created_at FROM events \
+         WHERE community_id = $1 AND kind = $2 AND pubkey = $3 AND d_tag = $4 \
+           AND deleted_at IS NULL \
+         ORDER BY created_at DESC, id ASC LIMIT 1",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind)
+    .bind(relay_pubkey)
+    .bind(d_tag)
+    .fetch_optional(conn)
+    .await?;
+    Ok(value.map(|t| t.timestamp().unsigned_abs()))
+}
+
 // ── io_shapers (kind:39103) ───────────────────────────────────────────────────
 
 /// The community's Shapers row: the latest `39103` and its event id.
