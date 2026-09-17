@@ -702,7 +702,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 44);
+        assert_eq!(migrations.len(), 45);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -1819,7 +1819,13 @@ mod postgres_tests {
                 "schema.sql is missing operator-global registry row {row:?}"
             );
         }
-        let mut expected_fences = migration.fence_attachments.clone();
+        // Every fence a migration attaches (0029's bootstrap set plus each later
+        // scoped table, e.g. 0045's `io_*` projections) must be declared by
+        // schema.sql too, so the desired-state path fences the same relations.
+        let mut expected_fences = MIGRATOR
+            .iter()
+            .flat_map(|migration| surface(migration.sql.as_ref()).fence_attachments)
+            .collect::<BTreeSet<_>>();
         expected_fences.remove("product_feedback");
         expected_fences.remove("rate_limit_violations");
         assert_eq!(
@@ -2136,158 +2142,290 @@ mod postgres_tests {
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn admin_schema_parity_between_desired_state_and_migrations() {
-        use sqlx::AssertSqlSafe;
-
-        async fn columns(
-            pool: &PgPool,
-            table: &str,
-        ) -> Vec<(
-            String,
-            String,
-            String,
-            Option<String>,
-            String,
-            Option<String>,
-        )> {
-            sqlx::query_as(
-                "SELECT column_name, data_type, is_nullable, column_default, \
-                 is_identity, identity_generation \
-                 FROM information_schema.columns \
-                 WHERE table_schema = 'public' AND table_name = $1 \
-                 ORDER BY column_name",
-            )
-            .bind(table)
-            .fetch_all(pool)
-            .await
-            .expect("read column definitions")
-        }
-
-        // Index name + rendered definition + per-key sort/null options. indoption
-        // is a int2vector rendered as text (e.g. `{2,0}` = NULLS FIRST ASC on key
-        // 0, plain ASC on key 1) so ordering divergences that `indexdef` text may
-        // still show but `pgschema` cannot reproduce are compared structurally.
-        async fn index_shapes(pool: &PgPool, table: &str) -> Vec<(String, String, String)> {
-            sqlx::query_as(
-                "SELECT c.relname, pg_get_indexdef(i.indexrelid), i.indoption::int2[]::text \
-                 FROM pg_class c \
-                 JOIN pg_index i ON i.indexrelid = c.oid \
-                 JOIN pg_class t ON t.oid = i.indrelid \
-                 JOIN pg_namespace n ON n.oid = t.relnamespace \
-                 WHERE n.nspname = 'public' AND t.relname = $1 \
-                 ORDER BY c.relname",
-            )
-            .bind(table)
-            .fetch_all(pool)
-            .await
-            .expect("read index shapes")
-        }
-
-        let base_url = std::env::var("BUZZ_TEST_DATABASE_URL")
-            .or_else(|_| std::env::var("DATABASE_URL"))
-            .unwrap_or_else(|_| TEST_DB_URL.to_owned());
-        let conn = parse_pg_url(&base_url);
-        let admin = PgPool::connect(&base_url)
-            .await
-            .expect("connect admin database");
-        let (base_prefix, _) = base_url.rsplit_once('/').expect("database url has a path");
-
-        let desired_db = format!("buzz_admin_desired_{}", uuid::Uuid::new_v4().simple());
-        let migrated_db = format!("buzz_admin_migrated_{}", uuid::Uuid::new_v4().simple());
-        sqlx::query(AssertSqlSafe(format!("CREATE DATABASE {desired_db}")))
-            .execute(&admin)
-            .await
-            .expect("create desired-state probe database");
-        sqlx::query(AssertSqlSafe(format!("CREATE DATABASE {migrated_db}")))
-            .execute(&admin)
-            .await
-            .expect("create migrated probe database");
-
-        // Bootstrap the desired-state probe through the real pgschema binary, the
-        // same invocation the test-relay launchers use. The freshly-created probe
-        // db doubles as pgschema's plan database (--plan-*), which avoids the
-        // embedded-Postgres download and matches start-relay-for-tests.sh.
-        let pgschema = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bin/pgschema");
-        let schema_file =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schema/schema.sql");
-        let port = conn.port.to_string();
-        let apply = std::process::Command::new(&pgschema)
-            .args([
-                "apply",
-                "--auto-approve",
-                "--file",
-                schema_file.to_str().expect("schema path utf-8"),
-                "--host",
-                &conn.host,
-                "--port",
-                &port,
-                "--user",
-                &conn.user,
-                "--password",
-                &conn.password,
-                "--db",
-                &desired_db,
-                "--plan-host",
-                &conn.host,
-                "--plan-port",
-                &port,
-                "--plan-user",
-                &conn.user,
-                "--plan-password",
-                &conn.password,
-                "--plan-db",
-                &desired_db,
-            ])
-            .output()
-            .expect("run bin/pgschema apply (hermit env required)");
-        assert!(
-            apply.status.success(),
-            "pgschema apply failed: {}\n{}",
-            String::from_utf8_lossy(&apply.stdout),
-            String::from_utf8_lossy(&apply.stderr),
-        );
-
-        let desired = PgPool::connect(&format!("{base_prefix}/{desired_db}"))
-            .await
-            .expect("connect desired-state probe database");
-        let migrated = PgPool::connect(&format!("{base_prefix}/{migrated_db}"))
-            .await
-            .expect("connect migrated probe database");
-        MIGRATOR
-            .run_to(39, &migrated)
-            .await
-            .expect("apply migrations 1-39");
-
+        let probes = SchemaProbePair::bootstrap("buzz_admin", Some(39)).await;
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
         ] {
+            probes.assert_table_parity(table).await;
+        }
+        probes.drop().await;
+    }
+
+    /// Development plan R-2 "Proves": migration `0045_intelligent_org` applies
+    /// on a fresh database (the migrated probe runs every embedded migration)
+    /// and on a desired-state database (`schema/schema.sql` through the real
+    /// `pgschema` binary), and the two agree on every `io_*` table — columns,
+    /// index shapes, CHECK vocabularies, and the community write-fence trigger.
+    /// A store test that round-trips an enum variant proves the CHECK accepts
+    /// the wire value on one bootstrap path; this test proves both paths carry
+    /// the same CHECK, so the desired-state relay and the migrated relay reject
+    /// the same rows.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn intelligent_org_schema_parity_between_desired_state_and_migrations() {
+        let probes = SchemaProbePair::bootstrap("buzz_io", None).await;
+        for table in INTELLIGENT_ORG_TABLES {
+            probes.assert_table_parity(table).await;
+            for pool in [&probes.desired, &probes.migrated] {
+                let fenced: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM pg_trigger t \
+                     JOIN pg_class c ON c.oid = t.tgrelid \
+                     WHERE c.relname = $1 AND t.tgname = 'community_write_fence_' || $1 \
+                       AND NOT t.tgisinternal)",
+                )
+                .bind(table)
+                .fetch_one(pool)
+                .await
+                .expect("probe write-fence trigger");
+                assert!(fenced, "{table} must carry the community write fence");
+            }
+        }
+        probes.drop().await;
+    }
+
+    /// The `io_*` projection tables added by migration `0045_intelligent_org`
+    /// (Protocol §6.2). Kept in sync with `store::deletion::EXPECTED_SCOPED_TABLES`
+    /// by `deletion_catalog_lists_every_intelligent_org_table`.
+    const INTELLIGENT_ORG_TABLES: [&str; 12] = [
+        "io_shapers",
+        "io_direction",
+        "io_work_items",
+        "io_proposals",
+        "io_votes",
+        "io_drafts",
+        "io_progress",
+        "io_health",
+        "io_health_ratings",
+        "io_profiles",
+        "io_ledger",
+        "io_hosted_agents",
+    ];
+
+    #[test]
+    fn deletion_catalog_lists_every_intelligent_org_table() {
+        for table in INTELLIGENT_ORG_TABLES {
+            assert!(
+                crate::store::deletion::EXPECTED_SCOPED_TABLES.contains(&table),
+                "{table} is community-scoped and must be in the deletion catalog"
+            );
+        }
+        let migration_tables = create_tables(migration_sql().as_str());
+        for table in INTELLIGENT_ORG_TABLES {
+            assert!(
+                migration_tables.contains(table),
+                "migration parser should see {table}"
+            );
+        }
+    }
+
+    /// Two throwaway databases: `desired` bootstrapped from `schema/schema.sql`
+    /// through the real `pgschema` binary (the invocation the test-relay
+    /// launchers use — the freshly-created probe doubles as pgschema's plan db,
+    /// avoiding the embedded-Postgres download), and `migrated` built by the
+    /// embedded `MIGRATOR` up to `run_to` (or every migration when `None`).
+    struct SchemaProbePair {
+        admin: PgPool,
+        desired_db: String,
+        migrated_db: String,
+        desired: PgPool,
+        migrated: PgPool,
+    }
+
+    impl SchemaProbePair {
+        async fn bootstrap(prefix: &str, run_to: Option<i64>) -> Self {
+            use sqlx::AssertSqlSafe;
+
+            let base_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+                .or_else(|_| std::env::var("DATABASE_URL"))
+                .unwrap_or_else(|_| TEST_DB_URL.to_owned());
+            let conn = parse_pg_url(&base_url);
+            let admin = PgPool::connect(&base_url)
+                .await
+                .expect("connect admin database");
+            let (base_prefix, _) = base_url.rsplit_once('/').expect("database url has a path");
+
+            let desired_db = format!("{prefix}_desired_{}", uuid::Uuid::new_v4().simple());
+            let migrated_db = format!("{prefix}_migrated_{}", uuid::Uuid::new_v4().simple());
+            sqlx::query(AssertSqlSafe(format!("CREATE DATABASE {desired_db}")))
+                .execute(&admin)
+                .await
+                .expect("create desired-state probe database");
+            sqlx::query(AssertSqlSafe(format!("CREATE DATABASE {migrated_db}")))
+                .execute(&admin)
+                .await
+                .expect("create migrated probe database");
+
+            let pgschema =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bin/pgschema");
+            let schema_file =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schema/schema.sql");
+            let port = conn.port.to_string();
+            let apply = std::process::Command::new(&pgschema)
+                .args([
+                    "apply",
+                    "--auto-approve",
+                    "--file",
+                    schema_file.to_str().expect("schema path utf-8"),
+                    "--host",
+                    &conn.host,
+                    "--port",
+                    &port,
+                    "--user",
+                    &conn.user,
+                    "--password",
+                    &conn.password,
+                    "--db",
+                    &desired_db,
+                    "--plan-host",
+                    &conn.host,
+                    "--plan-port",
+                    &port,
+                    "--plan-user",
+                    &conn.user,
+                    "--plan-password",
+                    &conn.password,
+                    "--plan-db",
+                    &desired_db,
+                ])
+                .output()
+                .expect("run bin/pgschema apply (hermit env required)");
+            assert!(
+                apply.status.success(),
+                "pgschema apply failed: {}\n{}",
+                String::from_utf8_lossy(&apply.stdout),
+                String::from_utf8_lossy(&apply.stderr),
+            );
+
+            let desired = PgPool::connect(&format!("{base_prefix}/{desired_db}"))
+                .await
+                .expect("connect desired-state probe database");
+            let migrated = PgPool::connect(&format!("{base_prefix}/{migrated_db}"))
+                .await
+                .expect("connect migrated probe database");
+            match run_to {
+                Some(version) => MIGRATOR
+                    .run_to(version, &migrated)
+                    .await
+                    .unwrap_or_else(|err| panic!("apply migrations 1-{version}: {err}")),
+                None => MIGRATOR
+                    .run(&migrated)
+                    .await
+                    .expect("apply every embedded migration"),
+            }
+
+            Self {
+                admin,
+                desired_db,
+                migrated_db,
+                desired,
+                migrated,
+            }
+        }
+
+        /// Columns, index shapes (including per-key `indoption`, which `indexdef`
+        /// text alone can hide), and CHECK constraints must agree between the
+        /// desired-state bootstrap and the migrated database.
+        async fn assert_table_parity(&self, table: &str) {
             assert_eq!(
-                columns(&desired, table).await,
-                columns(&migrated, table).await,
+                probe_columns(&self.desired, table).await,
+                probe_columns(&self.migrated, table).await,
                 "column parity mismatch for {table}: schema.sql desired state has drifted \
                  from the migrations; update schema/schema.sql to match"
             );
             assert_eq!(
-                index_shapes(&desired, table).await,
-                index_shapes(&migrated, table).await,
+                probe_index_shapes(&self.desired, table).await,
+                probe_index_shapes(&self.migrated, table).await,
                 "index-shape parity mismatch for {table}: the pgschema-bootstrapped desired \
                  state (including per-key indoption) has drifted from the migrations. If a \
                  migration uses a construct pgschema cannot represent (e.g. NULLS FIRST), the \
                  migration and schema.sql must both use a representable shape."
             );
+            assert_eq!(
+                probe_check_constraints(&self.desired, table).await,
+                probe_check_constraints(&self.migrated, table).await,
+                "CHECK parity mismatch for {table}: the enum vocabulary in schema.sql has \
+                 drifted from the migration"
+            );
         }
 
-        desired.close().await;
-        migrated.close().await;
-        for probe_db in [desired_db, migrated_db] {
-            sqlx::query(AssertSqlSafe(format!(
-                "DROP DATABASE {probe_db} WITH (FORCE)"
-            )))
-            .execute(&admin)
-            .await
-            .expect("drop probe database");
+        async fn drop(self) {
+            use sqlx::AssertSqlSafe;
+
+            self.desired.close().await;
+            self.migrated.close().await;
+            for probe_db in [self.desired_db, self.migrated_db] {
+                sqlx::query(AssertSqlSafe(format!(
+                    "DROP DATABASE {probe_db} WITH (FORCE)"
+                )))
+                .execute(&self.admin)
+                .await
+                .expect("drop probe database");
+            }
         }
+    }
+
+    async fn probe_columns(
+        pool: &PgPool,
+        table: &str,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+    )> {
+        sqlx::query_as(
+            "SELECT column_name, data_type, is_nullable, column_default, \
+             is_identity, identity_generation \
+             FROM information_schema.columns \
+             WHERE table_schema = 'public' AND table_name = $1 \
+             ORDER BY column_name",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .expect("read column definitions")
+    }
+
+    /// Index name + rendered definition + per-key sort/null options. indoption
+    /// is a int2vector rendered as text (e.g. `{2,0}` = NULLS FIRST ASC on key
+    /// 0, plain ASC on key 1) so ordering divergences that `indexdef` text may
+    /// still show but `pgschema` cannot reproduce are compared structurally.
+    async fn probe_index_shapes(pool: &PgPool, table: &str) -> Vec<(String, String, String)> {
+        sqlx::query_as(
+            "SELECT c.relname, pg_get_indexdef(i.indexrelid), i.indoption::int2[]::text \
+             FROM pg_class c \
+             JOIN pg_index i ON i.indexrelid = c.oid \
+             JOIN pg_class t ON t.oid = i.indrelid \
+             JOIN pg_namespace n ON n.oid = t.relnamespace \
+             WHERE n.nspname = 'public' AND t.relname = $1 \
+             ORDER BY c.relname",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .expect("read index shapes")
+    }
+
+    /// CHECK constraint expressions in definition order. Names are dropped —
+    /// `pgschema` may name an inline CHECK differently from Postgres' default —
+    /// so parity is on the normalized expression text alone.
+    async fn probe_check_constraints(pool: &PgPool, table: &str) -> Vec<String> {
+        sqlx::query_scalar(
+            "SELECT pg_get_constraintdef(con.oid) \
+             FROM pg_constraint con \
+             JOIN pg_class t ON t.oid = con.conrelid \
+             JOIN pg_namespace n ON n.oid = t.relnamespace \
+             WHERE n.nspname = 'public' AND t.relname = $1 AND con.contype = 'c' \
+             ORDER BY 1",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .expect("read check constraints")
     }
 
     #[tokio::test]
@@ -2752,7 +2890,14 @@ mod postgres_tests {
             "all NIP-FI tables must be absent after migration 0044: {present:?}"
         );
 
-        // The deletion catalog must validate with ledger relations gone.
+        // The deletion catalog must validate with ledger relations gone. The
+        // catalog describes the head of the migration chain (later migrations
+        // add their own scoped tables), so bring the populated database the
+        // rest of the way before asking.
+        MIGRATOR
+            .run(&pool)
+            .await
+            .expect("remaining migrations apply after the ledger removal");
         crate::deletion::DeletionStore::new(pool.clone())
             .validate_catalog()
             .await
