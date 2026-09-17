@@ -68,6 +68,7 @@ relay executes; every claim carries a receipt.
 | 9   | [Prototype map](./product/intelligent-org-prototype-map.md)                   | current                   | What `prototypes/org-preview` contains, which screens the desktop `org` feature grows from, what changes, and how its data becomes the evaluation fixtures. |
 | 10  | [Readiness review](./plans/intelligent-org-readiness.md)                      | current — **the gate**    | The coherence review of this folder: drift found and fixed, decisions still to pin (D-1…D-10), and the checklist that clears step 1.   |
 | 11  | [Development plan](./plans/intelligent-org-development-plan.md)               | current — **the schedule** | One plan across relay, CLI, desktop, and agent: PR-sized slices, dependencies, tests, gates; the CLI surface; the test matrix.       |
+| 12  | [Progress](./plans/intelligent-org-progress.md)                               | current — **the log**     | Which slices are merged (PRs, SHAs), follow-ups each left behind, how to run the checks on this fork. Every slice PR updates it.     |
 | —   | [Exploration](./product/intelligent-org-exploration.md)                       | historical                | The note that chose Buzz as the foundation. The model it sketches was replaced on 11 September.                                        |
 
 Document 1 is substrate-neutral product; everything else is written for Buzz.

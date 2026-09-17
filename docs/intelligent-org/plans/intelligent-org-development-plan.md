@@ -272,6 +272,7 @@ Product risks are Design § Known risks. These are delivery risks:
 
 ## Related
 
+- [Progress](./intelligent-org-progress.md) — which slices are merged, follow-ups, the local check recipe; every slice PR updates it
 - [Readiness review](./intelligent-org-readiness.md) — the D-items and the gate
 - [Codebase verification](../architecture/intelligent-org-codebase-verification.md) — the V-items
 - [Prototype map](../product/intelligent-org-prototype-map.md) — what D-1…D-3 grow from and E-1 extracts
