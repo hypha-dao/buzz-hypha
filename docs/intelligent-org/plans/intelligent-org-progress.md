@@ -39,7 +39,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-12  | merged | [#12](https://github.com/hypha-dao/buzz-hypha/pull/12) | `bfa3de73a` | `POST /api/invites` admits a pubkey in the live `39103.shapers` (`Db::is_org_shaper`, one `io_shapers` read per request, no cache); `claim_relay_invite` appends `member_joined` (`actor` = claimant, `detail.via = "invite"`, `detail.minted_by` = the minter) on the claim's own transaction; `GET /api/join-policy` carries `org.transparency_notice` (`api::invites::ORG_TRANSPARENCY_NOTICE`, `Db::is_org_community`: an `io_hosted_agents` row or an `io_shapers` row) and `web/` renders it on `/invite/<code>` above the join controls, gating nothing. Two Postgres-lane proofs in `api::invites`, two in `buzz-db`, two E2E in `e2e_intelligent_org.rs`, one web smoke spec. `shapers.rs`/`apply.rs` untouched. |
 | R-13  |        |    |           | |
 | C-1   | merged | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) | `46ef9be4a` | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
-| C-2   |        |    |           | After R-3. |
+| C-2   | open | [#22](https://github.com/hypha-dao/buzz-hypha/pull/22) |           | `buzz org` in `buzz-cli`: every verb → one `build_io_*` or one REQ; `org bootstrap` is `build_io_shapers_propose` self-add (`bootstrap_args_build_owner_self_add`); `50003`/`50019` `e` is read with `uuid_tag`; `progress note` refuses `not implemented`. Work / drafts / health have the CLI + unit test; relay execution is R-5/R-7 (runbook says so). |
 | C-3   |        |    |           | Grows with every R. |
 
 ### Waves 2–4
@@ -175,12 +175,15 @@ absorb an item into an unrelated slice.
   `buzz-cli` and the desktop/agent roots but not the SDK the CLI builds
   on.~~ Fixed in C-1: `crates/buzz-sdk` added; `just org-kinds-check` fails
   on a retired name there.
-- **The SDK half of the `allow_self_tagging` follow-up above is done**
+- ~~**The SDK half of the `allow_self_tagging` follow-up above is done**
   (C-1: `intelligent_org::io_event` sets it on every `build_io_*`;
   `self_add_bootstrap_keeps_its_p_tag` proves the bootstrap keeps its `p`
   and shows nostr's default builder dropping it). Strike that bullet when
   C-2's `org bootstrap` is built on `build_io_shapers_propose` and its
-  argument → event test covers the owner's self-add.
+  argument → event test covers the owner's self-add.~~ Struck in C-2:
+  `org bootstrap` is `build_io_shapers_propose` (`ShapersProposal::Add`
+  naming the signer, `vote_agree=false`); `bootstrap_args_build_owner_self_add`
+  covers the self-`p`.
 - **`50003`, `50014`, and `50019` carry a proposal UUID in an `e` tag**
   (Protocol §4.8). nostr's `Tag::parse` accepts it (standardization is
   lazy) and R-3 reads it with `uuid_tag`, but nostr's typed accessors
@@ -365,7 +368,7 @@ absorb an item into an unrelated slice.
   is `duplicate: already processed`, not a fresh refusal. This is correct
   relay behavior, but it bit a Postgres-lane test that re-sent an identical
   open expecting `invalid: already a Shaper`. Test authors: vary the
-  content (`why`) between otherwise identical commands.>>>>>>> 4b254fca (docs(intelligent-org): progress — R-4a open as #13, follow-ups, relay-key recipe line)
+  content (`why`) between otherwise identical commands.
 - **`tool_choice: Some(s)` is written as a JSON string.** OpenAI keywords
   (`auto` / `none` / `required`) are valid as strings; a pinned
   `emit_<move>` name is also a string, not the provider's forced-tool
@@ -379,6 +382,11 @@ absorb an item into an unrelated slice.
 - **The E-1 follow-up that asked A-0 to move the fixture loader** behind
   a `fixtures` feature is deferred to A-1. OrgState does not exist yet;
   moving the loader now is out of scope.
+- **`org direction history` is `{kinds:[50002], "#d":[slug]}`.** The CLI
+  surface table maps history to `50002`; Protocol §6.5's direction-page
+  filter is `{kinds:[39102], "#t":["direction"], "#s":["passed"]}`. C-3
+  and the desktop Direction page should not assume they are the same REQ.
+  C-2 followed the verb table.
 
 ---
 

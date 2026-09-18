@@ -8,6 +8,7 @@ mod validate;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use client::BuzzClient;
+use commands::org::OrgCmd;
 use error::CliError;
 use nostr::Keys;
 use uuid::Uuid;
@@ -249,6 +250,9 @@ enum Cmd {
     /// Publish and edit long-form NIP-23 notes — team knowledge base
     #[command(subcommand)]
     Notes(NotesCmd),
+    /// Intelligent organization — Shapers, direction, work, drafts
+    #[command(subcommand)]
+    Org(OrgCmd),
     /// Announce and discover git repositories (NIP-34)
     #[command(subcommand)]
     Repos(ReposCmd),
@@ -2183,6 +2187,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Feed(sub) => commands::feed::dispatch(sub, &client, &cli.format).await,
         Cmd::Social(sub) => commands::social::dispatch(sub, &client).await,
         Cmd::Notes(sub) => commands::notes::dispatch(sub, &client).await,
+        Cmd::Org(sub) => commands::org::dispatch(sub, &client, &cli.format).await,
         Cmd::Repos(sub) => commands::repos::dispatch(sub, &client).await,
         Cmd::Projects(sub) => commands::projects::dispatch(sub, &client).await,
         Cmd::Patches(sub) => commands::patches::dispatch(sub, &client).await,
@@ -2333,6 +2338,7 @@ mod tests {
             "messages",
             "moderation",
             "notes",
+            "org",
             "pack",
             "patches",
             "pr",
@@ -2526,6 +2532,22 @@ mod tests {
                 "untimeout"
             ]
         );
+        assert_eq!(
+            names(&cmd, "org"),
+            vec![
+                "bootstrap",
+                "direction",
+                "drafts",
+                "health",
+                "ledger",
+                "profile",
+                "progress",
+                "proposals",
+                "shapers",
+                "tally",
+                "work",
+            ]
+        );
     }
 
     #[test]
@@ -2540,6 +2562,7 @@ mod tests {
             ("issues", 6),
             ("media", 1),
             ("messages", 8),
+            ("org", 11),
             ("pack", 2),
             ("patches", 4),
             ("pr", 5),

@@ -547,6 +547,75 @@ env -u BUZZ_PRIVATE_KEY \
 # exit: 3
 ```
 
+### 6.N Intelligent organization (`org`)
+
+`buzz org` is Development plan C-2. Every write is one `build_io_*` from
+`buzz-sdk`; every read is one REQ filter. Nothing emits `39100–39105` or
+`50014`. `--format compact` (global, before `org`) reduces read events to
+`id` / `content` / `created_at`. Exit codes are the CLI's usual set
+(0/1/2/3/4/5).
+
+**Live `org bootstrap` is required** — it is the dogfood seed and the
+owner's self-add (`50001 op=add` naming the signer). The community owner
+must be the `BUZZ_PRIVATE_KEY`. After R-3 this is executable on a running
+relay:
+
+```bash
+# Build
+cargo build -p buzz-cli
+# Identity is the community owner (see §4 Mint Test Credentials)
+export BUZZ_RELAY_URL="http://localhost:3000"
+export BUZZ_PRIVATE_KEY="nsec1..."   # owner
+
+# org bootstrap — required live check
+buzz org bootstrap | jq .
+# Expected: {"event_id":"...","accepted":true,"message":"..."}
+# A second identical bootstrap in the same second is duplicate (vary --why).
+
+# 39103 is now visible
+buzz org shapers list | jq .
+# Expected: one kind:39103 with the owner in `p` / content.shapers
+buzz --format compact org shapers list | jq .
+# Expected: [{"id":"...","content":"...","created_at":N}]
+
+# Shapers / votes are live after R-4a
+# SECOND=$(...)  # another member's pubkey
+# buzz org shapers add "$SECOND" --why "second seat" | jq .
+# buzz org proposals list --kind shapers --status open | jq .
+# buzz org proposals vote <proposal-uuid> agree | jq .
+
+# step-down / accept need a passed add — see Protocol §6.4
+```
+
+**Not live on main yet** — the CLI verb and its argument → event unit test
+exist; the relay will refuse or ignore execution until the named slice
+lands. Do not treat a relay `invalid: … not implemented yet` as a CLI bug.
+
+| Verb group | Relay slice | What to expect today |
+| ---------- | ----------- | -------------------- |
+| `work tree/show/create/offer/accept/decline/done/release/set-due/reopen/my-work` | R-5 | CLI builds `50005–50011` / `50018` / `{kinds:[39101]}`. Relay execution is not on main. |
+| `drafts list/show/decide/publish` | R-7 | CLI builds `50100` / `50012` / `{kinds:[50100,39104]}`. Relay ingest is not on main. |
+| `health show/rate` | R-7 | CLI builds `50017` / `{kinds:[50101], "#i":[…]}`. Relay ingest is not on main. |
+| `direction propose`, `proposals propose-project`, `proposals propose-dri` | R-4b (in flight) | The command is accepted as a proposal on R-4a; passing execution is not on main. |
+| `profile set/show/who-can` | R-11 | CLI builds `50021` / `{kinds:[39105]}`. |
+| `progress note` | wave 6 / C-4 | Always refuses: `{"error":"error","message":"not implemented"}` (exit 4). |
+
+```bash
+# Argument → event (no relay). Every verb has a named test.
+cargo test -p buzz-cli --lib commands::org
+
+# Work / drafts / health still parse and build; do not require a live relay.
+buzz org work tree --help
+buzz org drafts list --help
+buzz org health show --help
+buzz org progress note ; echo exit:$?
+# Expected: {"error":"error","message":"not implemented",...}  exit:4
+```
+
+`50003` (`proposals vote`) and `50019` (`shapers accept`) carry a proposal
+UUID in an `e` tag. The CLI reads that tag as a plain value (`uuid_tag`),
+never through nostr's `Tags::event_ids` / `as_standardized`.
+
 ---
 
 ## 9. Cleanup
@@ -625,3 +694,13 @@ buzz channels delete --channel "$FORUM_ID" | jq .
 | 60 | `notes ls` | ☐ | Own, --author all, --tag, --limit |
 | 61 | `notes rm` | ☐ | Delete→get 404, double-delete idempotent, missing slug → NotFound |
 | 62 | `users set-status` | ☐ | Text+emoji, text only, emoji-only (`--text ""`), `--clear`, `--clear` + `--text` → exit 1 |
+| 63 | `org bootstrap` | ☐ | **Required live** against a running relay (C-2). Owner self-add → `39103` |
+| 64 | `org shapers *` | ☐ | list / add / remove / rules / agent / accept / step-down. Live after R-3 / R-4a |
+| 65 | `org direction *` | ☐ | show / history / propose. Propose execution is R-4b (in flight) |
+| 66 | `org proposals *` | ☐ | list / show / vote live after R-4a; propose-project / propose-dri wait on R-4b |
+| 67 | `org work *` | ☐ | CLI + unit test only. Relay execution is R-5 — not on main yet |
+| 68 | `org drafts *` | ☐ | CLI + unit test only. Relay execution is R-7 — not on main yet |
+| 69 | `org health *` | ☐ | CLI + unit test only. Relay execution is R-7 — not on main yet |
+| 70 | `org profile *` | ☐ | set / show / who-can. Relay execution is R-11 |
+| 71 | `org ledger *` / `org tally` | ☐ | list / note / tally. `50103` ingest is R-7 |
+| 72 | `org progress note` | ☐ | Wave 6. Refuses with `{"error":"error","message":"not implemented"}` (exit 4) |
