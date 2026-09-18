@@ -44,9 +44,13 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 
 ### Waves 2–4
 
-Not opened. D-5 (Agents door defaults) and E-1 (fixtures) need only R-1 and
-can start any time; D-0 waits on R-4; A-0/A-1 wait on E-1; O-1 onward waits
-on the relay being live.
+Not opened as waves. D-5 (Agents door defaults) and E-1 (fixtures) need only
+R-1 and can start any time; D-0 waits on R-4; A-0/A-1 wait on E-1; O-1 onward
+waits on the relay being live. Rows appear here as those early slices land.
+
+| Slice | Status | PR | Merged as | Notes |
+| ----- | ------ | -- | --------- | ----- |
+| E-1   | open   | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 
 ### Waves 5–8
 
@@ -175,6 +179,48 @@ absorb an item into an unrelated slice.
   (add/remove/agent), `50005` (`offer_to`), `50006`, `50013`, `50015`,
   `50016`, `50100` (`needs` = author), and `50102` (`dri` = signer) —
   `every_builder_whose_p_may_be_the_signer_keeps_it`.
+- **The Prototype map's inventory paragraph does not match `data.ts`.**
+  Found in E-1. §1 Inventory › Data says "116 titled rows; ticket states 23
+  done, 21 doing, 11 open, 3 waiting". A walk of `data.ts`
+  (`projectsData`/`energyOrg.projects` `tickets[]` with nested `children`,
+  plus `ticketsData`/`energyOrg.tickets` and `pricesChildren`) gives **22
+  done, 20 doing, 5 open, 2 waiting**, plus the 5 live `ticketsData` rows
+  that carry `dri`/`due` and no `state` (River 20 rows, Energy 34). The
+  mapping table (§3) is unambiguous and E-1 followed it — a live row is
+  `doing` when it has a `dri`, else `open` — so the fixtures and
+  `river_seed_counts_match_the_prototype_map` /
+  `energy_seed_counts_match_the_prototype_map` bind to the `data.ts` counts,
+  not to the paragraph. E-1 changed no document; the paragraph is the doc
+  owner's to reconcile (or to drop, since §3 is the spec).
+- **`data.ts` names people outside `space.members`.** Rafi (`HOLDERS`,
+  `TICKET_SUGGESTED`), Eli (the investor persona), and You (the reader) hold
+  or are offered rows in River but are not in `space.members` (7), and
+  `energyOrg.space` has no `members` at all — only `founder` and
+  `shapers`, while its rows name seventeen people. Every command is sent by
+  "any member" (Protocol §3) behind Buzz's NIP-43 gate, so E-1 seeds
+  everyone a row names as a NIP-43 member (River: 11 = 7 + Rafi + Eli + You
+  + the agent, `river_seed_counts_match_the_prototype_map`; Energy: the
+  list in `lib/constants.mjs`). The Prototype map §3 row for
+  `space.members` therefore under-describes the fixture. Either the
+  prototype should list them or the map should say holders are added — the
+  doc owner's call.
+- **`buzz-org-agent` is a stub.** E-1 created the crate to own
+  `tests/eval/` (Development plan § Agent) and its `fixtures` module is a
+  public loader/decoder so `tests/eval_fixtures.rs` can use it. A-0 should
+  keep the loader but move it behind a `fixtures` cargo feature or
+  `#[cfg(test)]`-plus-dev-dependency once `OrgState` exists, so the shipped
+  agent does not link `serde_json` fixture parsing it never runs. The
+  decoder's Protocol §4 tag checks (`fixtures/decode.rs`) are the seed of
+  the agent's inbound validation and should move into `OrgState::apply`
+  rather than be duplicated.
+- **The fixture generator takes ~25 s.** It signs ~3 000 events with a
+  pure-JS BigInt secp256k1 (no dependencies, so `prototypes/org-preview`
+  stays outside pnpm). Fine for the `Intelligent-Org Fixtures` CI job
+  (10-minute timeout) and `just check`; if it grows past a minute, cache
+  signatures by `(id, signer)` in a checked-in side file or move signing to
+  a tiny Rust binary under `buzz-org-agent` — do not add an npm dependency.
+  The generator needs Node ≥ 23.6 (type stripping of `data.ts`); Hermit pins
+  24.
 
 ---
 
