@@ -119,6 +119,18 @@ jobs:
       - name: Intelligent-org kind parity
         run: just org-kinds-check
 
+  org-fixtures:
+    name: Intelligent-Org Fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: Checked-in fixtures match their generator
+        run: just org-fixtures-check
+
   dead-token-guard:
     name: Dead Token Reference Guard
     runs-on: ubuntu-latest
