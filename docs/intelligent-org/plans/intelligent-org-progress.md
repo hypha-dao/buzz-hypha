@@ -89,6 +89,19 @@ absorb an item into an unrelated slice.
   `Rust / Unit Tests`, both `Server Cross-Compile (*-linux-musl)`,
   `Windows Rust` — plus the local Postgres lane below. GitHub CI becomes the
   gate when the fork goes to production (owner's decision, 17 Sep).
+- **`PostgreSQL Tests` flakes** on
+  `buzz-db runtime::replica_fence::postgres_tests::cluster_global_probe_commits_tokens_and_sessions_prove_coverage`
+  (`first probe: MaskedActivity { masked: 1 }`). The probe reads
+  `pg_stat_activity` cluster-wide and fails closed when any *other* client
+  backend is non-idle with no `xact_start` yet — which, with nextest running
+  ~400 Postgres tests in parallel against one CI cluster, is simply a
+  neighbouring test between statements. Seen once on R-12
+  ([#12](https://github.com/hypha-dao/buzz-hypha/pull/12), rebased head;
+  the same lane was green on the previous head and the test passes 3/3
+  locally in isolation). Not an org-work regression. A deflake would run
+  the `replica_fence` probes in their own nextest test group
+  (`test-groups` with `max-threads = 1`, or serialising against the whole
+  lane) so no sibling backend is in flight during the sample.
 - **`Rust / Unit Tests` flakes** on
   `buzz-agent::fake_llm::cancelled_turn_with_usage_emits_notification_before_response`
   (asserts `stopReason: cancelled`, sees `null`). nextest fail-fast then
