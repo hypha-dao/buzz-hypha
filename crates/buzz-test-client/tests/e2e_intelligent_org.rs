@@ -1,6 +1,7 @@
 //! End-to-end proofs for the intelligent organization (C-3), grown one relay
 //! slice at a time. This file holds the R-3 lines — the executor spine and
-//! the Shapers — and the R-12 lines — invites minted by Shapers, the
+//! the Shapers — the R-4a lines — `shapers` proposals, votes, and their
+//! execution — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through the
 //! relay's real HTTP door (`POST /events`, `POST /query`, `POST /api/invites`,
 //! `GET /api/join-policy`, NIP-98) exactly as a client or the `buzz` CLI would.
@@ -9,8 +10,8 @@
 //! because a `39103` bootstrap happens once per community and the relay
 //! process is shared with the other e2e suites. The only rows a test seeds
 //! directly are the ones an operator would: the community, its relay
-//! members, and the hosted org-agent key in `io_hosted_agents`. One test also
-//! seeds an *offered* seat, which a passed `shapers/add` will write in R-4a.
+//! members, and the hosted org-agent key in `io_hosted_agents`. Everything
+//! else — including an offered seat — is reached by real commands.
 //!
 //! # Running
 //!
@@ -26,8 +27,9 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use buzz_core::kind::{
-    KIND_IO_PROPOSAL, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
-    KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROPOSAL,
+    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_VOTE,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use reqwest::StatusCode;
@@ -392,25 +394,124 @@ impl Community {
             .expect("ledger verbs")
     }
 
-    /// Seed the offered seat a passed `shapers/add` writes (R-4a), so
-    /// `io_shaper_accept` has a seat to take.
-    async fn offer_seat(&self, p: &Keys, proposal: &str) {
-        let seat = json!([{
-            "p": p.public_key().to_hex(),
-            "proposal": proposal,
-            "at": Timestamp::now().as_secs(),
-        }]);
-        let updated = sqlx::query(
-            "UPDATE io_shapers SET content = jsonb_set(content, '{offered}', $2) \
-             WHERE community_id = $1",
+    /// An `io_shapers_propose` as `keys`: `op`, an optional `p`, `content`,
+    /// and the D1 `["vote", "agree"]` when `agree`.
+    fn propose_event(keys: &Keys, op: &str, p: Option<&str>, content: &str, agree: bool) -> Event {
+        let mut tags = vec![tag(["op", op])];
+        if let Some(p) = p {
+            tags.push(tag(["p", p]));
+        }
+        if agree {
+            tags.push(tag(["vote", "agree"]));
+        }
+        signed(keys, KIND_IO_SHAPERS_PROPOSE, tags, content)
+    }
+
+    /// An `io_vote` as `keys` on `proposal`.
+    fn vote_event(keys: &Keys, proposal: &str, choice: &str, content: &str) -> Event {
+        signed(
+            keys,
+            KIND_IO_VOTE,
+            vec![tag(["e", proposal]), tag(["vote", choice])],
+            content,
+        )
+    }
+
+    /// Submit a proposal that must be accepted; returns the reply JSON
+    /// (`{proposal, status}`).
+    async fn propose_ok(
+        &self,
+        keys: &Keys,
+        op: &str,
+        p: Option<&str>,
+        content: &str,
+        agree: bool,
+    ) -> Value {
+        let message = self
+            .submit_ok(keys, &Self::propose_event(keys, op, p, content, agree))
+            .await;
+        serde_json::from_str(&message).expect("propose reply json")
+    }
+
+    /// Submit a vote that must be accepted; returns the reply JSON.
+    async fn vote_ok(&self, keys: &Keys, proposal: &str, choice: &str, content: &str) -> Value {
+        let message = self
+            .submit_ok(keys, &Self::vote_event(keys, proposal, choice, content))
+            .await;
+        serde_json::from_str(&message).expect("vote reply json")
+    }
+
+    /// Open `shapers/add` for `p` as `opener` with the opener's agree, then
+    /// have every `voter` agree; the last reply must say `passed`. Returns
+    /// the proposal id. This is the real path to an offered seat.
+    async fn pass_add(&self, opener: &Keys, voters: &[&Keys], p: &Keys) -> String {
+        let reply = self
+            .propose_ok(
+                opener,
+                "add",
+                Some(&p.public_key().to_hex()),
+                r#"{"why":"knows the domain"}"#,
+                true,
+            )
+            .await;
+        let proposal = reply["proposal"].as_str().expect("proposal id").to_owned();
+        let mut status = reply["status"].clone();
+        for voter in voters {
+            status = self.vote_ok(voter, &proposal, "agree", "{}").await["status"].clone();
+        }
+        assert_eq!(status, "passed", "the add must pass to offer the seat");
+        proposal
+    }
+
+    /// Offer `p` a seat: a passed `shapers/add` by the owner alone (one
+    /// Shaper, so the opener's agree passes it).
+    async fn offer_seat(&self, p: &Keys) -> String {
+        self.pass_add(&self.owner, &[], p).await
+    }
+
+    /// Seat `p`: pass an add and accept it. `p` must already be a relay member.
+    async fn add_shaper(&self, opener: &Keys, voters: &[&Keys], p: &Keys) -> String {
+        let proposal = self.pass_add(opener, voters, p).await;
+        self.submit_ok(
+            p,
+            &signed(p, KIND_IO_SHAPER_ACCEPT, vec![tag(["e", &proposal])], "{}"),
+        )
+        .await;
+        proposal
+    }
+
+    /// The live `39102` for `id`, as the owner sees it.
+    async fn proposal_state(&self, id: &str) -> Value {
+        let mut events = self
+            .query(
+                &self.owner,
+                json!({ "kinds": [KIND_IO_PROPOSAL], "#d": [id] }),
+            )
+            .await;
+        assert_eq!(events.len(), 1, "one live 39102 for {id}");
+        events.pop().expect("one event")
+    }
+
+    /// `io_votes` rows for `id` as `(voter hex, vote, reason)`, in vote order.
+    async fn votes(&self, id: &str) -> Vec<(String, String, Option<String>)> {
+        sqlx::query(
+            "SELECT voter, vote, reason FROM io_votes \
+             WHERE community_id = $1 AND proposal_id = $2 ORDER BY cast_at, voter",
         )
         .bind(self.id)
-        .bind(seat)
-        .execute(&self.pool)
+        .bind(Uuid::parse_str(id).expect("proposal uuid"))
+        .fetch_all(&self.pool)
         .await
-        .expect("seed offered seat")
-        .rows_affected();
-        assert_eq!(updated, 1, "io_shapers row exists after bootstrap");
+        .expect("read io_votes")
+        .into_iter()
+        .map(|r| {
+            (
+                hex::encode(r.get::<Vec<u8>, _>("voter")),
+                r.get("vote"),
+                r.get("reason"),
+            )
+        })
+        .collect()
     }
 
     async fn set_room_deleted(&self, room: Uuid, deleted: bool) {
@@ -480,7 +581,8 @@ async fn bootstrap_emits_39103_with_the_hosted_pubkey_and_agent_hosted() {
         ]
     );
 
-    // The bootstrap is one-shot: a second, distinct self-add is not one.
+    // The bootstrap is one-shot: a second, distinct self-add is an ordinary
+    // proposal now, and one that names a sitting Shaper is refused.
     c.submit_rejected(
         &c.owner,
         &signed(
@@ -489,7 +591,7 @@ async fn bootstrap_emits_39103_with_the_hosted_pubkey_and_agent_hosted() {
             vec![tag(["op", "add"]), tag(["p", &owner_hex])],
             r#"{"why":"again"}"#,
         ),
-        "invalid: shapers op=add proposals are not implemented yet",
+        "invalid: already a Shaper",
     )
     .await;
 }
@@ -606,14 +708,10 @@ async fn the_room_roster_equals_shapers_and_agent_after_each_change() {
     .await;
     assert_eq!(c.roster(room).await.len(), 2);
 
-    // Accept an offered seat: 39103 is rewritten and the roster grows.
-    c.offer_seat(&second, &proposal_id).await;
-    let accept = signed(
-        &second,
-        KIND_IO_SHAPER_ACCEPT,
-        vec![tag(["e", &proposal_id])],
-        "{}",
-    );
+    // Accept an offered seat — offered by a passed shapers/add, the real
+    // path: 39103 is rewritten and the roster grows.
+    let add = c.offer_seat(&second).await;
+    let accept = signed(&second, KIND_IO_SHAPER_ACCEPT, vec![tag(["e", &add])], "{}");
     c.submit_ok(&second, &accept).await;
     let state = c.shapers_state().await.expect("39103 after accept");
     assert_eq!(content(&state)["shapers"], json!([owner_hex, second_hex]));
@@ -655,11 +753,11 @@ async fn the_room_roster_equals_shapers_and_agent_after_each_change() {
 #[ignore]
 async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
     let c = Community::fresh().await;
-    let (proposal_id, room) = c.bootstrap().await;
+    let (_, room) = c.bootstrap().await;
     let second = Keys::generate();
     c.seed_member(&second, "member").await;
     let second_hex = second.public_key().to_hex();
-    c.offer_seat(&second, &proposal_id).await;
+    let add = c.offer_seat(&second).await;
 
     let before = c.shapers_state().await.expect("39103");
     let ledger_before = c.ledger_verbs().await;
@@ -668,12 +766,7 @@ async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
     // Break the step after `io_shapers` is written: the roster sync finds no
     // live room. The relay reports an internal error and unwinds everything.
     c.set_room_deleted(room, true).await;
-    let accept = signed(
-        &second,
-        KIND_IO_SHAPER_ACCEPT,
-        vec![tag(["e", &proposal_id])],
-        "{}",
-    );
+    let accept = signed(&second, KIND_IO_SHAPER_ACCEPT, vec![tag(["e", &add])], "{}");
     let (status, body) = c.submit(&second, &accept).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
     c.set_room_deleted(room, false).await;
@@ -702,6 +795,7 @@ async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
     assert_eq!(c.roster(room).await.len(), 3);
 }
 
+
 // ── R-12: invites ────────────────────────────────────────────────────────────
 
 /// Protocol §6.6, Features 6a: any Shaper can create an invite link; a plain
@@ -713,7 +807,7 @@ async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
 #[ignore]
 async fn a_shaper_who_is_not_owner_or_admin_mints_and_a_plain_member_cannot() {
     let c = Community::fresh().await;
-    let (proposal_id, room) = c.bootstrap().await;
+    let (_, room) = c.bootstrap().await;
     let shaper = Keys::generate();
     let plain = Keys::generate();
     let joiner = Keys::generate();
@@ -726,15 +820,15 @@ async fn a_shaper_who_is_not_owner_or_admin_mints_and_a_plain_member_cannot() {
     let (status, body) = c.mint_invite(&shaper).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 
-    // Take the offered seat: the 39103 now names them, and nothing else about
-    // them changes — the relay role stays `member`.
-    c.offer_seat(&shaper, &proposal_id).await;
+    // Take a seat offered by a passed shapers/add: the 39103 now names them,
+    // and nothing else about them changes — the relay role stays `member`.
+    let add = c.offer_seat(&shaper).await;
     c.submit_ok(
         &shaper,
         &signed(
             &shaper,
             KIND_IO_SHAPER_ACCEPT,
-            vec![tag(["e", &proposal_id])],
+            vec![tag(["e", &add])],
             "{}",
         ),
     )
@@ -884,5 +978,489 @@ async fn the_landing_page_carries_the_notice_for_an_org_community() {
             json!({ "via": "invite", "minted_by": plain.owner.public_key().to_hex() })
         )],
         "the ledger fact is written for every community, org or not"
+    );
+}
+
+// ── R-4a: shapers proposals, votes, and execution ────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn a_passed_add_offers_a_seat_and_the_opener_vote_is_one_atomic_act() {
+    let c = Community::fresh().await;
+    let (_, room) = c.bootstrap().await;
+    let owner_hex = c.owner.public_key().to_hex();
+    let second = Keys::generate();
+    c.seed_member(&second, "member").await;
+    let second_hex = second.public_key().to_hex();
+    let roster_before = c.roster(room).await;
+    let ledger_before = c.ledger_verbs().await.len();
+
+    // Without the D1 tag the proposal opens and waits, even for one Shaper.
+    let opened = c
+        .propose_ok(&c.owner, "add", Some(&second_hex), "{}", false)
+        .await;
+    assert_eq!(opened["status"], "open");
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    let state = c.proposal_state(&waiting).await;
+    assert_ne!(state["pubkey"], owner_hex, "39102 is relay-signed");
+    let body = content(&state);
+    assert_eq!(body["status"], "open");
+    assert_eq!(body["needed"], 1);
+    assert_eq!(body["eligible"], json!([owner_hex]));
+    assert_eq!(body["votes"], json!([]), "opening is not an agree");
+    assert_eq!(body["payload"], json!({ "op": "add", "p": second_hex }));
+    assert!(c.votes(&waiting).await.is_empty());
+    assert_eq!(
+        content(&c.shapers_state().await.expect("39103"))["offered"],
+        json!([]),
+        "an open add offers nothing"
+    );
+    assert_eq!(
+        &c.ledger_verbs().await[ledger_before..],
+        ["proposal_opened"]
+    );
+
+    // With it, one Shaper passes their own add in one command: open, vote,
+    // pass, and offer are one transaction and the vote cites the opener.
+    let command = Community::propose_event(
+        &c.owner,
+        "add",
+        Some(&second_hex),
+        r#"{"why":"knows the domain"}"#,
+        true,
+    );
+    let command_id = command.id.to_hex();
+    let reply: Value =
+        serde_json::from_str(&c.submit_ok(&c.owner, &command).await).expect("reply json");
+    assert_eq!(reply["status"], "passed");
+    let add = reply["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(
+        &c.ledger_verbs().await[ledger_before + 1..],
+        [
+            "proposal_opened",
+            "vote_cast",
+            "proposal_passed",
+            "shaper_offered"
+        ]
+    );
+    let state = c.proposal_state(&add).await;
+    let body = content(&state);
+    assert_eq!(body["status"], "passed");
+    assert_eq!(body["decided_at"], body["opened_at"]);
+    assert_eq!(body["votes"].as_array().expect("votes").len(), 1);
+    assert_eq!(body["votes"][0]["p"], owner_hex);
+    assert_eq!(body["votes"][0]["vote"], "agree");
+    assert_eq!(
+        body["votes"][0]["receipt"], command_id,
+        "the opener's agree cites the opening command"
+    );
+    assert_eq!(
+        body["executed"],
+        json!({ "kind": "shapers", "id": "shapers" })
+    );
+    let tags = state["tags"].as_array().expect("tags");
+    assert!(tags.contains(&json!(["s", "passed"])));
+    assert!(tags.contains(&json!(["p", second_hex, "", "subject"])));
+    assert!(tags.contains(&json!(["p", owner_hex, "", "eligible"])));
+    assert!(tags.contains(&json!(["receipt", command_id])));
+    assert_eq!(
+        c.votes(&add).await,
+        vec![(owner_hex.clone(), "agree".to_owned(), None)]
+    );
+
+    // The seat is offered, not live: shapers and the roster are as before.
+    let shapers = content(&c.shapers_state().await.expect("39103"));
+    assert_eq!(shapers["shapers"], json!([owner_hex]));
+    assert_eq!(shapers["offered"].as_array().expect("offered").len(), 1);
+    assert_eq!(shapers["offered"][0]["p"], second_hex);
+    assert_eq!(shapers["offered"][0]["proposal"], add);
+    assert_eq!(shapers["receipt"], command_id);
+    assert_eq!(c.roster(room).await, roster_before);
+
+    // A second add for the same person while the seat is live is refused, as
+    // is any open from a member who is not a Shaper.
+    c.submit_rejected(
+        &c.owner,
+        &Community::propose_event(&c.owner, "add", Some(&second_hex), "{}", true),
+        "invalid: a seat is already offered to p",
+    )
+    .await;
+    c.submit_rejected(
+        &second,
+        &Community::propose_event(&second, "add", Some(&second_hex), "{}", false),
+        "restricted: not a Shaper",
+    )
+    .await;
+
+    // Accept makes it live and the roster follows.
+    c.submit_ok(
+        &second,
+        &signed(&second, KIND_IO_SHAPER_ACCEPT, vec![tag(["e", &add])], "{}"),
+    )
+    .await;
+    let state = c.shapers_state().await.expect("39103");
+    assert_eq!(content(&state)["shapers"], json!([owner_hex, second_hex]));
+    assert_eq!(content(&state)["offered"], json!([]));
+    assert_eq!(c.roster(room).await, Community::expected_roster(&state));
+
+    // The earlier open add still waits; the owner's 50003 passes it, and
+    // since its p is already seated, passing offers nothing new.
+    let voted = c
+        .vote_ok(
+            &c.owner,
+            &waiting,
+            "agree",
+            r#"{"reason":"still want them"}"#,
+        )
+        .await;
+    assert_eq!(voted["status"], "passed");
+    assert_eq!(
+        c.votes(&waiting).await,
+        vec![(
+            owner_hex.clone(),
+            "agree".to_owned(),
+            Some("still want them".to_owned())
+        )]
+    );
+    assert_eq!(
+        content(&c.proposal_state(&waiting).await)["status"],
+        "passed"
+    );
+    assert_eq!(
+        content(&c.shapers_state().await.expect("39103"))["offered"],
+        json!([])
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn a_non_eligible_vote_and_the_subjects_own_vote_are_rejected() {
+    let c = Community::fresh().await;
+    let (_, room) = c.bootstrap().await;
+    let owner_hex = c.owner.public_key().to_hex();
+    let second = Keys::generate();
+    c.seed_member(&second, "member").await;
+    let second_hex = second.public_key().to_hex();
+    c.add_shaper(&c.owner, &[], &second).await;
+    let member = Keys::generate();
+    c.seed_member(&member, "member").await;
+
+    // Remove the second: the subject is left out of eligible; needed 1.
+    let opened = c
+        .propose_ok(
+            &c.owner,
+            "remove",
+            Some(&second_hex),
+            r#"{"why":"inactive"}"#,
+            false,
+        )
+        .await;
+    assert_eq!(opened["status"], "open");
+    let remove = opened["proposal"].as_str().expect("id").to_owned();
+    let state = c.proposal_state(&remove).await;
+    assert_eq!(content(&state)["eligible"], json!([owner_hex]));
+    assert_eq!(content(&state)["needed"], 1);
+    assert!(state["tags"]
+        .as_array()
+        .expect("tags")
+        .contains(&json!(["p", second_hex, "", "subject"])));
+
+    // A member who is not a Shaper, and the subject: refused, not stored.
+    for (who, label) in [(&member, "a member"), (&second, "the subject")] {
+        let vote = Community::vote_event(who, &remove, "agree", "{}");
+        c.submit_rejected(
+            who,
+            &vote,
+            "restricted: not eligible to vote on this proposal",
+        )
+        .await;
+        assert!(
+            c.query(
+                who,
+                json!({ "kinds": [KIND_IO_VOTE], "authors": [who.public_key().to_hex()] })
+            )
+            .await
+            .is_empty(),
+            "{label}: the refused vote is not stored"
+        );
+    }
+    assert_eq!(
+        content(&c.proposal_state(&remove).await)["votes"],
+        json!([])
+    );
+    assert!(c.votes(&remove).await.is_empty());
+
+    // Malformed votes are refused with their own reasons.
+    c.submit_rejected(
+        &c.owner,
+        &Community::vote_event(&c.owner, &Uuid::new_v4().to_string(), "agree", "{}"),
+        "invalid: unknown proposal",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &Community::vote_event(&c.owner, &remove, "yes", "{}"),
+        "invalid: unknown vote \"yes\"; expected agree or decline",
+    )
+    .await;
+
+    // The one eligible Shaper agrees: passed, executed, roster follows.
+    let voted = c.vote_ok(&c.owner, &remove, "agree", "{}").await;
+    assert_eq!(voted["status"], "passed");
+    let state = c.shapers_state().await.expect("39103");
+    assert_eq!(content(&state)["shapers"], json!([owner_hex]));
+    assert_eq!(p_tags(&state), vec![owner_hex.clone()]);
+    let roster = c.roster(room).await;
+    assert_eq!(roster, Community::expected_roster(&state));
+    assert!(
+        !roster.iter().any(|(p, _)| p == &second_hex),
+        "the removed Shaper leaves #shapers in the same transaction"
+    );
+    let verbs = c.ledger_verbs().await;
+    assert_eq!(
+        &verbs[verbs.len() - 3..],
+        ["vote_cast", "proposal_passed", "shaper_removed"]
+    );
+
+    // Decided proposals take no more votes; the last Shaper cannot be removed.
+    c.submit_rejected(
+        &c.owner,
+        &Community::vote_event(&c.owner, &remove, "decline", "{}"),
+        "invalid: proposal is not open",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &Community::propose_event(&c.owner, "remove", Some(&owner_hex), "{}", true),
+        "invalid: last shaper",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn needed_is_fixed_at_opening_while_a_shaper_is_added_mid_vote() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let owner_hex = c.owner.public_key().to_hex();
+    let second = Keys::generate();
+    c.seed_member(&second, "member").await;
+    let second_hex = second.public_key().to_hex();
+    c.add_shaper(&c.owner, &[], &second).await;
+
+    // Two Shapers, majority: needed 2, eligible both.
+    let third = Keys::generate();
+    c.seed_member(&third, "member").await;
+    let opened = c
+        .propose_ok(
+            &c.owner,
+            "add",
+            Some(&third.public_key().to_hex()),
+            "{}",
+            false,
+        )
+        .await;
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    let before = content(&c.proposal_state(&waiting).await);
+    assert_eq!(before["needed"], 2);
+    assert_eq!(before["eligible"], json!([owner_hex, second_hex]));
+
+    // Meanwhile a fourth Shaper is added and seated by another proposal.
+    let fourth = Keys::generate();
+    c.seed_member(&fourth, "member").await;
+    c.add_shaper(&c.owner, &[&second], &fourth).await;
+    assert_eq!(
+        content(&c.shapers_state().await.expect("39103"))["shapers"]
+            .as_array()
+            .expect("shapers")
+            .len(),
+        3
+    );
+
+    // The bar of the open proposal has not moved, and the newcomer is not on it.
+    let after = content(&c.proposal_state(&waiting).await);
+    assert_eq!(after["needed"], 2);
+    assert_eq!(after["eligible"], before["eligible"]);
+    c.submit_rejected(
+        &fourth,
+        &Community::vote_event(&fourth, &waiting, "agree", "{}"),
+        "restricted: not eligible to vote on this proposal",
+    )
+    .await;
+    let one = c.vote_ok(&c.owner, &waiting, "agree", "{}").await;
+    assert_eq!(one["status"], "open", "one of two is not a majority of two");
+    let two = c.vote_ok(&second, &waiting, "agree", "{}").await;
+    assert_eq!(two["status"], "passed");
+    let decided = content(&c.proposal_state(&waiting).await);
+    assert_eq!(decided["needed"], 2);
+    assert_eq!(decided["votes"].as_array().expect("votes").len(), 2);
+    assert_eq!(c.votes(&waiting).await.len(), 2);
+}
+
+#[tokio::test]
+#[ignore]
+async fn rules_and_agent_need_all_and_the_agent_must_be_a_non_shaper_member() {
+    let c = Community::fresh().await;
+    let (_, room) = c.bootstrap().await;
+    let hosted_hex = c.agent.public_key().to_hex();
+    let second = Keys::generate();
+    c.seed_member(&second, "member").await;
+    let second_hex = second.public_key().to_hex();
+    c.add_shaper(&c.owner, &[], &second).await;
+
+    // rules: content is checked before anything is stored.
+    c.submit_rejected(
+        &c.owner,
+        &Community::propose_event(&c.owner, "rules", None, r#"{"rules":{"shapers":0}}"#, false),
+        "invalid: rules.shapers must be at least 1",
+    )
+    .await;
+
+    // rules.shapers → 1 still needs both Shapers: rules always pass under all.
+    let opened = c
+        .propose_ok(
+            &c.owner,
+            "rules",
+            None,
+            r#"{"rules":{"shapers":1},"offer_window_secs":3600}"#,
+            true,
+        )
+        .await;
+    assert_eq!(opened["status"], "open", "all of two is two");
+    let rules = opened["proposal"].as_str().expect("id").to_owned();
+    let body = content(&c.proposal_state(&rules).await);
+    assert_eq!(body["rule"], "all");
+    assert_eq!(body["needed"], 2);
+    let passed = c.vote_ok(&second, &rules, "agree", "{}").await;
+    assert_eq!(passed["status"], "passed");
+    let shapers = content(&c.shapers_state().await.expect("39103"));
+    assert_eq!(shapers["rules"]["shapers"], 1);
+    assert_eq!(shapers["offer_window_secs"], 3600);
+    assert_eq!(
+        c.ledger_verbs().await.last().map(String::as_str),
+        Some("rules_changed")
+    );
+
+    // Under rules.shapers = 1 an add passes on the opener's agree alone …
+    let third = Keys::generate();
+    let one_vote = c
+        .propose_ok(
+            &c.owner,
+            "add",
+            Some(&third.public_key().to_hex()),
+            "{}",
+            true,
+        )
+        .await;
+    assert_eq!(one_vote["status"], "passed");
+
+    // … but agent still needs all, and its p must be a non-Shaper member.
+    let new_agent = Keys::generate();
+    let new_agent_hex = new_agent.public_key().to_hex();
+    c.submit_rejected(
+        &c.owner,
+        &Community::propose_event(&c.owner, "agent", Some(&new_agent_hex), "{}", true),
+        "invalid: agent not a member",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &Community::propose_event(&c.owner, "agent", Some(&second_hex), "{}", true),
+        "invalid: agent is a shaper",
+    )
+    .await;
+    c.seed_member(&new_agent, "member").await;
+    let opened = c
+        .propose_ok(
+            &c.owner,
+            "agent",
+            Some(&new_agent_hex),
+            r#"{"why":"our own"}"#,
+            true,
+        )
+        .await;
+    assert_eq!(opened["status"], "open");
+    let agent = opened["proposal"].as_str().expect("id").to_owned();
+    let state = c.proposal_state(&agent).await;
+    assert_eq!(content(&state)["needed"], 2);
+    assert!(
+        !state["tags"].as_array().expect("tags").iter().any(|t| t
+            .as_array()
+            .is_some_and(|t| t.len() == 4 && t[3] == "subject")),
+        "an agent's p is not a §4.4 subject"
+    );
+    let passed = c.vote_ok(&second, &agent, "agree", "{}").await;
+    assert_eq!(passed["status"], "passed");
+    let state = c.shapers_state().await.expect("39103");
+    let shapers = content(&state);
+    assert_eq!(shapers["agent"], new_agent_hex);
+    assert_eq!(shapers["agent_hosted"], false);
+    let roster = c.roster(room).await;
+    assert_eq!(roster, Community::expected_roster(&state));
+    assert!(roster
+        .iter()
+        .any(|(p, role)| p == &new_agent_hex && role == "member"));
+    assert!(
+        !roster.iter().any(|(p, _)| p == &hosted_hex),
+        "the hosted key left #shapers"
+    );
+    assert_eq!(
+        c.ledger_verbs().await.last().map(String::as_str),
+        Some("agent_changed")
+    );
+
+    // op=agent with no p returns to the hosted default.
+    let back = c
+        .propose_ok(&c.owner, "agent", None, r#"{"why":"back to hosted"}"#, true)
+        .await;
+    let back_id = back["proposal"].as_str().expect("id").to_owned();
+    c.vote_ok(&second, &back_id, "agree", "{}").await;
+    let shapers = content(&c.shapers_state().await.expect("39103"));
+    assert_eq!(shapers["agent"], hosted_hex);
+    assert_eq!(shapers["agent_hosted"], true);
+}
+
+#[tokio::test]
+#[ignore]
+async fn money_and_join_kinds_are_rejected_with_the_fixed_reasons() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let owner_hex = c.owner.public_key().to_hex();
+    let item = Uuid::new_v4().to_string();
+    for (kind, tags, content, reason) in [
+        (
+            KIND_IO_MONEY_PROPOSE,
+            vec![tag(["i", &item]), tag(["p", &owner_hex])],
+            r#"{"amount":"1","currency":"USD"}"#,
+            "restricted: money not enabled",
+        ),
+        (
+            KIND_IO_MONEY_RELEASED,
+            vec![tag(["e", &item]), tag(["tx", "0xabc"])],
+            r#"{"chain":"x","contract":"y","amount":"1","currency":"USD"}"#,
+            "restricted: money not enabled",
+        ),
+        (
+            KIND_IO_JOIN_PROPOSE,
+            vec![tag(["p", &owner_hex])],
+            "{}",
+            "restricted: join not enabled",
+        ),
+    ] {
+        c.submit_rejected(&c.owner, &signed(&c.owner, kind, tags, content), reason)
+            .await;
+        assert!(
+            c.query(&c.owner, json!({ "kinds": [kind], "authors": [owner_hex] }))
+                .await
+                .is_empty(),
+            "kind {kind} is not stored"
+        );
+    }
+    assert_eq!(
+        c.query(&c.owner, json!({ "kinds": [KIND_IO_PROPOSAL] }))
+            .await
+            .len(),
+        1,
+        "only the bootstrap proposal exists"
     );
 }
