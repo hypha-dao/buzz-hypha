@@ -3,11 +3,19 @@
 //! Routes (both NIP-98 signed, outside the Nostr event data plane):
 //!
 //! - `POST /api/invites` — mint an invite code. Caller must hold the `owner`
-//!   or `admin` role in the tenant community (mirrors the kind:9030 authz).
+//!   or `admin` role in the tenant community (mirrors the kind:9030 authz),
+//!   or sit in the community's `39103.shapers` — read from `io_shapers` at
+//!   request time (intelligent organization, Protocol §6.6).
 //! - `POST /api/invites/claim` — claim an invite code. Deliberately **exempt
 //!   from the relay-membership gate**: the whole point is that the caller is
 //!   not a member yet. NIP-98 proves control of the joining pubkey; the HMAC
-//!   on the code proves an admin authorized the join.
+//!   on the code proves an admin authorized the join. A v2 claim that admits
+//!   a member writes the org ledger's `member_joined` row in the same
+//!   transaction as the membership (`buzz_db::relay_invite`).
+//! - `GET /api/join-policy` — what the `/invite/<code>` landing page renders
+//!   before the claim: the operator's join policy and, for a community that
+//!   is an intelligent organization, the fixed **transparency notice**
+//!   ([`ORG_TRANSPARENCY_NOTICE`], Readiness D7).
 //!
 //! Token format, key derivation, and security trade-offs live in
 //! [`crate::invite_token`].
@@ -108,19 +116,81 @@ pub struct AcceptPolicyRequest {
     pub age_confirmed: bool,
 }
 
-/// Public join policy shared by every client-side join surface.
-pub async fn join_policy(State(state): State<Arc<AppState>>) -> Json<Value> {
-    match &state.config.join_policy {
-        Some(policy) => Json(serde_json::json!({
-            "policy": {
+/// The intelligent organization's transparency notice (Features 6a,
+/// Protocol §6.6, Readiness D7).
+///
+/// Fixed text the `/invite/<code>` landing page shows for every community on
+/// this relay that has an `io_hosted_agents` row or a bootstrapped `39103`.
+/// It is the relay operator's text, the same for every community; a
+/// community cannot edit it or turn it off — it states a rule the community
+/// cannot change. The community's own description appears alongside it,
+/// never in its place. Paragraphs are separated by a blank line.
+pub const ORG_TRANSPARENCY_NOTICE: &str = "\
+This community is run as an intelligent organization. Its org agent is a \
+member of every channel and every direct message here from the moment each \
+exists. Nobody invites it, nobody can keep it out, and it is not shown as a \
+participant.\n\n\
+The agent reads a conversation only where it listens — the Shapers' room, \
+project rooms, and your own direct message with it — or when someone tags \
+it. But anything said anywhere in this community is the organization's to \
+remember: when the agent drafts or answers, it may search every conversation \
+and cite what it finds to any member, including messages from conversations \
+they were not part of.\n\n\
+The agent drafts and suggests. It has no command that changes the \
+organization's state; every decision is a person's, signed by them. This \
+rule is set by the relay operator and cannot be turned off by the community.";
+
+/// Public join policy shared by every client-side join surface, plus the
+/// [`ORG_TRANSPARENCY_NOTICE`] under `org.transparency_notice` when the
+/// request's `Host` names an intelligent organization.
+///
+/// The policy half stays fail-open like NIP-11: an unmapped host still gets
+/// the operator's policy, with no `org` field. A failed *lookup* for a mapped
+/// host is a 500, not a page without the notice — the notice is a rule the
+/// community cannot turn off, so the relay must not silently drop it.
+pub async fn join_policy(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let mut body = serde_json::Map::new();
+    if let Some(policy) = &state.config.join_policy {
+        body.insert(
+            "policy".into(),
+            serde_json::json!({
                 "terms_markdown": policy.terms_markdown,
                 "privacy_markdown": policy.privacy_markdown,
                 "age_attestation_required": policy.age_attestation_required,
                 "version": policy.version
-            }
-        })),
-        None => Json(serde_json::json!({})),
+            }),
+        );
     }
+
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let community = match crate::tenant::bind_community(&state.db, raw_host).await {
+        Ok(tenant) => Some(tenant.community()),
+        Err(crate::tenant::BindError::UnmappedHost) => None,
+        Err(crate::tenant::BindError::Lookup(e)) => {
+            return Err(internal_error(&format!("join policy tenant lookup: {e}")));
+        }
+    };
+    if let Some(community) = community {
+        let is_org = state
+            .db
+            .is_org_community(community)
+            .await
+            .map_err(|e| internal_error(&format!("join policy org lookup: {e}")))?;
+        if is_org {
+            body.insert(
+                "org".into(),
+                serde_json::json!({ "transparency_notice": ORG_TRANSPARENCY_NOTICE }),
+            );
+        }
+    }
+
+    Ok(Json(Value::Object(body)))
 }
 
 /// `GET /api/join-policy/terms` — Terms of Service as a standalone HTML page.
@@ -277,7 +347,17 @@ fn map_mint_error(error: buzz_db::DbError) -> (StatusCode, Json<Value>) {
     }
 }
 
-/// Mint an invite code — `POST /api/invites`, NIP-98 signed by an owner/admin.
+/// Why a mint was authorised — logged with the minted invite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MintAuthority {
+    /// The caller holds the `owner` or `admin` relay role.
+    Role,
+    /// The caller is in the community's `39103.shapers` (Protocol §6.6).
+    Shaper,
+}
+
+/// Mint an invite code — `POST /api/invites`, NIP-98 signed by an owner,
+/// an admin, or a Shaper of the community.
 ///
 /// Returns the code, its expiry, and a shareable landing-page URL on the
 /// tenant host.
@@ -288,7 +368,9 @@ pub async fn mint_invite(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let (tenant, pubkey) = authenticate(&state, &headers, "/api/invites", &body).await?;
 
-    // Authz mirrors kind:9030 (add member): owner or admin only.
+    // Authz mirrors kind:9030 (add member): owner or admin — plus, for an
+    // intelligent organization, any pubkey in the live Shaper set, read from
+    // the `io_shapers` projection at request time (V7: one more lookup).
     let sender_hex = pubkey.to_hex();
     let member = state
         .db
@@ -296,12 +378,21 @@ pub async fn mint_invite(
         .await
         .map_err(|e| internal_error(&format!("invite mint role lookup: {e}")))?;
     let role = member.map(|m| m.role).unwrap_or_default();
-    if role != "owner" && role != "admin" {
+    let authority = if role == "owner" || role == "admin" {
+        MintAuthority::Role
+    } else if state
+        .db
+        .is_org_shaper(tenant.community(), &sender_hex)
+        .await
+        .map_err(|e| internal_error(&format!("invite mint shaper lookup: {e}")))?
+    {
+        MintAuthority::Shaper
+    } else {
         return Err(api_error(
             StatusCode::FORBIDDEN,
-            "only relay owners and admins can create invites",
+            "only relay owners, admins, and Shapers can create invites",
         ));
-    }
+    };
 
     let request: MintInviteRequest = if body.is_empty() {
         MintInviteRequest::default()
@@ -334,6 +425,7 @@ pub async fn mint_invite(
     tracing::info!(
         community = %tenant.community(),
         minted_by = %sender_hex,
+        authority = ?authority,
         invite_id = %invite.invite_id,
         expires_at = %invite.expires_at,
         max_uses = ?invite.max_uses,
@@ -751,6 +843,89 @@ mod postgres_tests {
             .and_then(Value::as_str)
             .expect("minted code")
             .to_string()
+    }
+
+    /// A second pool on the same database, for seeding the `io_*` rows an
+    /// operator (or the R-3 executor) would have written.
+    async fn seed_pool() -> sqlx::PgPool {
+        let database_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| TEST_DB_URL.to_string());
+        sqlx::PgPool::connect(&database_url)
+            .await
+            .expect("connect seed pool")
+    }
+
+    /// Write the community's `io_shapers` row with exactly `shapers` — what a
+    /// bootstrapped and then grown `39103` projects to.
+    async fn seed_shapers(
+        pool: &sqlx::PgPool,
+        community: buzz_core::CommunityId,
+        shapers: &[&Keys],
+    ) {
+        use buzz_core::intelligent_org::{
+            DecisionRules, Shapers, DEFAULT_DECISION_WINDOW_SECS, DEFAULT_OFFER_WINDOW_SECS,
+        };
+        let hexes: Vec<String> = shapers.iter().map(|k| k.public_key().to_hex()).collect();
+        let mut conn = pool.acquire().await.expect("acquire seed connection");
+        buzz_db::intelligent_org::upsert_shapers(
+            &mut conn,
+            community,
+            &buzz_db::intelligent_org::ShapersRow {
+                content: Shapers {
+                    founder: hexes[0].clone(),
+                    shapers: hexes,
+                    offered: vec![],
+                    room: None,
+                    agent: None,
+                    agent_hosted: false,
+                    rules: DecisionRules::default(),
+                    decision_window_secs: DEFAULT_DECISION_WINDOW_SECS,
+                    offer_window_secs: DEFAULT_OFFER_WINDOW_SECS,
+                    updated_at: 1_700_000_000,
+                    receipt: hex::encode([9u8; 32]),
+                },
+                room_channel_id: None,
+                event_id: vec![1; 32],
+                updated_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("ts"),
+            },
+        )
+        .await
+        .expect("seed io_shapers");
+    }
+
+    async fn member_joined_rows(
+        pool: &sqlx::PgPool,
+        community: buzz_core::CommunityId,
+    ) -> Vec<(String, Value)> {
+        use sqlx::Row as _;
+        sqlx::query(
+            "SELECT actor, detail FROM io_ledger \
+             WHERE community_id = $1 AND verb = 'member_joined' ORDER BY id",
+        )
+        .bind(community.as_uuid())
+        .fetch_all(pool)
+        .await
+        .expect("read ledger")
+        .into_iter()
+        .map(|r| (r.get("actor"), r.get("detail")))
+        .collect()
+    }
+
+    async fn get_json(state: Arc<AppState>, host: &str, path: &str) -> (StatusCode, Value) {
+        let response = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(path)
+                    .header(header::HOST, host)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        (status, read_json(response).await)
     }
 
     async fn event_count(state: &AppState, community: buzz_core::CommunityId, kind: i32) -> i64 {
@@ -1410,6 +1585,194 @@ mod postgres_tests {
                 post_json(state.clone(), &host, "/api/invites", keys, "{}".to_string()).await;
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
+    }
+
+    /// Protocol §6.6 (R-12): a pubkey in `39103.shapers` may mint even with a
+    /// plain `member` relay role; a plain member who is not a Shaper may not;
+    /// the Shaper set is read from `io_shapers` at request time, so leaving
+    /// it revokes the authority on the next request. A claim of the Shaper's
+    /// code lands `member_joined` with `minted_by` = the Shaper.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn shaper_mints_plain_member_cannot_and_claim_records_minted_by() {
+        let host = format!("invites-shaper-{}.example", Uuid::new_v4().simple());
+        let founder = Keys::generate();
+        let shaper = Keys::generate();
+        let plain = Keys::generate();
+        let joiner = Keys::generate();
+        let state = invite_test_state(&host)
+            .await
+            .expect("requires reachable Postgres and relay test state");
+        let community = state
+            .db
+            .lookup_community_by_host(&host)
+            .await
+            .expect("lookup")
+            .expect("community exists")
+            .id;
+        for (keys, role) in [(&founder, "owner"), (&shaper, "member"), (&plain, "member")] {
+            state
+                .db
+                .add_relay_member(community, &keys.public_key().to_hex(), role, None)
+                .await
+                .expect("seed relay member");
+        }
+        let pool = seed_pool().await;
+
+        // Before any 39103 exists, the relay role alone decides.
+        let response = post_json(
+            state.clone(),
+            &host,
+            "/api/invites",
+            &shaper,
+            "{}".to_string(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        seed_shapers(&pool, community, &[&founder, &shaper]).await;
+
+        let code = mint_code(state.clone(), &host, &shaper, serde_json::json!({})).await;
+        assert!(code.starts_with(super::V2_PREFIX), "{code}");
+
+        let response = post_json(
+            state.clone(),
+            &host,
+            "/api/invites",
+            &plain,
+            "{}".to_string(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            read_json(response)
+                .await
+                .get("error")
+                .and_then(Value::as_str),
+            Some("only relay owners, admins, and Shapers can create invites")
+        );
+
+        // The joiner claims the Shaper's code: the ledger names the Shaper.
+        let response = post_json(
+            state.clone(),
+            &host,
+            "/api/invites/claim",
+            &joiner,
+            serde_json::json!({ "code": code }).to_string(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            member_joined_rows(&pool, community).await,
+            vec![(
+                joiner.public_key().to_hex(),
+                serde_json::json!({ "via": "invite", "minted_by": shaper.public_key().to_hex() })
+            )]
+        );
+
+        // The Shaper leaves the set: the next mint is refused. Nothing is
+        // cached from the earlier request.
+        seed_shapers(&pool, community, &[&founder]).await;
+        let response = post_json(
+            state.clone(),
+            &host,
+            "/api/invites",
+            &shaper,
+            "{}".to_string(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        // The owner never needed the Shaper set.
+        mint_code(state, &host, &founder, serde_json::json!({})).await;
+    }
+
+    /// Readiness D7: `GET /api/join-policy` — what `/invite/<code>` renders —
+    /// carries the fixed transparency notice for a community with an
+    /// `io_hosted_agents` row or a `39103`, and nothing for a plain community
+    /// or an unmapped host. The notice is independent of the join policy.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn join_policy_carries_the_transparency_notice_only_for_org_communities() {
+        let plain_host = format!("invites-plain-{}.example", Uuid::new_v4().simple());
+        let hosted_host = format!("invites-hosted-{}.example", Uuid::new_v4().simple());
+        let shaped_host = format!("invites-shaped-{}.example", Uuid::new_v4().simple());
+        let state = invite_test_state(&plain_host)
+            .await
+            .expect("requires reachable Postgres and relay test state");
+        let pool = seed_pool().await;
+        let community_of = |host: &str| {
+            let state = state.clone();
+            let host = host.to_string();
+            async move {
+                state
+                    .db
+                    .ensure_configured_community(&host)
+                    .await
+                    .expect("community")
+                    .id
+            }
+        };
+        let hosted = community_of(&hosted_host).await;
+        let shaped = community_of(&shaped_host).await;
+        {
+            let mut conn = pool.acquire().await.expect("acquire");
+            buzz_db::intelligent_org::insert_hosted_agent(
+                &mut conn,
+                hosted,
+                &buzz_db::intelligent_org::HostedAgentRow {
+                    pubkey: Keys::generate().public_key().to_bytes().to_vec(),
+                    provisioned_at: chrono::Utc::now(),
+                    budget: None,
+                    retired_at: None,
+                },
+            )
+            .await
+            .expect("seed hosted agent");
+        }
+        seed_shapers(&pool, shaped, &[&Keys::generate()]).await;
+
+        let (status, body) = get_json(state.clone(), &plain_host, "/api/join-policy").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, serde_json::json!({}), "no policy, no org");
+
+        for host in [&hosted_host, &shaped_host] {
+            let (status, body) = get_json(state.clone(), host, "/api/join-policy").await;
+            assert_eq!(status, StatusCode::OK, "{host}");
+            assert_eq!(
+                body["org"]["transparency_notice"].as_str(),
+                Some(super::ORG_TRANSPARENCY_NOTICE),
+                "{host}: {body}"
+            );
+            assert!(body.get("policy").is_none(), "{host}: {body}");
+        }
+
+        let (status, body) =
+            get_json(state.clone(), "unmapped-host.example", "/api/join-policy").await;
+        assert_eq!(status, StatusCode::OK, "the policy half stays fail-open");
+        assert_eq!(body, serde_json::json!({}));
+
+        // With a join policy configured, both halves are present and distinct.
+        let mut state_inner = (*state).clone();
+        let mut config = state_inner.config.as_ref().clone();
+        config.join_policy = Some(crate::config::JoinPolicyConfig {
+            terms_markdown: Some("# Terms".to_string()),
+            privacy_markdown: None,
+            age_attestation_required: false,
+            version: "v".repeat(64),
+        });
+        state_inner.config = Arc::new(config);
+        let state = Arc::new(state_inner);
+        let (status, body) = get_json(state.clone(), &hosted_host, "/api/join-policy").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["policy"]["terms_markdown"], "# Terms");
+        assert_eq!(
+            body["org"]["transparency_notice"].as_str(),
+            Some(super::ORG_TRANSPARENCY_NOTICE)
+        );
+        let (_, body) = get_json(state, &plain_host, "/api/join-policy").await;
+        assert_eq!(body["policy"]["terms_markdown"], "# Terms");
+        assert!(body.get("org").is_none(), "{body}");
     }
 
     #[tokio::test]
