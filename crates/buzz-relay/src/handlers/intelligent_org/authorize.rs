@@ -1,5 +1,5 @@
 //! Who may send which Shapers and proposal command (Protocol §3.2, §4.5,
-//! §5.3, §6.4).
+//! §5.2, §5.3, §6.4).
 //!
 //! Pure decisions over the live `39103` and `39102` content: no database, no
 //! clock other than the `now` the caller passes. Facts that need a table —
@@ -10,7 +10,8 @@
 //! [`super::proposals`] only route and write.
 
 use buzz_core::intelligent_org::{
-    DecisionRule, OfferedSeat, Proposal, ProposalStatus, RulesContent, Shapers, ShapersOp,
+    DecisionRule, DirectionProposeContent, DirectionSlug, OfferedSeat, Proposal, ProposalStatus,
+    RulesContent, Shapers, ShapersOp, WorkItem,
 };
 
 use crate::handlers::ingest::IngestError;
@@ -145,10 +146,70 @@ pub fn rules_content(content: &RulesContent) -> Result<(), IngestError> {
     Ok(())
 }
 
+/// A command any NIP-43 member may send (`50004`, `50015`). Membership is
+/// ingest's gate when `REQUIRE_RELAY_MEMBERSHIP` is on; this check covers
+/// the same rule when it is off.
+pub fn require_member(is_member: bool) -> Result<(), IngestError> {
+    if is_member {
+        Ok(())
+    } else {
+        Err(restricted("not a member"))
+    }
+}
+
+/// `io_direction_propose` (§5.2): a Shaper, and `base` equals the live head
+/// version (0 when the slug has never been written).
+pub fn open_direction(
+    shapers: &Shapers,
+    actor: &str,
+    base: u32,
+    head_version: Option<u32>,
+) -> Result<(), IngestError> {
+    require_shaper(shapers, actor)?;
+    stale_base(base, head_version)
+}
+
+/// `base` must equal the current head. Used at opening and again at
+/// execution, so a later confirm of the same slug cannot silently overwrite.
+pub fn stale_base(base: u32, head_version: Option<u32>) -> Result<(), IngestError> {
+    if base == head_version.unwrap_or(0) {
+        Ok(())
+    } else {
+        Err(invalid("stale base"))
+    }
+}
+
+/// The content of a `direction` proposal (§4.1): `mission` and `vision`
+/// have no `lines`.
+pub fn direction_content(
+    slug: DirectionSlug,
+    content: &DirectionProposeContent,
+) -> Result<(), IngestError> {
+    let lined = matches!(slug, DirectionSlug::Objectives | DirectionSlug::Strategy);
+    if !lined
+        && content
+            .lines
+            .as_ref()
+            .is_some_and(|lines| !lines.is_empty())
+    {
+        return Err(invalid("mission and vision have no lines"));
+    }
+    Ok(())
+}
+
+/// `io_dri_propose` (§5.3): the item exists and has no holder. `subject` is
+/// the named `p` — left out of `eligible` by [`super::proposals::open`].
+pub fn open_dri(item: &WorkItem) -> Result<(), IngestError> {
+    if item.dri.is_some() {
+        return Err(invalid("item already has a holder"));
+    }
+    Ok(())
+}
+
 /// `io_vote` (§5.3): from a pubkey in the proposal's frozen `eligible` that
 /// still holds a seat, while the proposal is `open` and before
-/// `expires_at`. The subject of a `shapers/remove` is not in `eligible`, so
-/// the first check covers "the subject cannot vote".
+/// `expires_at`. The subject of a `shapers/remove` or `dri` is not in
+/// `eligible`, so the first check covers "the subject cannot vote".
 pub fn vote(
     proposal: &Proposal,
     shapers: &Shapers,
@@ -488,5 +549,90 @@ mod tests {
             message(vote(&p, &s, &pk(1), 1_500)),
             "invalid: proposal is not open"
         );
+    }
+
+    #[test]
+    fn open_direction_needs_a_shaper_and_a_live_base() {
+        use buzz_core::intelligent_org::DirectionProposeContent;
+        let s = shapers(&[1], &[]);
+        assert!(open_direction(&s, &pk(1), 0, None).is_ok());
+        assert!(open_direction(&s, &pk(1), 2, Some(2)).is_ok());
+        assert_eq!(
+            message(open_direction(&s, &pk(2), 0, None)),
+            "restricted: not a Shaper"
+        );
+        assert_eq!(
+            message(open_direction(&s, &pk(1), 0, Some(1))),
+            "invalid: stale base"
+        );
+        assert_eq!(
+            message(open_direction(&s, &pk(1), 1, None)),
+            "invalid: stale base"
+        );
+        let empty = DirectionProposeContent {
+            body: "b".into(),
+            lines: None,
+            why: None,
+        };
+        assert!(direction_content(DirectionSlug::Mission, &empty).is_ok());
+        let lined = DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![buzz_core::intelligent_org::DirectionLineInput {
+                id: None,
+                text: "a line".into(),
+                date: None,
+            }]),
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Vision, &lined)),
+            "invalid: mission and vision have no lines"
+        );
+        assert!(direction_content(DirectionSlug::Objectives, &lined).is_ok());
+    }
+
+    #[test]
+    fn open_dri_needs_an_item_with_no_holder() {
+        let mut item = WorkItem {
+            id: "item".into(),
+            parent: None,
+            root: "item".into(),
+            depth: 0,
+            path: vec!["item".into()],
+            title: "t".into(),
+            brief: "b".into(),
+            state: buzz_core::intelligent_org::WorkItemState::Open,
+            dri: None,
+            offered_to: None,
+            offered_by: None,
+            offered_at: None,
+            due_at: 1,
+            approved_at: None,
+            objective_ref: None,
+            created_from: pk(8),
+            draft: None,
+            done_receipt: None,
+            closed_by: None,
+            children: buzz_core::intelligent_org::ChildrenCounts::default(),
+            home: None,
+            branch: None,
+            after: vec![],
+            last_progress: None,
+        };
+        assert!(open_dri(&item).is_ok());
+        item.offered_to = Some(pk(2));
+        item.state = buzz_core::intelligent_org::WorkItemState::Offered;
+        assert!(
+            open_dri(&item).is_ok(),
+            "an offer is not a holder; passing withdraws it"
+        );
+        item.dri = Some(pk(2));
+        item.state = buzz_core::intelligent_org::WorkItemState::Accepted;
+        assert_eq!(
+            message(open_dri(&item)),
+            "invalid: item already has a holder"
+        );
+        assert_eq!(message(require_member(false)), "restricted: not a member");
+        assert!(require_member(true).is_ok());
     }
 }

@@ -1,21 +1,25 @@
-//! R-3 and R-4a proofs at the production seam: every command enters through
-//! [`crate::handlers::ingest::ingest_event`] exactly as a WebSocket or HTTP
-//! client's would, and every assertion reads the tables the relay serves
-//! from. Redis is deliberately unreachable — fan-out is best-effort and must
-//! not affect what commits.
+//! R-3, R-4a, and R-4b proofs at the production seam: every command enters
+//! through [`crate::handlers::ingest::ingest_event`] exactly as a WebSocket
+//! or HTTP client's would, and every assertion reads the tables the relay
+//! serves from. Redis is deliberately unreachable — fan-out is best-effort
+//! and must not affect what commits.
 
 use std::sync::Arc;
 
 use buzz_auth::Scope;
-use buzz_core::intelligent_org::{Proposal, ProposalStatus, Shapers, VoteChoice};
+use buzz_core::intelligent_org::{
+    ChildrenCounts, DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers,
+    VoteChoice, WorkItem, WorkItemState,
+};
 use buzz_core::kind::{
-    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROPOSAL,
+    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
+    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
     KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_VOTE,
+    KIND_IO_VOTE, KIND_IO_WORK_ITEM,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::CommunityId;
-use buzz_db::intelligent_org::{self as store, HostedAgentRow, VoteRow};
+use buzz_db::intelligent_org::{self as store, HostedAgentRow, VoteRow, WorkItemRow};
 use buzz_db::relay_rooms;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use sqlx::{PgPool, Row};
@@ -295,6 +299,100 @@ impl Harness {
         )
         .await
         .expect("read io_votes")
+    }
+
+    /// `io_direction_propose` as `keys`.
+    async fn direction(
+        &self,
+        keys: &Keys,
+        slug: &str,
+        base: u32,
+        content: &str,
+        agree: bool,
+    ) -> Result<serde_json::Value, IngestError> {
+        let mut tags = vec![tag(["d", slug]), tag(["base", &base.to_string()])];
+        if agree {
+            tags.push(tag(["vote", "agree"]));
+        }
+        let message = self
+            .send(keys, KIND_IO_DIRECTION_PROPOSE, tags, content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("direction reply is json"))
+    }
+
+    /// `io_dri_propose` as `keys`.
+    async fn dri(
+        &self,
+        keys: &Keys,
+        item: &str,
+        p: &str,
+        content: &str,
+        agree: bool,
+    ) -> Result<serde_json::Value, IngestError> {
+        let mut tags = vec![tag(["i", item]), tag(["p", p])];
+        if agree {
+            tags.push(tag(["vote", "agree"]));
+        }
+        let message = self.send(keys, KIND_IO_DRI_PROPOSE, tags, content).await?;
+        Ok(serde_json::from_str(&message).expect("dri reply is json"))
+    }
+
+    /// `io_project_propose` as `keys`.
+    async fn project(
+        &self,
+        keys: &Keys,
+        content: &str,
+        agree: bool,
+    ) -> Result<serde_json::Value, IngestError> {
+        let mut tags = Vec::new();
+        if agree {
+            tags.push(tag(["vote", "agree"]));
+        }
+        let message = self
+            .send(keys, KIND_IO_PROJECT_PROPOSE, tags, content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("project reply is json"))
+    }
+
+    /// Seed a work item the way R-5a will write it — R-4b cannot create one
+    /// through a command, so DRI proofs start from a projection row.
+    async fn seed_item(&self, item: &WorkItem) {
+        let mut conn = self.pool.acquire().await.expect("acquire");
+        let now = chrono::Utc::now();
+        store::upsert_work_item(
+            &mut conn,
+            self.community(),
+            &WorkItemRow {
+                content: item.clone(),
+                event_id: vec![0x11; 32],
+                last_progress_at: None,
+                done_at: None,
+                created_at: now,
+                updated_at: now,
+            },
+        )
+        .await
+        .expect("seed work item");
+    }
+
+    async fn work_item(&self, id: &str) -> Option<WorkItem> {
+        let mut conn = self.pool.acquire().await.expect("acquire");
+        store::get_work_item(
+            &mut conn,
+            self.community(),
+            Uuid::parse_str(id).expect("item uuid"),
+        )
+        .await
+        .expect("read io_work_items")
+        .map(|row| row.content)
+    }
+
+    async fn direction_head(&self, slug: DirectionSlug) -> Option<DirectionArtifact> {
+        let mut conn = self.pool.acquire().await.expect("acquire");
+        store::get_direction_head(&mut conn, self.community(), slug)
+            .await
+            .expect("read io_direction")
+            .map(|row| row.content)
     }
 
     /// The live `39102` of `id` as `(content, tags)`.
@@ -1513,4 +1611,487 @@ async fn money_and_join_commands_are_rejected_with_the_fixed_reasons() {
         h.live_state(KIND_IO_PROPOSAL).await.len() == 1,
         "only the bootstrap proposal exists"
     );
+}
+
+fn seed_work_item(
+    id: &str,
+    state: WorkItemState,
+    dri: Option<String>,
+    offered_to: Option<String>,
+) -> WorkItem {
+    WorkItem {
+        id: id.to_owned(),
+        parent: None,
+        root: id.to_owned(),
+        depth: 0,
+        path: vec![id.to_owned()],
+        title: "Weekday hall".into(),
+        brief: "Book the hall".into(),
+        state,
+        dri,
+        offered_to: offered_to.clone(),
+        offered_by: offered_to.as_ref().map(|_| "agent".to_owned()),
+        offered_at: offered_to.as_ref().map(|_| 1_700_000_000),
+        due_at: 1_800_000_000,
+        approved_at: None,
+        objective_ref: None,
+        created_from: hex::encode([0x22; 32]),
+        draft: None,
+        done_receipt: None,
+        closed_by: None,
+        children: ChildrenCounts::default(),
+        home: None,
+        branch: None,
+        after: vec![],
+        last_progress: None,
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let member = Keys::generate();
+    h.member(&member).await;
+    let ledger_before = h.ledger_verbs().await.len();
+
+    assert_eq!(
+        rejected(
+            h.direction(&member, "mission", 0, r#"{"body":"we exist"}"#, true)
+                .await
+        ),
+        "restricted: not a Shaper"
+    );
+    assert_eq!(
+        rejected(
+            h.send(
+                &h.owner,
+                KIND_IO_DIRECTION_PROPOSE,
+                vec![tag(["d", "mission"])],
+                r#"{"body":"we exist"}"#,
+            )
+            .await
+        ),
+        "invalid: missing base tag"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(&h.owner, "charter", 0, r#"{"body":"no"}"#, false)
+                .await
+        ),
+        "invalid: unknown direction slug \"charter\"; expected mission, vision, objectives, or strategy"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "mission",
+                0,
+                r#"{"body":"we exist","lines":[{"text":"no"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: mission and vision have no lines"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(&h.owner, "mission", 1, r#"{"body":"we exist"}"#, true)
+                .await
+        ),
+        "invalid: stale base"
+    );
+
+    // D1: one Shaper confirms mission in one command.
+    let command = signed(
+        &h.owner,
+        KIND_IO_DIRECTION_PROPOSE,
+        vec![
+            tag(["d", "mission"]),
+            tag(["base", "0"]),
+            tag(["vote", "agree"]),
+        ],
+        r#"{"body":"we exist to host","why":"v1"}"#,
+    );
+    let command_id = command.id.to_hex();
+    let reply: serde_json::Value =
+        serde_json::from_str(&h.ingest(&h.owner, command).await.expect("open mission"))
+            .expect("reply json");
+    assert_eq!(reply["status"], "passed");
+    let mission = reply["proposal"].as_str().expect("id").to_owned();
+    let p = h.proposal(&mission).await;
+    assert_eq!(p.status, ProposalStatus::Passed);
+    assert_eq!(p.needed, 1);
+    assert_eq!(p.eligible, vec![owner_hex.clone()]);
+    assert_eq!(p.votes.len(), 1);
+    assert_eq!(p.votes[0].receipt, command_id);
+    assert_eq!(
+        p.executed,
+        Some(buzz_core::intelligent_org::Executed {
+            kind: "direction".into(),
+            id: "mission".into(),
+        })
+    );
+    assert_eq!(
+        p.payload["slug"], "mission",
+        "the payload carries the slug and base its tags named"
+    );
+    assert_eq!(p.payload["base"], 0);
+    let artifact = h
+        .direction_head(DirectionSlug::Mission)
+        .await
+        .expect("39100");
+    assert_eq!(artifact.version, 1);
+    assert_eq!(artifact.body, "we exist to host");
+    assert!(artifact.lines.is_empty());
+    assert_eq!(artifact.confirmed_by, owner_hex);
+    assert_eq!(artifact.proposed_by, owner_hex);
+    assert_eq!(artifact.proposal, mission);
+    assert!(artifact.prev.is_none());
+    let live = h.live_state(KIND_IO_DIRECTION).await;
+    assert_eq!(live.len(), 1);
+    assert_eq!(live[0].1["slug"], "mission");
+    assert_eq!(live[0].1["version"], 1);
+    assert_eq!(
+        h.ledger_verbs().await[ledger_before..],
+        [
+            "proposal_opened",
+            "vote_cast",
+            "proposal_passed",
+            "direction_confirmed"
+        ]
+    );
+
+    assert_eq!(
+        rejected(
+            h.direction(&h.owner, "mission", 0, r#"{"body":"stale"}"#, true)
+                .await
+        ),
+        "invalid: stale base"
+    );
+
+    // Two Shapers: needed is frozen at opening while a third is seated.
+    let second = Keys::generate();
+    h.add_shaper(&h.owner, &[], &second).await;
+    let opened = h
+        .direction(
+            &h.owner,
+            "objectives",
+            0,
+            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+            false,
+        )
+        .await
+        .expect("open objectives");
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    let before = h.proposal(&waiting).await;
+    assert_eq!(before.needed, 2);
+    assert_eq!(before.eligible.len(), 2);
+    let third = Keys::generate();
+    h.add_shaper(&h.owner, &[&second], &third).await;
+    assert_eq!(h.proposal(&waiting).await.needed, 2);
+    assert_eq!(h.proposal(&waiting).await.eligible, before.eligible);
+    assert_eq!(
+        rejected(h.vote(&third, &waiting, "agree", "{}").await),
+        "restricted: not eligible to vote on this proposal"
+    );
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("first")["status"],
+        "open"
+    );
+    assert_eq!(
+        h.vote(&second, &waiting, "agree", "{}")
+            .await
+            .expect("second")["status"],
+        "passed"
+    );
+    let objectives = h
+        .direction_head(DirectionSlug::Objectives)
+        .await
+        .expect("objectives");
+    assert_eq!(objectives.version, 1);
+    assert_eq!(objectives.lines.len(), 1);
+    assert_eq!(objectives.lines[0].id, "l_7f3a");
+    assert_eq!(objectives.lines[0].n, 1);
+    assert_eq!(objectives.confirmed_by, second.public_key().to_hex());
+
+    // A second confirm of the same slug: base must be 1; prev is the v1 id.
+    let v1_id = h
+        .live_state(KIND_IO_DIRECTION)
+        .await
+        .into_iter()
+        .find(|(_, content, _)| content["slug"] == "objectives")
+        .expect("objectives 39100")
+        .0;
+    let opened = h
+        .direction(
+            &h.owner,
+            "objectives",
+            1,
+            r#"{"body":"the lines, updated","lines":[{"id":"l_7f3a","text":"Weekday hall booked"},{"text":"Stall running"}]}"#,
+            true,
+        )
+        .await
+        .expect("open v2");
+    let v2 = opened["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(opened["status"], "open");
+    assert_eq!(
+        h.vote(&second, &v2, "agree", "{}").await.expect("pass v2")["status"],
+        "passed"
+    );
+    let next = h
+        .direction_head(DirectionSlug::Objectives)
+        .await
+        .expect("v2");
+    assert_eq!(next.version, 2);
+    assert_eq!(next.prev.as_deref(), Some(v1_id.as_str()));
+    assert_eq!(next.lines.len(), 2);
+    assert_eq!(next.lines[0].id, "l_7f3a");
+    assert!(next.lines[1].id.starts_with("l_"));
+    assert_ne!(next.lines[1].id, "l_7f3a");
+
+    // Two proposals on the same base: the second passing vote is stale.
+    let first = h
+        .direction(&h.owner, "vision", 0, r#"{"body":"first"}"#, true)
+        .await
+        .expect("open vision a");
+    let second_open = h
+        .direction(&h.owner, "vision", 0, r#"{"body":"second"}"#, true)
+        .await
+        .expect("open vision b");
+    let a = first["proposal"].as_str().expect("id").to_owned();
+    let b = second_open["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(
+        h.vote(&second, &a, "agree", "{}").await.expect("pass a")["status"],
+        "passed"
+    );
+    assert_eq!(
+        rejected(h.vote(&second, &b, "agree", "{}").await),
+        "invalid: stale base"
+    );
+    assert_eq!(h.proposal(&b).await.status, ProposalStatus::Open);
+    assert_eq!(
+        h.direction_head(DirectionSlug::Vision)
+            .await
+            .expect("vision")
+            .body,
+        "first"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let second = Keys::generate();
+    let second_hex = second.public_key().to_hex();
+    h.add_shaper(&h.owner, &[], &second).await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let stranger = Keys::generate();
+    let open_id = Uuid::new_v4().to_string();
+    let offered_id = Uuid::new_v4().to_string();
+    let held_id = Uuid::new_v4().to_string();
+    h.seed_item(&seed_work_item(&open_id, WorkItemState::Open, None, None))
+        .await;
+    h.seed_item(&seed_work_item(
+        &offered_id,
+        WorkItemState::Offered,
+        None,
+        Some(member_hex.clone()),
+    ))
+    .await;
+    h.seed_item(&seed_work_item(
+        &held_id,
+        WorkItemState::Accepted,
+        Some(member_hex.clone()),
+        None,
+    ))
+    .await;
+
+    assert_eq!(
+        rejected(
+            h.dri(
+                &h.owner,
+                &Uuid::new_v4().to_string(),
+                &member_hex,
+                "{}",
+                false
+            )
+            .await
+        ),
+        "invalid: unknown item"
+    );
+    assert_eq!(
+        rejected(h.dri(&h.owner, &held_id, &second_hex, "{}", false).await),
+        "invalid: item already has a holder"
+    );
+    assert_eq!(
+        rejected(
+            h.send(
+                &h.owner,
+                KIND_IO_DRI_PROPOSE,
+                vec![tag(["i", &open_id])],
+                "{}",
+            )
+            .await
+        ),
+        "invalid: missing p tag"
+    );
+    assert_eq!(
+        rejected(h.dri(&stranger, &open_id, &member_hex, "{}", false).await),
+        "restricted: not a member"
+    );
+
+    // Name the second Shaper: they are the subject and cannot vote.
+    let opened = h
+        .dri(
+            &h.owner,
+            &open_id,
+            &second_hex,
+            r#"{"why":"they know the hall"}"#,
+            false,
+        )
+        .await
+        .expect("open dri");
+    let dri = opened["proposal"].as_str().expect("id").to_owned();
+    let p = h.proposal(&dri).await;
+    assert_eq!(p.kind, buzz_core::intelligent_org::ProposalKind::Dri);
+    assert_eq!(p.needed, 1);
+    assert_eq!(p.eligible, vec![owner_hex.clone()]);
+    assert_eq!(p.payload["i"], open_id);
+    assert_eq!(p.payload["p"], second_hex);
+    let (_, tags) = h.live_proposal(&dri).await;
+    assert!(tags.contains(&vec![
+        "p".to_owned(),
+        second_hex.clone(),
+        String::new(),
+        "subject".to_owned()
+    ]));
+    assert!(tags.contains(&vec!["i".to_owned(), open_id.clone()]));
+    for (who, label) in [
+        (&stranger, "a stranger"),
+        (&member, "a member"),
+        (&second, "the subject"),
+    ] {
+        assert_eq!(
+            rejected(h.vote(who, &dri, "agree", "{}").await),
+            "restricted: not eligible to vote on this proposal",
+            "{label}"
+        );
+    }
+    let ledger_before = h.ledger_verbs().await.len();
+    let voted = h
+        .vote(&h.owner, &dri, "agree", "{}")
+        .await
+        .expect("pass dri");
+    assert_eq!(voted["status"], "passed");
+    let item = h.work_item(&open_id).await.expect("item");
+    assert_eq!(item.state, WorkItemState::Accepted);
+    assert_eq!(item.dri.as_deref(), Some(second_hex.as_str()));
+    assert!(item.offered_to.is_none());
+    let live = h.live_state(KIND_IO_WORK_ITEM).await;
+    assert_eq!(live.len(), 1);
+    assert_eq!(live[0].1["state"], "accepted");
+    assert_eq!(live[0].1["dri"], second_hex);
+    assert_eq!(
+        h.ledger_verbs().await[ledger_before..],
+        ["vote_cast", "proposal_passed", "item_accepted"]
+    );
+    assert_eq!(
+        rejected(h.dri(&h.owner, &open_id, &member_hex, "{}", true).await),
+        "invalid: item already has a holder"
+    );
+
+    // An offered item: passing withdraws the foreign offer.
+    let opened = h
+        .dri(
+            &member,
+            &offered_id,
+            &member_hex,
+            r#"{"why":"I'll take it"}"#,
+            false,
+        )
+        .await
+        .expect("member may open a dri");
+    let offered = opened["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(opened["status"], "open");
+    assert_eq!(
+        h.proposal(&offered).await.eligible,
+        vec![owner_hex.clone(), second_hex.clone()],
+        "a non-Shaper subject is not subtracted from anyone"
+    );
+    h.vote(&h.owner, &offered, "agree", "{}")
+        .await
+        .expect("first");
+    assert_eq!(
+        h.vote(&second, &offered, "agree", "{}")
+            .await
+            .expect("second")["status"],
+        "passed"
+    );
+    let item = h.work_item(&offered_id).await.expect("offered item");
+    assert_eq!(item.state, WorkItemState::Accepted);
+    assert_eq!(item.dri.as_deref(), Some(member_hex.as_str()));
+    assert!(item.offered_to.is_none());
+    assert!(item.offered_by.is_none());
+    assert!(item.offered_at.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_passing_project_vote_is_refused_until_r5a() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    h.member(&member).await;
+    let stranger = Keys::generate();
+    let content = r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#;
+
+    assert_eq!(
+        rejected(h.project(&stranger, content, true).await),
+        "restricted: not a member"
+    );
+    assert_eq!(
+        rejected(h.project(&h.owner, r#"{"title":"no"}"#, true).await),
+        "invalid: command content: missing field `brief`"
+    );
+
+    // A plain member can open; a one-Shaper opener-vote would pass, but
+    // project execution is R-5a.
+    let opened = h
+        .project(&member, content, false)
+        .await
+        .expect("member opens a project");
+    assert_eq!(opened["status"], "open");
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    let p = h.proposal(&waiting).await;
+    assert_eq!(p.kind, buzz_core::intelligent_org::ProposalKind::Project);
+    assert_eq!(p.needed, 1);
+    assert_eq!(p.eligible, vec![h.owner.public_key().to_hex()]);
+    assert_eq!(
+        rejected(
+            h.project(
+                &h.owner,
+                r#"{"title":"Weekday hall","brief":"Book it now","due_at":1800000000}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: execution of project proposals is not implemented yet"
+    );
+    assert_eq!(
+        rejected(h.vote(&h.owner, &waiting, "agree", "{}").await),
+        "invalid: execution of project proposals is not implemented yet"
+    );
+    assert_eq!(h.proposal(&waiting).await.status, ProposalStatus::Open);
+    assert!(h.proposal(&waiting).await.votes.is_empty());
+    assert!(h.live_state(KIND_IO_WORK_ITEM).await.is_empty());
 }

@@ -1,29 +1,34 @@
 //! Proposals and votes (Protocol §4.4, §5.3): opening, the D1 opener vote,
 //! `50003`, the tally, and execution dispatch.
 //!
-//! A proposal is opened by the handler of the command that opens it (in this
-//! slice `shapers::propose`), which knows the kind, the rule, the subject,
-//! and the payload; everything from there on is shared. [`open`] freezes
-//! `eligible` (the Shapers now, minus the subject) and resolves `needed`
-//! against it, so a later Shaper change never moves the bar. [`settle`]
-//! tallies after every vote — including the opener's own `["vote", "agree"]`
-//! (Readiness D1) — and, on `passed`, executes in the same transaction
-//! through the kind's executor (`shapers::execute` here; `direction` and
-//! `dri` land in R-4b), then hands the `39102` and whatever executing
-//! produced to [`super::apply::apply`] as one write.
+//! A proposal is opened by the handler of the command that opens it
+//! ([`super::shapers::propose`], [`direction_propose`], [`project_propose`],
+//! [`dri_propose`]), which knows the kind, the rule, the subject, and the
+//! payload; everything from there on is shared. [`open`] freezes `eligible`
+//! (the Shapers now, minus the subject) and resolves `needed` against it, so
+//! a later Shaper change never moves the bar. [`settle`] tallies after every
+//! vote — including the opener's own `["vote", "agree"]` (Readiness D1) —
+//! and, on `passed`, executes in the same transaction through the kind's
+//! executor (`shapers::execute`, [`execute_direction`], [`execute_dri`];
+//! `project` stays refused until R-5a), then hands the `39102` and whatever
+//! executing produced to [`super::apply::apply`] as one write.
+
+use std::collections::HashSet;
 
 use buzz_core::intelligent_org::{
-    DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus, Shapers, Vote, VoteChoice,
-    VoteContent,
+    DecisionRule, DirectionArtifact, DirectionLine, DirectionLineInput, DirectionProposeContent,
+    DirectionSlug, Executed, ProjectProposeContent, Proposal, ProposalKind, ProposalStatus,
+    Shapers, Vote, VoteChoice, VoteContent, WhyContent, WorkItem, WorkItemState,
 };
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
+use serde::Deserialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use super::apply::{apply, ApplyContext, CastVote, Projection};
 use super::{
-    authorize, begin, commit, current_shapers, internal, object, parse_content, shapers, tag_value,
-    uuid_tag, wall_clock, Command, Persisted,
+    authorize, begin, commit, content_value, current_shapers, internal, object, parse_content,
+    pubkey_tag, shapers, tag_value, uuid_tag, version_tag, wall_clock, Command, Persisted,
 };
 use crate::handlers::ingest::{IngestError, IngestResult};
 
@@ -134,17 +139,188 @@ fn opener_agrees(cmd: &Command<'_>, proposal: &Proposal) -> Result<bool, IngestE
     }
 }
 
+/// Fold tag-only fields into the command content so a later vote can execute
+/// the proposal from `39102.payload` alone.
+fn payload_with(
+    mut content: serde_json::Value,
+    extra: &[(&str, serde_json::Value)],
+) -> Result<serde_json::Value, IngestError> {
+    let fields = content.as_object_mut().ok_or_else(|| {
+        IngestError::Rejected("invalid: command content must be a JSON object".into())
+    })?;
+    for (key, value) in extra {
+        fields.insert((*key).to_owned(), value.clone());
+    }
+    Ok(content)
+}
+
+fn slug_wire(slug: DirectionSlug) -> String {
+    serde_json::to_value(slug)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+fn direction_slug(cmd: &Command<'_>) -> Result<DirectionSlug, IngestError> {
+    let slug = tag_value(cmd.event, "d")
+        .ok_or_else(|| IngestError::Rejected("invalid: missing d tag (slug)".into()))?;
+    serde_json::from_value(serde_json::Value::String(slug.to_owned())).map_err(|_| {
+        IngestError::Rejected(format!(
+            "invalid: unknown direction slug {slug:?}; expected mission, vision, objectives, or strategy"
+        ))
+    })
+}
+
+/// The `slug` and `base` a `direction` proposal's payload carries alongside
+/// the command content.
+#[derive(Debug, Deserialize)]
+struct DirectionPayload {
+    body: String,
+    #[serde(default)]
+    lines: Option<Vec<DirectionLineInput>>,
+    slug: DirectionSlug,
+    base: u32,
+}
+
+/// The `i` and `p` a `dri` proposal's payload carries alongside the command
+/// content.
+#[derive(Debug, Deserialize)]
+struct DriPayload {
+    i: String,
+    p: String,
+}
+
 /// The §4.4 `subject` and `item` markers of a stored proposal, derived from
 /// its content the same way its opener derived them.
 fn markers(proposal: &Proposal) -> (Option<String>, Option<String>) {
     match proposal.kind {
         ProposalKind::Shapers => (shapers::subject_of(&proposal.payload), None),
+        ProposalKind::Dri => match serde_json::from_value::<DriPayload>(proposal.payload.clone()) {
+            Ok(parsed) => (Some(parsed.p), Some(parsed.i)),
+            Err(_) => (None, None),
+        },
         ProposalKind::Direction
         | ProposalKind::Project
-        | ProposalKind::Dri
         | ProposalKind::Money
         | ProposalKind::Join => (None, None),
     }
+}
+
+/// `io_direction_propose` (`50002`): a Shaper opens a `direction` proposal.
+/// `base` must equal the live head; `needed` is `39103.rules.direction`.
+pub(super) async fn direction_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let slug = direction_slug(cmd)?;
+    let base = version_tag(cmd.event, "base")?
+        .ok_or_else(|| IngestError::Rejected("invalid: missing base tag".into()))?;
+    let content: DirectionProposeContent = serde_json::from_value(content_value(cmd.event)?)
+        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+    authorize::direction_content(slug, &content)?;
+    let payload = payload_with(
+        content_value(cmd.event)?,
+        &[
+            ("slug", serde_json::Value::String(slug_wire(slug))),
+            ("base", serde_json::json!(base)),
+        ],
+    )?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let head = store::get_direction_head(&mut tx, cmd.tenant.community(), slug)
+        .await
+        .map_err(|e| internal("read io_direction", e))?;
+    authorize::open_direction(
+        &shapers,
+        &cmd.actor_hex,
+        base,
+        head.as_ref().map(|row| row.content.version),
+    )?;
+    let rule = shapers.rules.direction;
+    let opening = Opening {
+        kind: ProposalKind::Direction,
+        rule,
+        subject: None,
+        item: None,
+        payload,
+        detail: serde_json::json!({
+            "kind": "direction", "slug": slug_wire(slug), "base": base, "rule": rule,
+        }),
+    };
+    open_and_settle(cmd, tx, shapers, opening).await
+}
+
+/// `io_project_propose` (`50004`): any member opens a `project` proposal.
+/// Execution is R-5a — a vote that would pass is still refused.
+pub(super) async fn project_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let _: ProjectProposeContent = serde_json::from_value(content_value(cmd.event)?)
+        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+    let payload = content_value(cmd.event)?;
+    authorize::require_member(cmd.is_member(&cmd.actor_hex).await?)?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let rule = shapers.rules.project;
+    let opening = Opening {
+        kind: ProposalKind::Project,
+        rule,
+        subject: None,
+        item: None,
+        payload,
+        detail: serde_json::json!({ "kind": "project", "rule": rule }),
+    };
+    open_and_settle(cmd, tx, shapers, opening).await
+}
+
+/// `io_dri_propose` (`50015`): any member names `p` for an item with no
+/// holder. `p` is the §4.4 subject and is left out of `eligible`.
+pub(super) async fn dri_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let item_id = uuid_tag(cmd.event, "i")?
+        .ok_or_else(|| IngestError::Rejected("invalid: missing i tag (item)".into()))?;
+    let subject = pubkey_tag(cmd.event, "p")?
+        .ok_or_else(|| IngestError::Rejected("invalid: missing p tag".into()))?;
+    parse_content::<WhyContent>(cmd.event)?;
+    authorize::require_member(cmd.is_member(&cmd.actor_hex).await?)?;
+    let payload = payload_with(
+        content_value(cmd.event)?,
+        &[
+            ("i", serde_json::Value::String(item_id.to_string())),
+            ("p", serde_json::Value::String(subject.clone())),
+        ],
+    )?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let item = store::get_work_item(&mut tx, cmd.tenant.community(), item_id)
+        .await
+        .map_err(|e| internal("read io_work_items", e))?
+        .ok_or_else(|| IngestError::Rejected("invalid: unknown item".into()))?;
+    authorize::open_dri(&item.content)?;
+    let rule = shapers.rules.dri;
+    let opening = Opening {
+        kind: ProposalKind::Dri,
+        rule,
+        subject: Some(subject.clone()),
+        item: Some(item_id.to_string()),
+        payload,
+        detail: serde_json::json!({
+            "kind": "dri", "i": item_id, "p": subject, "rule": rule,
+        }),
+    };
+    open_and_settle(cmd, tx, shapers, opening).await
 }
 
 /// Open `opening` on `tx`, record the opener's agree if the command carries
@@ -350,20 +526,166 @@ async fn execute(
 ) -> Result<Execution, IngestError> {
     match proposal.kind {
         ProposalKind::Shapers => shapers::execute(cmd, tx, shapers, proposal).await,
-        ProposalKind::Direction | ProposalKind::Project | ProposalKind::Dri => {
-            Err(IngestError::Rejected(format!(
-                "invalid: execution of {} proposals is not implemented yet",
-                serde_json::to_value(proposal.kind)
-                    .ok()
-                    .and_then(|v| v.as_str().map(str::to_owned))
-                    .unwrap_or_default()
-            )))
-        }
+        ProposalKind::Direction => execute_direction(cmd, tx, proposal).await,
+        ProposalKind::Dri => execute_dri(cmd, tx, proposal).await,
+        ProposalKind::Project => Err(IngestError::Rejected(
+            "invalid: execution of project proposals is not implemented yet".into(),
+        )),
         ProposalKind::Money => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
         ProposalKind::Join => Err(IngestError::Rejected("restricted: join not enabled".into())),
     }
+}
+
+fn executed_direction(slug: DirectionSlug) -> Executed {
+    Executed {
+        kind: object::DIRECTION.to_owned(),
+        id: slug_wire(slug),
+    }
+}
+
+fn executed_work_item(id: &str) -> Executed {
+    Executed {
+        kind: object::WORK_ITEM.to_owned(),
+        id: id.to_owned(),
+    }
+}
+
+fn fresh_line_id(seen: &HashSet<String>) -> String {
+    for _ in 0..16 {
+        let candidate = format!("l_{}", &Uuid::new_v4().simple().to_string()[..4]);
+        if !seen.contains(&candidate) {
+            return candidate;
+        }
+    }
+    format!("l_{}", &Uuid::new_v4().simple().to_string()[..8])
+}
+
+/// Number the proposed lines and fill missing ids. `mission` / `vision`
+/// ignore `lines` (authorize already refused a non-empty list).
+fn direction_lines(
+    slug: DirectionSlug,
+    inputs: Option<&[DirectionLineInput]>,
+) -> Result<Vec<DirectionLine>, IngestError> {
+    if !matches!(slug, DirectionSlug::Objectives | DirectionSlug::Strategy) {
+        return Ok(vec![]);
+    }
+    let Some(inputs) = inputs else {
+        return Ok(vec![]);
+    };
+    let mut lines = Vec::with_capacity(inputs.len());
+    let mut seen = HashSet::new();
+    for (idx, input) in inputs.iter().enumerate() {
+        let id = match input.id.as_deref() {
+            Some(id) if !id.is_empty() => {
+                if !seen.insert(id.to_owned()) {
+                    return Err(IngestError::Rejected(format!(
+                        "invalid: duplicate line id {id}"
+                    )));
+                }
+                id.to_owned()
+            }
+            _ => {
+                let id = fresh_line_id(&seen);
+                seen.insert(id.clone());
+                id
+            }
+        };
+        let n = u32::try_from(idx.saturating_add(1))
+            .map_err(|_| IngestError::Rejected("invalid: too many direction lines".into()))?;
+        lines.push(DirectionLine {
+            n,
+            id,
+            text: input.text.clone(),
+            date: input.date,
+        });
+    }
+    Ok(lines)
+}
+
+/// §5.3 `direction`: emit `39100` version `base + 1` and write `prev`.
+async fn execute_direction(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let payload: DirectionPayload = serde_json::from_value(proposal.payload.clone())
+        .map_err(|e| internal("direction proposal payload", e))?;
+    let head = store::get_direction_head(&mut *tx, cmd.tenant.community(), payload.slug)
+        .await
+        .map_err(|e| internal("read io_direction", e))?;
+    authorize::stale_base(payload.base, head.as_ref().map(|row| row.content.version))?;
+    let version = payload.base.saturating_add(1);
+    let prev = head.as_ref().map(|row| hex::encode(&row.event_id));
+    let artifact = DirectionArtifact {
+        slug: payload.slug,
+        version,
+        body: payload.body,
+        lines: direction_lines(payload.slug, payload.lines.as_deref())?,
+        confirmed_by: cmd.actor_hex.clone(),
+        confirmed_at: cmd.at,
+        proposed_by: proposal.opened_by.clone(),
+        proposal: proposal.id.clone(),
+        prev,
+    };
+    Ok(Execution {
+        executed: executed_direction(payload.slug),
+        projections: vec![Projection::Direction(artifact)],
+        rows: vec![cmd.ledger(
+            "direction_confirmed",
+            object::DIRECTION,
+            &slug_wire(payload.slug),
+            serde_json::json!({
+                "proposal": proposal.id,
+                "version": version,
+                "slug": slug_wire(payload.slug),
+            }),
+        )?],
+    })
+}
+
+/// §5.3 `dri`: set `dri` on the item, state `accepted`; withdraw a foreign
+/// offer. A holder that landed while the vote was open refuses the passing
+/// vote so the proposal stays open rather than passing without effect.
+async fn execute_dri(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let payload: DriPayload = serde_json::from_value(proposal.payload.clone())
+        .map_err(|e| internal("dri proposal payload", e))?;
+    let item_id = Uuid::parse_str(&payload.i).map_err(|e| internal("dri item id", e))?;
+    let row = store::get_work_item(&mut *tx, cmd.tenant.community(), item_id)
+        .await
+        .map_err(|e| internal("read io_work_items", e))?
+        .ok_or_else(|| IngestError::Rejected("invalid: unknown item".into()))?;
+    authorize::open_dri(&row.content)?;
+    let withdrawn = row.content.offered_to.clone();
+    let mut item: WorkItem = row.content;
+    item.dri = Some(payload.p.clone());
+    item.state = WorkItemState::Accepted;
+    item.offered_to = None;
+    item.offered_by = None;
+    item.offered_at = None;
+    Ok(Execution {
+        executed: executed_work_item(&payload.i),
+        projections: vec![Projection::WorkItem {
+            item: Box::new(item),
+            receipt: cmd.receipt_hex(),
+        }],
+        rows: vec![cmd.ledger(
+            "item_accepted",
+            object::WORK_ITEM,
+            &payload.i,
+            serde_json::json!({
+                "proposal": proposal.id,
+                "p": payload.p,
+                "withdrawn": withdrawn,
+                "why": "dri",
+            }),
+        )?],
+    })
 }
 
 #[cfg(test)]

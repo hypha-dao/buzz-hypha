@@ -11,7 +11,8 @@
 //! - [`proposals`] — opening, the D1 opener vote, `50003`, the tally, and
 //!   execution dispatch (§5.3);
 //! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
-//!   `shapers` execution rows, `proposals` for `50003`.
+//!   `shapers` execution rows, `proposals` for `50002`/`50004`/`50015`/`50003`
+//!   and the `direction` / `dri` execution rows (`project` execution is R-5a).
 //!
 //! Client `EVENT`s of `39100–39105` never reach here: ingest rejects them as
 //! `restricted: relay-only kind` before verification.
@@ -28,9 +29,9 @@ use std::sync::Arc;
 
 use buzz_core::intelligent_org::{tag, Shapers};
 use buzz_core::kind::{
-    is_intelligent_org_command_kind, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
-    KIND_IO_MONEY_RELEASED, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
-    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE,
+    is_intelligent_org_command_kind, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -67,6 +68,9 @@ pub async fn handle_command(
     };
     match kind {
         KIND_IO_SHAPERS_PROPOSE => shapers::propose(&cmd).await,
+        KIND_IO_DIRECTION_PROPOSE => proposals::direction_propose(&cmd).await,
+        KIND_IO_PROJECT_PROPOSE => proposals::project_propose(&cmd).await,
+        KIND_IO_DRI_PROPOSE => proposals::dri_propose(&cmd).await,
         KIND_IO_VOTE => proposals::vote(&cmd).await,
         KIND_IO_SHAPER_ACCEPT => shapers::accept(&cmd).await,
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,
@@ -159,6 +163,10 @@ pub(crate) mod object {
     pub const PROPOSAL: &str = "proposal";
     /// The org agent; `object_id` is its pubkey.
     pub const AGENT: &str = "agent";
+    /// A direction artifact; `object_id` is the slug.
+    pub const DIRECTION: &str = "direction";
+    /// A work item; `object_id` is its uuid.
+    pub const WORK_ITEM: &str = "work_item";
 }
 
 pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
@@ -244,6 +252,17 @@ pub(crate) fn pubkey_tag(event: &Event, name: &str) -> Result<Option<String>, In
         )));
     }
     Ok(Some(value.to_owned()))
+}
+
+/// The first `name` tag as a `u32` version (`base` on `50002`).
+pub(crate) fn version_tag(event: &Event, name: &str) -> Result<Option<u32>, IngestError> {
+    tag_value(event, name)
+        .map(|v| {
+            v.parse::<u32>().map_err(|_| {
+                IngestError::Rejected(format!("invalid: {name} tag must be a version number"))
+            })
+        })
+        .transpose()
 }
 
 /// The first `name` tag as a UUID.

@@ -23,9 +23,11 @@
 
 use buzz_core::channel::MemberRole;
 use buzz_core::event::StoredEvent;
-use buzz_core::intelligent_org::{Proposal, Shapers};
+use buzz_core::intelligent_org::{DirectionArtifact, Proposal, Shapers, WorkItem};
 use buzz_core::CommunityId;
-use buzz_db::intelligent_org::{self as store, LedgerEntry, ProposalRow, ShapersRow, VoteRow};
+use buzz_db::intelligent_org::{
+    self as store, DirectionRow, LedgerEntry, ProposalRow, ShapersRow, VoteRow, WorkItemRow,
+};
 use buzz_db::relay_rooms::{self, DesiredMember, RosterChange};
 use buzz_db::replaceable::{ParameterizedReplacePrecondition, ParameterizedReplaceStatus};
 use buzz_db::{Db, DbError};
@@ -74,6 +76,17 @@ pub enum Projection {
         /// `proposal.votes`; written to `io_votes`.
         cast: Vec<CastVote>,
     },
+    /// A confirmed direction version (`39100`, `io_direction`). Versions are
+    /// immutable: `apply` inserts, never overwrites.
+    Direction(DirectionArtifact),
+    /// A work item (`39101`, `io_work_items`). `receipt` is the command that
+    /// produced this version.
+    WorkItem {
+        /// Canonical §4.2 content.
+        item: Box<WorkItem>,
+        /// The command id, hex.
+        receipt: String,
+    },
 }
 
 /// One vote the command cast, for its `io_votes` row: the `Vote` in the
@@ -97,6 +110,8 @@ impl Projection {
                 receipt,
                 ..
             } => state::proposal(proposal, subject.as_deref(), item.as_deref(), receipt),
+            Self::Direction(artifact) => state::direction(artifact),
+            Self::WorkItem { item, receipt } => state::work_item(item, receipt),
         }
     }
 }
@@ -241,6 +256,49 @@ async fn write_proposal(
     Ok(())
 }
 
+async fn write_direction(
+    conn: &mut PgConnection,
+    ctx: &ApplyContext<'_>,
+    artifact: &DirectionArtifact,
+    event_id: &[u8],
+) -> Result<(), IngestError> {
+    let row = DirectionRow {
+        content: artifact.clone(),
+        event_id: event_id.to_vec(),
+    };
+    store::insert_direction(conn, ctx.community, &row)
+        .await
+        .map_err(|e| internal("write io_direction", e))
+}
+
+async fn write_work_item(
+    conn: &mut PgConnection,
+    ctx: &ApplyContext<'_>,
+    item: &WorkItem,
+    event_id: &[u8],
+    created_at: u64,
+) -> Result<(), IngestError> {
+    let id = Uuid::parse_str(&item.id).map_err(|e| internal("work item id", e))?;
+    let existing = store::get_work_item(conn, ctx.community, id)
+        .await
+        .map_err(|e| internal("read io_work_items", e))?;
+    let updated_at = store::ts(created_at).map_err(|e| internal("state created_at", e))?;
+    let row = WorkItemRow {
+        content: item.clone(),
+        event_id: event_id.to_vec(),
+        last_progress_at: existing.as_ref().and_then(|row| row.last_progress_at),
+        done_at: existing.as_ref().and_then(|row| row.done_at),
+        created_at: existing
+            .as_ref()
+            .map(|row| row.created_at)
+            .unwrap_or(updated_at),
+        updated_at,
+    };
+    store::upsert_work_item(conn, ctx.community, &row)
+        .await
+        .map_err(|e| internal("write io_work_items", e))
+}
+
 /// Write `projections` and `ledger` on `tx`. See the module docs for the
 /// order and the guarantees.
 pub async fn apply(
@@ -275,6 +333,12 @@ pub async fn apply(
             }
             Projection::Proposal { proposal, cast, .. } => {
                 write_proposal(tx, ctx, proposal, cast, &event_id, created_at).await?;
+            }
+            Projection::Direction(artifact) => {
+                write_direction(tx, ctx, artifact, &event_id).await?;
+            }
+            Projection::WorkItem { item, .. } => {
+                write_work_item(tx, ctx, item, &event_id, created_at).await?;
             }
         }
 
