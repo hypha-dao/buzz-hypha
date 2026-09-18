@@ -1,6 +1,9 @@
 import type { Page } from "@playwright/test";
 import type { ChannelTemplate, RelayEvent } from "../../src/shared/api/types";
-import type { MockManagedAgentSeed } from "../../src/testing/e2eBridge";
+import type {
+  MockManagedAgentSeed,
+  MockOrgSeed,
+} from "../../src/testing/e2eBridge";
 import { FEATURE_OVERRIDES_STORAGE_KEY, PREVIEW_FEATURE_IDS } from "./features";
 
 export const TEST_IDENTITIES = {
@@ -161,6 +164,8 @@ type MockBridgeOptions = {
   relaySelf?: string | null;
   /** Native-like huddle state seeded from authoritative role-bearing membership. */
   huddle?: MockHuddleSeed;
+  /** Intelligent-org state: serves `kind:39103` and seeds the org agent's DM. */
+  org?: MockOrgSeed;
   /** Builderlab account returned by hosted-community onboarding. Null/omitted = signed out. */
   builderlabAuth?: { email?: string; name?: string; expiresAt: string } | null;
   /** Optional policy returned by the native join-policy discovery command. */
