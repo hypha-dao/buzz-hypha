@@ -50,6 +50,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 
 | Slice | Status | PR | Merged as | Notes |
 | ----- | ------ | -- | --------- | ----- |
+| D-5   | open   | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 
 ### Waves 5–8
@@ -221,6 +222,39 @@ absorb an item into an unrelated slice.
   a tiny Rust binary under `buzz-org-agent` — do not add an npm dependency.
   The generator needs Node ≥ 23.6 (type stripping of `data.ts`); Hermit pins
   24.
+- **The agent DM is not yet named from the agent's `kind:0`** once the relay
+  excludes `39103.agent` from the DM identity (Protocol §6.8 "The agent
+  DM": `p = [member]`, "the sidebar names it from the agent's `kind:0`").
+  D-5's `isOrgAgentDm` already recognises that `{member}` shape and pins it,
+  but `useDmSidebarMetadata` / `resolveChannelDisplayLabel` still label a DM
+  from its listed participants, so a self-identity DM would read as the
+  member's own name and carry their avatar and presence. Nothing produces
+  that shape today — the relay still lists the agent in the `p` tags, and
+  the mock bridge seeds `{member, agent}` — so this waits on the relay slice
+  that ships the §6.8 identity exclusion (R-8) and should land with it, or
+  as a small D follow-up: label, avatar, and presence from `39103.agent`'s
+  profile when `isOrgAgentDm` is true.
+- **Block's Welcome-channel onboarding is dormant, not removed.** With no
+  starter personas the Welcome Team cannot be provisioned; D-5 makes
+  `ensureWelcomeTeam` throw `WelcomeTeamUnavailableError`, which the seeding
+  path treats as "no team" (canvas still seeds, channel still counts as
+  ensured), and holds the kickoff stage back so Welcome reads as an ordinary
+  empty channel. The team-provisioning code, the kickoff stage, and the
+  Block-era welcome copy all remain in the tree. Decide whether the org
+  agent's DM (the Personal Assistant surface, Design § Surfaces) replaces the
+  Welcome kickoff outright, then delete the dormant code — a wave-3 `O-*`
+  concern once the agent is live.
+- **The Agents door still shows Block-era "Agent teams".** D-5 empties
+  `BUILT_IN_TEAMS`, so a fresh store has none, but the section and its
+  catalog UI stay. Whether teams of members' own agents belong on the Hypha
+  door at all is a product call the Design does not make; leave the section
+  until it does.
+- **Adding a smoke spec re-cuts the Playwright shards.** `--shard=N/4`
+  splits the smoke project by test count, so `org-agent-defaults.spec.ts`
+  moves the boundaries of `Desktop Smoke E2E (1–4)`; a spec that was in the
+  green shard 3 may now run in a standing-red one and vice versa. Judge the
+  shards by which specs failed, not by shard number, until the standing red
+  set is fixed.
 
 ---
 
@@ -291,6 +325,24 @@ Docker), install `libpq` (`brew install libpq`, then
 `PG_BIN_DIR=/opt/homebrew/opt/libpq/bin`) and `cargo install cargo-nextest
 --locked`. A `docker exec` shim works too, as long as it streams `--file=`
 arguments over stdin — the lane passes host paths.
+
+**Desktop lane** (any `D-*` slice; D-5 ran it this way). The Tauri crate
+needs the sidecar placeholder files before it compiles (`_ensure-sidecar-stubs`
+in the Justfile does this), and Playwright needs `pnpm exec playwright install
+chromium --with-deps` once per host:
+
+```bash
+cd desktop && pnpm check && pnpm typecheck && pnpm test         # biome, tsc, ~6.5k node tests
+just desktop-tauri-fmt-check && just desktop-tauri-clippy
+just desktop-tauri-test                                         # cargo test --workspace in desktop/src-tauri
+cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-agent-defaults
+cd desktop && pnpm test:e2e:smoke                               # whole smoke project, ~90 min on 4 cores
+```
+
+`pnpm check` reports a handful of biome warnings/infos on untouched files and
+still exits 0; that is the CI behaviour too. Always build with `pnpm
+build:e2e`, never `pnpm run build`, before running specs by hand (AGENTS.md
+§ Writing E2E Screenshot Specs).
 
 **Migration edits before merge**: the local `buzz` database records each
 applied migration's checksum. If you change an unmerged migration file after
