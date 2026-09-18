@@ -17,7 +17,10 @@ import {
 } from "@/features/onboarding/welcome";
 import { forceFreshOnboarding } from "@/features/onboarding/devFreshOnboarding";
 import { ensureWelcomeCanvas } from "@/features/onboarding/welcomeCanvas";
-import { ensureWelcomeTeam } from "@/features/onboarding/welcomeGuide";
+import {
+  ensureWelcomeTeam,
+  WelcomeTeamUnavailableError,
+} from "@/features/onboarding/welcomeGuide";
 import { useProfileQuery } from "@/features/profile/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -56,7 +59,13 @@ function seedWelcomeExperience(
 
   const promise = (async () => {
     try {
-      await ensureWelcomeTeam(channelId, communityScope);
+      // No starter personas on this build (the Hypha fork seeds none) means
+      // no team — the canvas still seeds and the channel still counts as
+      // ensured, so the next launch does not retry a team that cannot exist.
+      await ensureWelcomeTeam(channelId, communityScope).catch((error) => {
+        if (error instanceof WelcomeTeamUnavailableError) return null;
+        throw error;
+      });
       await ensureWelcomeCanvas(channelId);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),

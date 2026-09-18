@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   activateWelcomeTeamPersonasSequentially,
   buildWelcomeStarterCreateInput,
+  hasWelcomeTeamStarters,
   LEGACY_WELCOME_GUIDE_SYSTEM_PROMPT,
+  missingWelcomeTeamStarters,
   pickWelcomeGuideAgent,
   pickWelcomeGuideAgentForRelay,
   pickWelcomeTeamStarterAgentForRelay,
@@ -451,4 +453,25 @@ test("owner-only-access policy accepts provider Welcome teammates", () => {
   });
   assert.equal(welcomeTeammateHasExpectedAccess(teammate, PUB_B, true), true);
   assert.equal(welcomeTeammateHasExpectedAccess(teammate, PUB_B, false), false);
+});
+
+test("a store with no sample personas has no Welcome Team starters", () => {
+  // The Hypha fork seeds none (AGENTS.md § Hypha fork); the kickoff must
+  // treat that as "no team", not as a provisioning failure to retry.
+  assert.equal(hasWelcomeTeamStarters([]), false);
+  assert.deepEqual(
+    missingWelcomeTeamStarters([{ id: "custom:reviewer" }]),
+    WELCOME_TEAM_STARTERS.map(({ personaId }) => personaId),
+  );
+});
+
+test("a carried-over Block store with every starter still has a Welcome Team", () => {
+  const personas = WELCOME_TEAM_STARTERS.map(({ personaId }) => ({
+    id: personaId,
+  }));
+  assert.equal(hasWelcomeTeamStarters(personas), true);
+  assert.deepEqual(missingWelcomeTeamStarters(personas), []);
+  assert.deepEqual(missingWelcomeTeamStarters(personas.slice(1)), [
+    WELCOME_GUIDE_PERSONA_ID,
+  ]);
 });

@@ -13,6 +13,8 @@ import {
 import { useActiveWorkingChannelsById } from "@/features/sidebar/lib/useActiveWorkingChannelsById";
 import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
 import { sortDmChannelsForSidebar } from "@/features/sidebar/lib/dmSidebarSort";
+import { pinOrgAgentDmFirst } from "@/features/org/orgAgent";
+import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
 import {
   sectionSortGroupKey,
   sortChannelsForSidebar,
@@ -398,14 +400,27 @@ export function AppSidebar({
       fallbackDisplayName,
       profileDisplayName: profile?.displayName,
     });
+  const orgAgentPubkey = useOrgAgentPubkey();
+  // The org agent's DM leads the list in every sort mode (AGENTS.md § Hypha
+  // fork); the user's alpha/recent preference orders the rest.
   const sortedDirectMessages = React.useMemo(
     () =>
-      sortDmChannelsForSidebar(
-        directMessages,
-        dmChannelLabels,
-        sortModeFor("dms"),
+      pinOrgAgentDmFirst(
+        sortDmChannelsForSidebar(
+          directMessages,
+          dmChannelLabels,
+          sortModeFor("dms"),
+        ),
+        orgAgentPubkey,
+        currentPubkey ?? null,
       ),
-    [directMessages, dmChannelLabels, sortModeFor],
+    [
+      currentPubkey,
+      directMessages,
+      dmChannelLabels,
+      orgAgentPubkey,
+      sortModeFor,
+    ],
   );
   const unreadDmPreviewsBelow = React.useMemo(
     () =>

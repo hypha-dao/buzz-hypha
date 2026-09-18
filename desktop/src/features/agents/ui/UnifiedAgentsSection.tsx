@@ -27,6 +27,10 @@ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 import { CreateIdentityCard } from "./CreateIdentityCard";
 import { PersonaActionsMenu } from "./PersonaActionsMenu";
 import { buildUnifiedGroups } from "./unifiedAgentGroups";
+import { WorkSyncTemplateCard } from "./WorkSyncTemplateCard";
+
+export const AGENTS_DOOR_EMPTY_STATE_COPY =
+  "No agents yet. Agents you create here run on your machine, under your key, with your model.";
 
 type UnifiedAgentsSectionProps = {
   defaultModel: string;
@@ -122,6 +126,8 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
   useFeedbackToasts(actionNoticeMessage, actionErrorMessage);
   useFeedbackToasts(personaFeedbackNoticeMessage, personaFeedbackErrorMessage);
   const isLoading = isAgentsLoading || isPersonasLoading;
+  const isEmpty =
+    groups.length === 0 && unknown.length === 0 && ungrouped.length === 0;
 
   return (
     <section
@@ -179,6 +185,15 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
             })}
           </div>
 
+          {isEmpty ? (
+            <p
+              className={`${AGENT_CARD_COLUMN_CLASS} text-sm text-muted-foreground`}
+              data-testid="agents-door-empty-state"
+            >
+              {AGENTS_DOOR_EMPTY_STATE_COPY}
+            </p>
+          ) : null}
+
           {unknown.length > 0 ? (
             <CollapsibleAgentGroup
               agents={unknown}
@@ -213,6 +228,8 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               onStartAgent={onStartAgent}
             />
           ) : null}
+
+          <TemplatesGroup />
         </div>
       ) : null}
 
@@ -458,6 +475,26 @@ function StandaloneAgentCard({
         ) : null
       }
     />
+  );
+}
+
+/**
+ * Ready-made agents a member can start from. The Hypha desktop offers exactly
+ * one, Work sync, and it is disabled until it ships (Design § Work sync). Kept
+ * out of the persona grid so it never reads as an agent the member already
+ * has.
+ */
+function TemplatesGroup() {
+  return (
+    <div
+      className={`${AGENT_CARD_COLUMN_CLASS} space-y-2`}
+      data-testid="agent-templates-group"
+    >
+      <h3 className="px-1 py-1 text-sm font-medium">Templates</h3>
+      <div className={IDENTITY_CARD_GRID_CLASS}>
+        <WorkSyncTemplateCard />
+      </div>
+    </div>
   );
 }
 

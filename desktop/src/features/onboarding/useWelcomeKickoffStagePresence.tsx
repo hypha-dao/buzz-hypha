@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { usePersonasQuery } from "@/features/agents/hooks";
 import { isWelcomeSetupSystemMessage } from "@/features/channels/ui/ChannelPane.helpers";
 import type { TimelineMessage } from "@/features/messages/types";
 import { WelcomeKickoffStage } from "@/features/onboarding/ui/WelcomeKickoffStage";
@@ -11,6 +12,7 @@ import {
   isWelcomeChannel,
   notifyWelcomeSurfaceReady,
 } from "@/features/onboarding/welcome";
+import { hasWelcomeTeamStarters } from "@/features/onboarding/welcomeGuide";
 import type { Channel } from "@/shared/api/types";
 
 /**
@@ -33,8 +35,18 @@ export function useWelcomeKickoffStagePresence(
       timelineMessages.some((message) => !isWelcomeSetupSystemMessage(message)),
     [timelineMessages],
   );
+  // The stage promises "your team is being set up". With no starter personas
+  // in the store (the Hypha fork seeds none) no team is coming, so the stage
+  // never enters and Welcome reads as an ordinary empty channel — instead of
+  // 90 seconds of characters followed by a silent time-out. Until the
+  // personas query settles, hold the stage back rather than flash it.
+  const isWelcome = isWelcomeChannel(activeChannel);
+  const personasQuery = usePersonasQuery({ enabled: isWelcome });
+  const welcomeTeamAvailable =
+    personasQuery.data !== undefined &&
+    hasWelcomeTeamStarters(personasQuery.data);
   const { phase, handleExitComplete } = useWelcomeKickoffStage(
-    activeChannel,
+    welcomeTeamAvailable ? activeChannel : null,
     hasVisibleTimelineMessages,
     isTimelineLoading,
   );

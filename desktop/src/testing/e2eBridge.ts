@@ -31,6 +31,11 @@ import {
 } from "@/features/agents/observerRelayStore";
 import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
+import {
+  ORG_AGENT_DISPLAY_NAME,
+  ORG_AGENT_DM_CHANNEL_ID,
+  ORG_AGENT_PUBKEY,
+} from "./orgAgentFixture.ts";
 export { mockSearchHitMatches };
 import type { ConnectionState } from "@/shared/api/relayClientShared";
 import type {
@@ -64,6 +69,7 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_SHAPERS,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
   KIND_PERSONA,
@@ -127,6 +133,15 @@ export type MockManagedAgentSeed = {
   respondToAllowlist?: string[];
   /** Per-agent env vars seeded into the mock store. */
   envVars?: Record<string, string>;
+};
+
+export type MockOrgSeed = {
+  /** `39103.agent`; defaults to `ORG_AGENT_PUBKEY`. */
+  agentPubkey?: string;
+  /** `39103.agent_hosted`; defaults to true (the relay operator runs it). */
+  agentHosted?: boolean;
+  /** Seed the viewer's DM with the org agent (default true). */
+  seedAgentDm?: boolean;
 };
 
 type MockManagedAgentRuntimeSeed = {
@@ -346,6 +361,14 @@ type E2eConfig = {
     relayAgentRevalidationRevokedPubkeys?: string[];
     /** Native-like huddle state seeded from authoritative role-bearing membership. */
     huddle?: MockHuddleSeed;
+    /**
+     * Intelligent-org community state. When set, the mock relay serves one
+     * relay-signed `kind:39103` (`d=shapers`) naming `agentPubkey` as the org
+     * agent and, unless `seedAgentDm` is false, seeds the viewer's 1:1 DM with
+     * it plus its "Org agent" profile. Absent = the community was never
+     * bootstrapped: no `39103`, no org agent.
+     */
+    org?: MockOrgSeed;
     agentListDelayMs?: number;
     agentMemory?: RawAgentMemoryListing | Record<string, RawAgentMemoryListing>;
     addChannelMembersDelayMs?: number;
@@ -1114,6 +1137,37 @@ function createMockRelayMembershipEvent(): RelayEvent {
     13534,
     "",
     mockRelayMembers.map((member) => ["member", member.pubkey, member.role]),
+    "f".repeat(64),
+  );
+}
+
+function mockOrgAgentPubkey(org: MockOrgSeed): string {
+  return (org.agentPubkey ?? ORG_AGENT_PUBKEY).toLowerCase();
+}
+
+/**
+ * The relay-signed `kind:39103` Shapers-and-rules state (Protocol §4.5) for
+ * a community whose `mock.org` is configured. The viewer is founder and sole
+ * Shaper; `agent` / `agent_hosted` come from the seed.
+ */
+function createMockShapersStateEvent(org: MockOrgSeed): RelayEvent {
+  const agent = mockOrgAgentPubkey(org);
+  return createMockEvent(
+    KIND_IO_SHAPERS,
+    JSON.stringify({
+      founder: MOCK_IDENTITY_PUBKEY,
+      shapers: [MOCK_IDENTITY_PUBKEY],
+      offered: [],
+      room: "5b1c8d2e-7f30-5a49-8c6d-1e2f3a4b5c6d",
+      agent,
+      agent_hosted: org.agentHosted ?? true,
+      rules: { direction: "majority", project: "majority", dri: "majority" },
+      decision_window_secs: 604_800,
+    }),
+    [
+      ["d", "shapers"],
+      ["p", MOCK_IDENTITY_PUBKEY],
+    ],
     "f".repeat(64),
   );
 }
@@ -3814,6 +3868,64 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
       };
     }
   });
+}
+
+/**
+ * Seed the org agent's identity and, by default, the viewer's 1:1 DM with it.
+ * Mirrors what the relay does at `39103` bootstrap (Protocol §6.4, §6.8): the
+ * DM's `p` tags are `[member, agent]` and the agent's `kind:0` names it "Org
+ * agent". Without `mock.org` nothing is seeded.
+ */
+function initializeMockOrg(org: MockOrgSeed | undefined) {
+  if (!org) return;
+  const agent = mockOrgAgentPubkey(org);
+  applyMockDisplayName(agent, ORG_AGENT_DISPLAY_NAME);
+  mockAgentPubkeys.add(agent);
+  mockPresence.set(agent, "online");
+  mockProfiles.set(agent, {
+    pubkey: agent,
+    display_name: ORG_AGENT_DISPLAY_NAME,
+    avatar_url: null,
+    about: "The community's org agent. Drafts, never decides.",
+    nip05_handle: null,
+    owner_pubkey: null,
+    is_agent: true,
+    has_profile_event: true,
+  });
+  if (org.seedAgentDm === false) return;
+  if (mockChannels.some((channel) => channel.id === ORG_AGENT_DM_CHANNEL_ID)) {
+    return;
+  }
+  mockChannels.push(
+    createMockChannel({
+      id: ORG_AGENT_DM_CHANNEL_ID,
+      name: "DM",
+      channel_type: "dm",
+      visibility: "private",
+      description: "DM between the org agent and tyler",
+      topic: null,
+      purpose: null,
+      // Quiet on purpose: the pin must win over "recent" ordering, not ride it.
+      last_message_at: null,
+      archived_at: null,
+      created_by: agent,
+      topic_set_by: null,
+      topic_set_at: null,
+      purpose_set_by: null,
+      purpose_set_at: null,
+      topic_required: false,
+      max_members: 2,
+      nip29_group_id: null,
+      created_minutes_ago: 30,
+      updated_minutes_ago: 30,
+      participants: [ORG_AGENT_DISPLAY_NAME, "tyler"],
+      participant_pubkeys: [agent, MOCK_IDENTITY_PUBKEY],
+      members: [
+        createMockMember(agent, "member", 30),
+        createMockMember(MOCK_IDENTITY_PUBKEY, "member", 30),
+      ],
+    }),
+  );
 }
 
 function initializeMockHuddle(
@@ -10912,6 +11024,22 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (filter.kinds?.includes(KIND_IO_SHAPERS)) {
+      // One `39103` per community, only once it is bootstrapped (`mock.org`
+      // set). Honor `#d` like the real addressable-event index does.
+      const org = getConfig()?.mock?.org;
+      const dTags = filter["#d"];
+      if (org && (!dTags || dTags.includes("shapers"))) {
+        sendWsText(socket.handler, [
+          "EVENT",
+          subId,
+          createMockShapersStateEvent(org),
+        ]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     if (filter.kinds?.includes(KIND_EMOJI_SET)) {
       // Honor `authors` so `fetchOwnEmoji` (authors:[me]) sees only the
       // caller's set, while the union fetch (no authors) sees every member's —
@@ -11393,6 +11521,7 @@ export function maybeInstallE2eTauriMocks() {
   resetMockPendingNavigationDeepLinks(config);
   resetMockPendingEntityDeepLinks(config);
   initializeMockHuddle(config.mock?.huddle, config);
+  initializeMockOrg(config.mock?.org);
   mockWebsocketSendMutexWedged = false;
   if (config.mock?.windowLabel) {
     (window as Window & { isTauri?: boolean }).isTauri = true;

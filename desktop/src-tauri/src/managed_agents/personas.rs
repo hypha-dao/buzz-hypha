@@ -35,7 +35,17 @@ pub(crate) const POLLEN_LEGACY_SYSTEM_PROMPT: &str = "You are Bumble, a curious 
 // product name everywhere it is consumed.
 const POLLEN_AVATAR: &str = BUMBLE_AVATAR;
 
-const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
+/// Personas seeded into every store on load. The Hypha fork seeds none: the
+/// Agents door starts empty and holds only the member's own agents (AGENTS.md
+/// § Hypha fork; Design § Work sync). Adding an entry here re-enables seeding
+/// for every install, so keep it empty unless the product contract changes.
+const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[];
+
+/// Block's sample personas (Fizz, Honey, Pollen). Never seeded on this fork;
+/// retained so the avatar and Pollen-rename migrations can still recognise a
+/// store carried over from Block's Buzz, and so a Block-era team catalog
+/// entry that names one of them still resolves to a definition.
+const SAMPLE_PERSONAS: &[BuiltInPersona] = &[
     BuiltInPersona {
         id: "builtin:fizz",
         display_name: "Fizz",
@@ -71,11 +81,17 @@ const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
     },
 ];
 
+/// Avatar of a Block-era sample persona, used by the avatar-refresh migration
+/// to recognise and replace the seeded artwork on a carried-over store.
 pub(crate) fn built_in_persona_avatar_url(id: &str) -> Option<&'static str> {
-    BUILT_IN_PERSONAS
+    SAMPLE_PERSONAS
         .iter()
         .find(|persona| persona.id == id)
         .and_then(|persona| persona.avatar_url)
+}
+
+fn is_sample_persona(id: &str) -> bool {
+    SAMPLE_PERSONAS.iter().any(|persona| persona.id == id)
 }
 
 const RETIRED_PERSONAS: &[(&str, &str)] = &[
@@ -117,8 +133,19 @@ const RETIRED_PERSONAS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Definitions for the personas seeded on load (`BUILT_IN_PERSONAS`).
 fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
-    BUILT_IN_PERSONAS
+    persona_records(BUILT_IN_PERSONAS, now)
+}
+
+/// Definitions for Block's sample personas (`SAMPLE_PERSONAS`). Migration
+/// lookups only — nothing seeds these.
+fn sample_persona_records(now: &str) -> Vec<AgentDefinition> {
+    persona_records(SAMPLE_PERSONAS, now)
+}
+
+fn persona_records(personas: &[BuiltInPersona], now: &str) -> Vec<AgentDefinition> {
+    personas
         .iter()
         .map(|persona| AgentDefinition {
             id: persona.id.to_string(),
@@ -148,8 +175,11 @@ fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
         .collect()
 }
 
+/// Definition of a Block-era sample persona as it was seeded. Used by the
+/// avatar and Pollen-rename migrations to compute the content hash a
+/// carried-over instance was created from, and by team-catalog fixtures.
 pub(crate) fn built_in_persona_definition(id: &str, now: &str) -> Option<AgentDefinition> {
-    built_in_persona_records(now)
+    sample_persona_records(now)
         .into_iter()
         .find(|persona| persona.id == id)
 }
@@ -197,11 +227,25 @@ fn merge_personas(mut stored: Vec<AgentDefinition>, now: &str) -> (Vec<AgentDefi
         }
     }
 
+    // A Block-era sample persona (Fizz, Honey, Pollen) the user had already
+    // removed from My Agents is purged: nothing can reference an inactive
+    // persona (`validate_persona_activation_change` blocks deactivation while
+    // a managed agent or team still points at it), and a non-builtin inactive
+    // record has no affordance to come back — it would linger invisibly.
+    let before = stored.len();
+    stored.retain(|record| {
+        !(record.is_builtin && !record.is_active && is_sample_persona(&record.id))
+    });
+    if stored.len() != before {
+        changed = true;
+    }
+
     // Demote any stored persona still flagged as built-in whose id is no
-    // longer in BUILT_IN_PERSONAS (e.g. a built-in that has been retired).
-    // The record stays so existing managed-agent and team references keep
-    // working; the user can delete it from the catalog like any custom
-    // persona once they no longer need it.
+    // longer in BUILT_IN_PERSONAS (a retired built-in, or — on this fork — an
+    // active Fizz/Honey/Pollen carried over from Block's Buzz). The record
+    // stays so existing managed-agent and team references keep working; the
+    // user can delete it from the catalog like any custom persona once they
+    // no longer need it.
     for record in stored.iter_mut() {
         if record.is_builtin && built_in_order(&record.id).is_none() {
             record.is_builtin = false;
