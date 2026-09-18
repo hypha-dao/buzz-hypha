@@ -1,0 +1,225 @@
+{
+  "org": "river",
+  "locales": [
+    "en",
+    "pt"
+  ],
+  "now": 1780218000,
+  "relay": "14c9e8042d96be7652164f2fceafd74055f2ac665dbc503af3e69efa044e60d7",
+  "agent": "33c7800e23e1d6ad4b15b3847a552afcbd8ebdea3b69026444728209aa908f3e",
+  "reader": "bd1218be1769974f24a1bbbf9046e5425ff6e93facd10b8fc3a764d61eb214bf",
+  "people": {
+    "Maya": "04c85b72d37277944f52564bcdd4fcd3c86da3db01bca2220ba11be45f7a751d",
+    "Sam": "3b2b59737a1d1bd8b3d939daf46b9657c35a935f76402133974f77e612aec0b5",
+    "Lea": "96c86d24b6ae262047033ac09da92dcc45b81a520a2377f094f57a5a57411a26",
+    "Jun": "25595527b1cd3f92cbb5748dc058d812d27b4faec7a1d9a9d453d551397c235f",
+    "Noor": "32825e15918f04878b115839bea1c1b7f7c3a6fd14500da0c64b0c7081c087e5",
+    "Tom": "091a436bc5fb8ecdc34d05559b33dc92e2d45a08cb1033a4f307c0b6d9f4c9c5",
+    "Priya": "5fc17131fa1bb0805d459e23381185c24fe7ac9c40f5ca609ac01e9ceb60f049",
+    "Rafi": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+    "You": "bd1218be1769974f24a1bbbf9046e5425ff6e93facd10b8fc3a764d61eb214bf",
+    "Eli": "b34ff8a93d5d7ad2444c072a81f2a19e046b837c2571f88650b87a91f8972beb"
+  },
+  "shapers": [
+    "04c85b72d37277944f52564bcdd4fcd3c86da3db01bca2220ba11be45f7a751d",
+    "3b2b59737a1d1bd8b3d939daf46b9657c35a935f76402133974f77e612aec0b5"
+  ],
+  "rooms": {
+    "shapers": {
+      "id": "6d0ce9c5-228d-4e6b-95da-5c8422dc9614",
+      "name": "shapers",
+      "dm": false
+    },
+    "growers": {
+      "id": "6331d647-0fed-40fe-91ad-fb349b7c4abf",
+      "name": "growers",
+      "dm": false
+    },
+    "home-currency": {
+      "id": "c548872c-a140-4d12-9cd4-1be8f7b8c4d6",
+      "name": "river-currency-launch",
+      "dm": false
+    },
+    "home-growers": {
+      "id": "632a7d9b-685f-4f5c-969f-68f863d24f79",
+      "name": "grower-onboarding",
+      "dm": false
+    },
+    "saturday": {
+      "id": "91f1a14a-807a-40cd-a301-7a8a5eeaf378",
+      "name": "saturday-stall",
+      "dm": false
+    },
+    "sam-dm": {
+      "id": "21acb916-d24e-4c98-aec9-fc683cb9bf22",
+      "name": "Sam, You",
+      "dm": true
+    },
+    "agent": {
+      "id": "7ffaf394-d554-4ef4-a1b8-dbb80003848c",
+      "name": "You, Org agent",
+      "dm": true
+    }
+  },
+  "direction": {
+    "mission": {
+      "version": 1,
+      "event": "eeea020f31080d604a336082146f277119192b577f051f06fc3dea86f3b7c27d",
+      "lines": {}
+    },
+    "vision": {
+      "version": 1,
+      "event": "9b6e70e563a411086a240cf1d202504f66a19b3f73994bea36a2ec9701c742a4",
+      "lines": {}
+    },
+    "objectives": {
+      "version": 3,
+      "event": "cd992ce50f32c16ea3e7bb8811471912ced40f3652e538e777e3ed24e6d7d8b9",
+      "lines": {
+        "l_b26b2527": "The Saturday stall runs every week, all season.",
+        "l_84c9b3c2": "A weekday hall is open before August.",
+        "l_9eb165fd": "Five growers by autumn, each paid the week they sell."
+      }
+    },
+    "strategy": {
+      "version": 4,
+      "event": "ca156d13bc0067e1ba7542700025a8c83cbc5565a1387a307174a2d5edbeda5b",
+      "lines": {
+        "l_ea714a27": "Small money, many hands — the stall funds the hall, not a grant round.",
+        "l_0f1c6a11": "No restaurant. Two days a week, not a fleet.",
+        "l_fb1f70e9": "RIVER vouchers keep value with the growers, not the middle."
+      }
+    }
+  },
+  "items": {
+    "currency": "98c92399-9220-4934-81dd-53a53ba23dd8",
+    "currency/design-the-paper-vouchers": "5d540a25-3cce-418c-9a68-81b28dc54f11",
+    "currency/stall-cash-box-takes-river": "f633b9b4-a6ff-47ff-b6cf-2136dc043c5a",
+    "currency/stall-cash-box-takes-river/make-the-change-float-200-river": "4ef44b3d-8cf5-4736-880c-9f7254930750",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule": "f26652db-8339-4bd5-9950-47d81a85445d",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule/one-line-card-for-the-cash-box-lid": "a92c7002-608e-414a-86ac-959dc101072d",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule/one-line-card-for-the-cash-box-lid/laminate-twenty-cards": "838a282b-7649-45cd-a8c2-d8b7e5e7e6ff",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule/one-line-card-for-the-cash-box-lid/laminate-twenty-cards/borrow-the-school-laminator-for-an-evening": "e53d58c3-790a-46bc-bd7a-1fe651ad874e",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule/one-line-card-for-the-cash-box-lid/laminate-twenty-cards/buy-a-pack-of-a7-pouches": "f34b2bd7-5e71-473f-a1e1-8b2c1d2f1656",
+    "currency/stall-cash-box-takes-river/teach-the-saturday-hosts-the-exchange-rule/one-line-card-for-the-cash-box-lid/proofread-the-wording-with-maya": "58590640-f3c9-447d-8423-5806aaa66d2b",
+    "currency/write-the-one-page-rules": "f47ee303-5218-4e7d-ad62-d2c293b2ff77",
+    "growers": "8467c51a-9b3c-47f3-9543-ae8db57b6f1e",
+    "growers/visit-the-two-orchards-on-the-hill": "beb53dd9-25a1-45ec-ae4a-7ef0bdccc7ab",
+    "growers/agree-a-delivery-day-with-the-dairy": "f6f36f30-02d6-4086-92b8-ccafc4a045eb",
+    "growers/agree-a-delivery-day-with-the-dairy/check-the-hall-fridge-holds-four-crates": "aa1860b2-921b-4e3a-8bff-95006bc988c2",
+    "growers/agree-a-delivery-day-with-the-dairy/ask-the-dairy-about-glass-returns": "9bd3f9a2-2382-448b-b1e7-2871c7dd2f9e",
+    "growers/print-the-grower-welcome-sheet": "481c0c9a-a4c1-4bfe-9563-3983b105ec96",
+    "stall": "79a1b1af-b3cf-4852-8ed2-b945ccb73773",
+    "stall/find-two-neighbours-who-can-cover-a-saturday": "cc7b8397-18b5-4932-bf75-96cefc637cd5",
+    "stall/write-the-saturday-setup-so-someone-else-could-run-it": "ed891e54-10cb-4934-b1bc-0b804a1ae87c",
+    "stall/agree-grower-prices-for-the-season": "64d68844-f3c5-4880-853b-ecf59a752214",
+    "stall/agree-grower-prices-for-the-season/call-the-orchard-about-apple-prices": "867cbaba-4792-4324-9e9e-7cd7303461d7",
+    "stall/agree-grower-prices-for-the-season/post-the-price-list-in-growers": "510d5eec-9fac-4cfc-881c-d46e49a46070"
+  },
+  "proposals": {
+    "shapers-add-Maya": {
+      "id": "68ff8d45-22ae-452a-b7d8-a8602dd55325",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "direction-mission-v1": {
+      "id": "bd7b415a-54bf-432f-b6f6-9a6c78408360",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-vision-v1": {
+      "id": "607dee10-2a4d-41bf-88b8-b01521e47052",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "shapers-add-Sam": {
+      "id": "5f547b34-dc2b-472b-acd7-21716217fbb0",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "direction-objectives-v1": {
+      "id": "cadd51b3-b013-4d6c-889e-0b04b3a25b07",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v1": {
+      "id": "3e23c8c4-42e5-4162-a2e1-bd0efe5ae649",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v2": {
+      "id": "219f55de-0450-434d-8961-76656a2e6789",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v2": {
+      "id": "d9865a2a-a3c8-458e-b46e-a000b9d26e5c",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v3": {
+      "id": "1b76c24a-98a4-4a2c-9869-ad9d1291b21e",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v3": {
+      "id": "6270b762-c21d-43f6-91c0-436b1d93ef8e",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v4": {
+      "id": "85c2c020-54f9-4197-9c6c-79a4223bf90f",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "project-currency": {
+      "id": "62a5d36c-f25a-40c5-933c-7c3805d5ad3b",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-growers": {
+      "id": "3d884ead-29ac-454c-b36e-6500be9a6f9b",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-stall": {
+      "id": "c8e4a713-393d-4d34-a0da-9a30cf8e6395",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-weekday": {
+      "id": "fbf70696-79e2-4a6a-a28d-b1c9b1a1f2fd",
+      "kind": "project",
+      "status": "open"
+    },
+    "project-harvest": {
+      "id": "88e1a789-a4b3-487b-9e61-f5a2d2440ef7",
+      "kind": "project",
+      "status": "open"
+    }
+  },
+  "counts": {
+    "9": 33,
+    "13534": 2,
+    "39000": 22,
+    "39002": 22,
+    "39100": 9,
+    "39101": 140,
+    "39102": 50,
+    "39103": 3,
+    "39104": 19,
+    "39105": 6,
+    "41010": 2,
+    "50001": 2,
+    "50002": 9,
+    "50003": 20,
+    "50004": 5,
+    "50005": 20,
+    "50006": 18,
+    "50007": 21,
+    "50009": 9,
+    "50019": 1,
+    "50021": 6,
+    "50100": 10
+  }
+}

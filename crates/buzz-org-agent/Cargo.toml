@@ -1,0 +1,15 @@
+[package]
+name = "buzz-org-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The intelligent-organization org agent (Development plan A-*); E-1 lands the evaluation fixtures and their loader"
+
+[dependencies]
+buzz-core  = { workspace = true }
+nostr      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }

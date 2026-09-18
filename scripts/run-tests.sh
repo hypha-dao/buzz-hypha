@@ -91,6 +91,10 @@ run_unit_tests() {
   run_test_step "buzz-sdk tests" \
     cargo test -p buzz-sdk --lib -- --nocapture
 
+  # buzz-org-agent: the intelligent-org evaluation fixtures round-trip (E-1).
+  run_test_step "buzz-org-agent tests" \
+    cargo test -p buzz-org-agent -- --nocapture
+
   run_test_step "buzz-cli tests" \
     cargo test -p buzz-cli -- --nocapture
 

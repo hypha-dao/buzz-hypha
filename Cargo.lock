@@ -1213,6 +1213,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-org-agent"
+version = "0.1.0"
+dependencies = [
+ "buzz-core",
+ "nostr 0.44.7",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "buzz-pair-relay"
 version = "0.1.0"
 dependencies = [

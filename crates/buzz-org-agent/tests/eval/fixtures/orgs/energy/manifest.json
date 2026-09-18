@@ -1,0 +1,269 @@
+{
+  "org": "energy",
+  "locales": [
+    "en",
+    "es"
+  ],
+  "now": 1780218000,
+  "relay": "14c9e8042d96be7652164f2fceafd74055f2ac665dbc503af3e69efa044e60d7",
+  "agent": "33c7800e23e1d6ad4b15b3847a552afcbd8ebdea3b69026444728209aa908f3e",
+  "reader": "bd1218be1769974f24a1bbbf9046e5425ff6e93facd10b8fc3a764d61eb214bf",
+  "people": {
+    "Alex": "800eb14f4dbba4adc47d0a4ccc8dd30904baa60559f069c7fde6d2405d9ccb4c",
+    "Edgar": "c50aa41163090c78200db4ca0d1dd00fd8a2c6d2868d6b3a25d9d560c67d69c1",
+    "Zekeriya": "9e1f420cbb95d7d0221c20e13defa7f39590a0f7b3759bf89a1c4570f44083bf",
+    "Pedro": "ab6ba628605709fef62fe4034f25ee94d5240132547d15d3501247bc715cb0e3",
+    "Rogerio": "e703e11695d02894c7d2497f5ea134ea867236225aee8eeeed016da04c2aa76d",
+    "Suzana": "db06305449813eb6a2dc45908950e1f386bad615aad2e716afe305efd6a46bf0",
+    "Rowan": "36e64439ab68d62e8623c849b94af139e052d71c9b671e77c4152be0db6d5b18",
+    "Marcus": "08664e377273b9ba20e962a54dc0eb69cca2a5c6ac6b5052c4f9f1c48b6a6761",
+    "Inês": "c2d3c2246252abc846148a636ccc5a762b71b13be7006581881dc962dc1d2e6f",
+    "Surya": "656dac41b3da7b15e60c18d6ec6cb93c1c4290ed303c613674cc8c088494d6a4",
+    "Kai": "3b4d6bf4d5c8fbd0df6538de1a85658008d86f41db2775f993ed6da611c6ec49",
+    "Tomas": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+    "Jelle": "de6a6f5635cee696a69cf69c4058e16c76e3cb03c4cf35ff83c27de6e8fbbbdb",
+    "Diego": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+    "Marta": "f8db140a5901cecb2fea33653e6dba92614cd252f829b0abc6914bbdb0814a12",
+    "Nina": "c17ec63af30394319b4e77da78f2d31cce197a377559dad866b3dc31fe73ac10",
+    "You": "bd1218be1769974f24a1bbbf9046e5425ff6e93facd10b8fc3a764d61eb214bf"
+  },
+  "shapers": [
+    "800eb14f4dbba4adc47d0a4ccc8dd30904baa60559f069c7fde6d2405d9ccb4c",
+    "c50aa41163090c78200db4ca0d1dd00fd8a2c6d2868d6b3a25d9d560c67d69c1",
+    "9e1f420cbb95d7d0221c20e13defa7f39590a0f7b3759bf89a1c4570f44083bf"
+  ],
+  "rooms": {
+    "e-shapers": {
+      "id": "292da9d1-95aa-4250-8ef9-112a4b2d660a",
+      "name": "shapers",
+      "dm": false
+    },
+    "e-pilots": {
+      "id": "f8ae6ba5-fde0-4809-9dbf-1cf05c36f2fc",
+      "name": "pilots",
+      "dm": false
+    },
+    "e-tech": {
+      "id": "efded5e4-db0c-4fa5-9083-c5c8f56d34f9",
+      "name": "tech-team",
+      "dm": false
+    },
+    "home-ems": {
+      "id": "6b1bfe5c-7d05-46cf-8a85-68c602dd4f66",
+      "name": "energy-management-systems",
+      "dm": false
+    },
+    "home-iberia": {
+      "id": "68e36b41-5058-4001-b40d-2602e681a8fb",
+      "name": "iberia-pilots",
+      "dm": false
+    },
+    "home-islands": {
+      "id": "651eeafd-ce74-44ec-aafc-5d7ae8d08672",
+      "name": "island-grids",
+      "dm": false
+    },
+    "home-playbook": {
+      "id": "95c14d06-3369-478d-86e4-f3d8799637c6",
+      "name": "community-onboarding-playbook",
+      "dm": false
+    },
+    "e-marcus-dm": {
+      "id": "ce01e26d-2f9a-4fd3-98ca-8b559c4aaf0d",
+      "name": "Marcus, You",
+      "dm": true
+    },
+    "e-agent": {
+      "id": "51ad0a71-fd94-48d6-8555-b4dab5ad5be2",
+      "name": "You, Org agent",
+      "dm": true
+    }
+  },
+  "direction": {
+    "mission": {
+      "version": 2,
+      "event": "8d24edae560630a1c9f5206659272c6da7419c3fc61ddd01cd7ed60d08712776",
+      "lines": {}
+    },
+    "vision": {
+      "version": 1,
+      "event": "bfd936981d0b121ae0d1aa2984ea5017543cd1a1d5abb4df8fef7a8f192b1c2f",
+      "lines": {}
+    },
+    "strategy": {
+      "version": 3,
+      "event": "dfe42e62cd0c6e58679191ebad250bd34fafd3305299e4d492894cf4ed754c23",
+      "lines": {
+        "l_0ff922df": "Pilots before promotion — every claim backed by a live community.",
+        "l_057c9598": "We handle the complexity; communities just enjoy cheaper, cleaner energy.",
+        "l_ffb42d4b": "Publish the research free; sell the operating, not the knowledge."
+      }
+    },
+    "objectives": {
+      "version": 6,
+      "event": "2b3bff33186b97f07514f4a3bed79abf510a29345f2e3ba9be31b3ea9880da20",
+      "lines": {
+        "l_639f3d11": "Six Iberian communities are ready for EECF round 2 by spring.",
+        "l_8e3f7ad6": "The Nordpool connector is live for the pilots by Q3.",
+        "l_f8a43197": "The onboarding playbook exists in three languages by Q4.",
+        "l_0e5a980f": "A second island runs the Ameland model by December."
+      }
+    }
+  },
+  "items": {
+    "ems": "7b38d703-e2d9-414c-8a30-1f4a90b16305",
+    "ems/market-connector-for-nordpool": "9b29dbe1-a7e5-4769-a7d0-78daf07c5f08",
+    "ems/market-connector-for-nordpool/auth-against-the-nordpool-api": "87b6b1b0-3d26-48a4-9569-7a0939006063",
+    "ems/market-connector-for-nordpool/day-ahead-price-feed-parser": "a9ac811c-6571-490a-8bfd-7fe2f89b7e61",
+    "ems/market-connector-for-nordpool/day-ahead-price-feed-parser/handle-the-two-dst-switch-days": "c244a078-d846-4947-b211-d068e7df9077",
+    "ems/market-connector-for-nordpool/day-ahead-price-feed-parser/handle-the-two-dst-switch-days/pull-the-october-2025-hourly-file-as-a-fixture": "108d42da-9235-4d1c-8259-8606e80bcd62",
+    "ems/market-connector-for-nordpool/day-ahead-price-feed-parser/handle-the-two-dst-switch-days/write-the-23h-25h-day-test": "77874655-4405-4436-9f4b-78a3483fddbc",
+    "ems/market-connector-for-nordpool/load-test-with-three-communities-data": "51af53df-11cb-42b8-bc00-0a6e6ccec808",
+    "ems/keep-the-ameland-ems-running-on-call": "25af011b-5f05-4570-9a02-9849167a4ea1",
+    "ems/battery-optimisation-algorithm-v2": "89ce5f56-1c68-46ad-8f64-e26184e74a11",
+    "ems/fair-split-model-reviewed-by-the-ameland-coop": "366c61bd-cde6-434a-a181-504e566e5c37",
+    "iberia": "09053164-d772-4645-a956-d7bff8910a71",
+    "iberia/eecf-grant-application-round-2": "f7df4f94-cae6-4df4-a967-32899d4d3b22",
+    "iberia/shortlist-six-communities-for-eecf-round-2": "2113b07a-29b2-4c86-84cf-8bc37215a4fe",
+    "iberia/shortlist-six-communities-for-eecf-round-2/call-the-alentejo-cooperatives": "06d2f9cf-79ff-4dee-91c7-b15763e0a9a6",
+    "iberia/shortlist-six-communities-for-eecf-round-2/check-galicia-eligibility-with-coopernico": "51af84c2-c0a5-4f62-a70b-398eba4ad045",
+    "iberia/coopernico-quarterly-sync-write-the-notes": "cb7ca07b-6da0-4b73-bb67-47f6c032443c",
+    "iberia/coopernico-partnership-signed": "9a7201b9-9de3-4f54-9a2d-7342041d51a8",
+    "iberia/onboard-two-portuguese-municipalities": "97e3ee75-793f-4880-af5e-b12b7e9dca9d",
+    "iberia/onboard-two-portuguese-municipalities/council-call-evora": "1a69eb43-d6bf-48af-bd92-96ff3bef2405",
+    "iberia/onboard-two-portuguese-municipalities/letter-of-intent-beja": "b41343a1-1ee3-498e-8e73-61a50d8b41c2",
+    "islands": "48983c6b-3954-4027-ad73-9c8a2680f40b",
+    "islands/ameland-tokenised-credits-pilot": "4d03ac03-38d6-4e4a-8192-870fba721bab",
+    "islands/grid-sharing-rules-signed-off-by-the-ameland-coop": "73898f94-b505-4db7-aa84-136dc149d58f",
+    "islands/second-island-shortlist-three-candidates": "75470804-c0b7-4a49-91d4-e39d40c704d6",
+    "islands/write-the-ameland-pilot-summary-for-new-communities": "4ee9d138-f015-4541-b047-0c4e081d368f",
+    "playbook": "6cb3554e-a2d3-4501-b7e5-a2a8eeb8b87e",
+    "playbook/video-walkthrough-of-the-member-app": "9aa3774d-5ff8-49a8-848c-51b20211840b",
+    "playbook/legal-templates-per-country": "8bbffca7-879c-4696-828e-954fb1cce49a",
+    "playbook/legal-templates-per-country/portugal-cer-statute-template": "925dff2b-eb7e-4ade-9324-ddba1958386c",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template": "935ff281-b814-4d43-b0d9-0ef95c9901f9",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template/check-the-andalusia-regional-variant": "14f5c04e-d773-47a9-bd0d-4eef0cee6d99",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template/check-the-andalusia-regional-variant/get-the-junta-s-2026-decree-text": "584f0006-4b79-4e97-8645-b8522b853dd2",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template/check-the-andalusia-regional-variant/get-the-junta-s-2026-decree-text/translate-4-self-consumption-for-the-lawyers": "abe8eed9-1613-4b58-acd2-62ce94f5a2ad",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template/check-the-andalusia-regional-variant/get-the-junta-s-2026-decree-text/translate-4-self-consumption-for-the-lawyers/glossary-twelve-spanish-grid-terms": "5af2308f-fb39-4093-b17b-23915c940cc3",
+    "playbook/legal-templates-per-country/spain-comunidad-energetica-template/check-the-andalusia-regional-variant/get-the-junta-s-2026-decree-text/ask-coopernico-who-they-used-in-seville": "63cf1a24-e984-4ebd-aa3e-10b1260d7c9e",
+    "playbook/legal-templates-per-country/netherlands-energiecooperatie-template": "900fdd4d-5e17-4544-8b99-93936f25202b",
+    "playbook/translate-the-member-faq-into-portuguese": "a6076936-19be-4535-8e4f-ee813d98a062"
+  },
+  "proposals": {
+    "shapers-add-Alex": {
+      "id": "18e5e6f1-4bda-4237-9cf1-3b7ef7f9fbbe",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "shapers-add-Edgar": {
+      "id": "82d01f1d-1ce4-48ff-969a-8fb90b8443d4",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "shapers-add-Zekeriya": {
+      "id": "e6626f34-2a65-4c4b-a011-176368a0d960",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "direction-mission-v1": {
+      "id": "7f5ab028-4861-4745-a738-20ad479cf265",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-vision-v1": {
+      "id": "b6f2e202-1887-4d71-84b8-4a0be666ef45",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v1": {
+      "id": "a168c3c1-157b-4282-8865-ebd6caf2f38d",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-mission-v2": {
+      "id": "62f0654a-6931-4bb2-9e54-78a84f3a9f8f",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v2": {
+      "id": "d7150f79-5e7a-4fc2-9043-1744941eb6cb",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v4": {
+      "id": "4f75e0db-1e16-450f-bb8e-37b0cb40051b",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v5": {
+      "id": "b50c5b64-19dc-4c98-b799-e3d9ea94fd55",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v6": {
+      "id": "3eafcbec-76a4-48ec-9a2c-3289dca4e00e",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v3": {
+      "id": "d792411d-22f1-4c53-8463-8edd235d80f3",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "project-ems": {
+      "id": "fee3e0ff-f645-474e-a226-11188eeb607f",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-iberia": {
+      "id": "883f6bcb-444d-40a7-8748-46709cf7d327",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-islands": {
+      "id": "1cca84d5-92d7-4dd2-b24b-5c40875fd591",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-playbook": {
+      "id": "a3f33d7c-9c9a-4ae9-a173-0cdf95f7dbb7",
+      "kind": "project",
+      "status": "passed"
+    },
+    "project-carbon": {
+      "id": "03567dcd-1b23-4323-997d-b9073f83deb4",
+      "kind": "project",
+      "status": "open"
+    },
+    "project-hardware": {
+      "id": "1a681f7f-6963-4d45-920a-54ebe59a006a",
+      "kind": "project",
+      "status": "open"
+    }
+  },
+  "counts": {
+    "9": 32,
+    "13534": 3,
+    "39000": 26,
+    "39002": 26,
+    "39100": 9,
+    "39101": 223,
+    "39102": 60,
+    "39103": 5,
+    "39104": 21,
+    "39105": 12,
+    "41010": 2,
+    "50001": 3,
+    "50002": 9,
+    "50003": 27,
+    "50004": 6,
+    "50005": 34,
+    "50006": 30,
+    "50007": 32,
+    "50009": 13,
+    "50019": 2,
+    "50021": 12,
+    "50100": 11
+  }
+}

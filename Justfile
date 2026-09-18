@@ -93,13 +93,23 @@ build-release:
     cargo build --workspace --release
 
 # Run repo lint, formatting, and repository policy checks
-check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check org-kinds-check
+check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check org-kinds-check org-fixtures-check
 
 # Intelligent-org kind parity across kind.rs / kinds.ts / nostr_models.dart,
 # plus the retired-tag-name guard over org-facing sources (Development plan R-1).
 org-kinds-check:
     node --test scripts/check-org-kinds-parity.test.mjs
     node scripts/check-org-kinds-parity.mjs
+
+# Intelligent-org evaluation fixtures (Development plan E-1): regenerate from
+# prototypes/org-preview/src/lib/data.ts in memory and fail when any checked-in
+# file under crates/buzz-org-agent/tests/eval/fixtures differs.
+org-fixtures-check:
+    node crates/buzz-org-agent/tests/eval/fixtures/generate.mjs --check
+
+# Regenerate the intelligent-org evaluation fixtures in place.
+org-fixtures:
+    node crates/buzz-org-agent/tests/eval/fixtures/generate.mjs
 
 # Validate the trusted security-review workflow support and renderer contract.
 security-review-check:
@@ -385,6 +395,11 @@ test-unit:
         # builder yields a relay-only `39100–39105`. Enumerated explicitly
         # because nothing in CI runs `cargo test --workspace`.
         cargo nextest run -p buzz-sdk --lib
+        # buzz-org-agent: the E-1 evaluation fixtures — every checked-in event
+        # verifies, decodes as its buzz-core intelligent_org type with the
+        # Protocol §4 tag set, and round-trips; seed counts match the Prototype
+        # map. Whole crate (lib decoder tests + tests/eval_fixtures.rs); no infra.
+        cargo nextest run -p buzz-org-agent
         cargo nextest run -p buzz-cli
         # buzz-acp owns the relay-to-agent trust boundary. Run its tests here so
         # forged relay events cannot regain a path into agent routing unnoticed.
