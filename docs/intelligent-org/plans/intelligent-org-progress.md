@@ -52,6 +52,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | ----- | ------ | -- | --------- | ----- |
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
+| A-0   | open   | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) |           | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
 
 ### Waves 5–8
 
@@ -365,6 +366,19 @@ absorb an item into an unrelated slice.
   relay behavior, but it bit a Postgres-lane test that re-sent an identical
   open expecting `invalid: already a Shaper`. Test authors: vary the
   content (`why`) between otherwise identical commands.>>>>>>> 4b254fca (docs(intelligent-org): progress — R-4a open as #13, follow-ups, relay-key recipe line)
+- **`tool_choice: Some(s)` is written as a JSON string.** OpenAI keywords
+  (`auto` / `none` / `required`) are valid as strings; a pinned
+  `emit_<move>` name is also a string, not the provider's forced-tool
+  object (`{"type":"function","function":{"name":…}}` / Anthropic
+  `{"type":"tool","name":…}`). A-1's `BuzzAgentModel` should treat the
+  string as the raw wire value, or a later delta can widen the type to
+  `Option<Value>` / encode per family. A-0 did not invent that encoding
+  so buzz-agent's own `None` path stays bit-identical.
+- **`Llm::summarize` does not take the new fields.** It is the handoff
+  path (no tools). A-1 must use `Llm::complete` for structured output.
+- **The E-1 follow-up that asked A-0 to move the fixture loader** behind
+  a `fixtures` feature is deferred to A-1. OrgState does not exist yet;
+  moving the loader now is out of scope.
 
 ---
 

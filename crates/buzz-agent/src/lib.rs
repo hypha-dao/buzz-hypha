@@ -8,7 +8,7 @@ pub mod config;
 pub mod databricks;
 mod handoff;
 mod hints;
-mod llm;
+pub mod llm;
 mod mcp;
 pub mod model_capabilities;
 mod permission;
