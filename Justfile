@@ -379,6 +379,12 @@ test-unit:
         # already runs it.
         cargo test -p buzz-auth --doc
         cargo nextest run -p buzz-voice --lib
+        # buzz-sdk: the typed event builders every client signs through,
+        # including the intelligent-org `build_io_*` set (C-1) whose tests are
+        # the guard that the tag layout matches Protocol §4.8 and that no
+        # builder yields a relay-only `39100–39105`. Enumerated explicitly
+        # because nothing in CI runs `cargo test --workspace`.
+        cargo nextest run -p buzz-sdk --lib
         cargo nextest run -p buzz-cli
         # buzz-acp owns the relay-to-agent trust boundary. Run its tests here so
         # forged relay events cannot regain a path into agent routing unnoticed.

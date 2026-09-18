@@ -39,6 +39,7 @@ export const RETIRED_TAG_SCAN_ROOTS = [
   "docs/intelligent-org",
   "desktop/src/features/org",
   "crates/buzz-cli",
+  "crates/buzz-sdk", // C-1 `build_io_*` builders
   "crates/buzz-org-agent/tests/eval", // E-1 fixtures and their generator
   "prototypes/org-preview/scripts", // E-1 generator, if it lands beside the prototype
 ];
