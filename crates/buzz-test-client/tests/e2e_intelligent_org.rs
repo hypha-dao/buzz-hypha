@@ -1,7 +1,9 @@
 //! End-to-end proofs for the intelligent organization (C-3), grown one relay
 //! slice at a time. This file holds the R-3 lines — the executor spine and
-//! the Shapers — driven through the relay's real HTTP door (`POST /events`,
-//! `POST /query`, NIP-98) exactly as a client or the `buzz` CLI would.
+//! the Shapers — and the R-12 lines — invites minted by Shapers, the
+//! `member_joined` ledger row, the transparency notice — driven through the
+//! relay's real HTTP door (`POST /events`, `POST /query`, `POST /api/invites`,
+//! `GET /api/join-policy`, NIP-98) exactly as a client or the `buzz` CLI would.
 //!
 //! Every test gets its own community (a fresh `Host`) on the running relay,
 //! because a `39103` bootstrap happens once per community and the relay
@@ -119,7 +121,20 @@ struct Community {
 }
 
 impl Community {
+    /// A community with a provisioned hosted org agent — what an operator
+    /// leaves behind before the owner bootstraps.
     async fn fresh() -> Self {
+        Self::fresh_with(true).await
+    }
+
+    /// A community no operator has touched: no `io_hosted_agents` row and no
+    /// `39103`. Not an intelligent organization, so the invite page owes it
+    /// no notice.
+    async fn fresh_plain() -> Self {
+        Self::fresh_with(false).await
+    }
+
+    async fn fresh_with(hosted_agent: bool) -> Self {
         let pool = db_pool().await;
         let host = format!("io-r3-{}.localhost", Uuid::new_v4().simple());
         let id = Uuid::new_v4();
@@ -140,16 +155,85 @@ impl Community {
         community
             .seed_member(&community.owner.clone(), "owner")
             .await;
-        sqlx::query(
-            "INSERT INTO io_hosted_agents (community_id, pubkey, provisioned_at) \
-             VALUES ($1, $2, now())",
-        )
-        .bind(id)
-        .bind(community.agent.public_key().to_bytes().to_vec())
-        .execute(&community.pool)
-        .await
-        .expect("seed hosted agent");
+        if hosted_agent {
+            sqlx::query(
+                "INSERT INTO io_hosted_agents (community_id, pubkey, provisioned_at) \
+                 VALUES ($1, $2, now())",
+            )
+            .bind(id)
+            .bind(community.agent.public_key().to_bytes().to_vec())
+            .execute(&community.pool)
+            .await
+            .expect("seed hosted agent");
+        }
         community
+    }
+
+    /// The relay-level role (`relay_members.role`) of `keys`, if a member.
+    /// This is what `POST /api/invites` checked before R-12 — distinct from
+    /// the room role the executor gives Shapers in `#shapers`.
+    async fn relay_role(&self, keys: &Keys) -> Option<String> {
+        sqlx::query_scalar("SELECT role FROM relay_members WHERE community_id = $1 AND pubkey = $2")
+            .bind(self.id)
+            .bind(keys.public_key().to_hex())
+            .fetch_optional(&self.pool)
+            .await
+            .expect("read relay role")
+    }
+
+    /// Unauthenticated `GET` on this community's host, as a browser landing
+    /// on `/invite/<code>` performs it.
+    async fn get(&self, path: &str) -> (StatusCode, Value) {
+        let response = self
+            .http
+            .get(format!("{}{path}", relay_http_url()))
+            .header(reqwest::header::HOST, &self.host)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("GET {path} failed: {e}"));
+        let status = response.status();
+        let body: Value = response.json().await.expect("json body");
+        (status, body)
+    }
+
+    /// `POST /api/invites` as `keys`, with an empty request (relay defaults).
+    async fn mint_invite(&self, keys: &Keys) -> (StatusCode, Value) {
+        self.post(keys, "/api/invites", "{}".to_owned()).await
+    }
+
+    /// `POST /api/invites/claim` as `keys`.
+    async fn claim_invite(&self, keys: &Keys, code: &str) -> (StatusCode, Value) {
+        self.post(
+            keys,
+            "/api/invites/claim",
+            json!({ "code": code }).to_string(),
+        )
+        .await
+    }
+
+    /// Every `member_joined` ledger row as `(actor, detail)`, oldest first.
+    async fn member_joined_rows(&self) -> Vec<(String, Value)> {
+        sqlx::query(
+            "SELECT actor, object_type, object_id, receipt_event_id, detail FROM io_ledger \
+             WHERE community_id = $1 AND verb = 'member_joined' ORDER BY id",
+        )
+        .bind(self.id)
+        .fetch_all(&self.pool)
+        .await
+        .expect("read member_joined rows")
+        .into_iter()
+        .map(|r| {
+            let actor: String = r.get("actor");
+            assert_eq!(r.get::<String, _>("object_type"), "member");
+            assert_eq!(r.get::<String, _>("object_id"), actor);
+            assert_eq!(
+                r.get::<Option<Vec<u8>>, _>("receipt_event_id"),
+                None,
+                "an HTTP claim has no event to cite"
+            );
+            (actor, r.get("detail"))
+        })
+        .collect()
     }
 
     /// Give `keys` a relay membership so the door admits them whatever
@@ -616,4 +700,189 @@ async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
     // recorded, so it is not a replay.
     c.submit_ok(&second, &accept).await;
     assert_eq!(c.roster(room).await.len(), 3);
+}
+
+// ── R-12: invites ────────────────────────────────────────────────────────────
+
+/// Protocol §6.6, Features 6a: any Shaper can create an invite link; a plain
+/// member cannot. The Shaper here is a `member` at the relay level — never
+/// owner or admin — so only the live `39103.shapers` (read from `io_shapers`
+/// at request time) can be what admits the mint. The claim of that code
+/// lands `member_joined` with `minted_by` = the Shaper (V7).
+#[tokio::test]
+#[ignore]
+async fn a_shaper_who_is_not_owner_or_admin_mints_and_a_plain_member_cannot() {
+    let c = Community::fresh().await;
+    let (proposal_id, room) = c.bootstrap().await;
+    let shaper = Keys::generate();
+    let plain = Keys::generate();
+    let joiner = Keys::generate();
+    c.seed_member(&shaper, "member").await;
+    c.seed_member(&plain, "member").await;
+    let shaper_hex = shaper.public_key().to_hex();
+    let joiner_hex = joiner.public_key().to_hex();
+
+    // Not yet a Shaper: a relay `member` is refused exactly as before R-12.
+    let (status, body) = c.mint_invite(&shaper).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // Take the offered seat: the 39103 now names them, and nothing else about
+    // them changes — the relay role stays `member`.
+    c.offer_seat(&shaper, &proposal_id).await;
+    c.submit_ok(
+        &shaper,
+        &signed(
+            &shaper,
+            KIND_IO_SHAPER_ACCEPT,
+            vec![tag(["e", &proposal_id])],
+            "{}",
+        ),
+    )
+    .await;
+    let state = c.shapers_state().await.expect("39103 after accept");
+    assert!(content(&state)["shapers"]
+        .as_array()
+        .expect("shapers")
+        .iter()
+        .any(|p| p == &shaper_hex));
+    assert_eq!(c.relay_role(&shaper).await.as_deref(), Some("member"));
+    assert_eq!(c.roster(room).await.len(), 3, "two Shapers + the agent");
+
+    // The Shaper mints; the plain member is told why not.
+    let (status, body) = c.mint_invite(&shaper).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = body["code"].as_str().expect("code").to_owned();
+    assert!(code.starts_with("v2."), "{code}");
+    assert_eq!(
+        body["url"].as_str(),
+        Some(format!("{}://{}/invite/{code}", http_scheme(), c.host).as_str()),
+        "the shareable landing URL is on the community's own host"
+    );
+
+    let (status, body) = c.mint_invite(&plain).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(
+        body["error"],
+        "only relay owners, admins, and Shapers can create invites"
+    );
+    assert!(
+        c.member_joined_rows().await.is_empty(),
+        "nothing joined yet"
+    );
+
+    // A stranger claims the Shaper's code and is a member: the ledger says
+    // who let them in.
+    let (status, body) = c.claim_invite(&joiner, &code).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "joined");
+    assert_eq!(body["role"], "member");
+    assert_eq!(c.relay_role(&joiner).await.as_deref(), Some("member"));
+    assert_eq!(
+        c.member_joined_rows().await,
+        vec![(
+            joiner_hex.clone(),
+            json!({ "via": "invite", "minted_by": shaper_hex })
+        )]
+    );
+    assert_eq!(
+        c.ledger_verbs().await.last().map(String::as_str),
+        Some("member_joined")
+    );
+
+    // A repeat claim is idempotent and writes no second row.
+    let (status, body) = c.claim_invite(&joiner, &code).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "already_member");
+    assert_eq!(c.member_joined_rows().await.len(), 1);
+
+    // The new member is a member, not a Shaper: they cannot mint either.
+    let (status, body) = c.mint_invite(&joiner).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // The Shaper steps down. The very next mint is refused — the authority is
+    // the live set, read at request time, not a cached grant.
+    c.submit_ok(
+        &shaper,
+        &signed(
+            &shaper,
+            KIND_IO_SHAPER_STEP_DOWN,
+            vec![],
+            r#"{"why":"done here"}"#,
+        ),
+    )
+    .await;
+    let state = c.shapers_state().await.expect("39103 after step down");
+    assert_eq!(
+        content(&state)["shapers"],
+        json!([c.owner.public_key().to_hex()])
+    );
+    let (status, body) = c.mint_invite(&shaper).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // The owner never needed the Shaper set to mint.
+    let (status, body) = c.mint_invite(&c.owner).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// Readiness D7, Protocol §6.6: the `/invite/<code>` landing page fetches
+/// `GET /api/join-policy` on the community's host, and for an intelligent
+/// organization that reply carries the relay operator's fixed transparency
+/// notice. A community no operator has provisioned gets none. The notice is
+/// present whether or not an owner has bootstrapped a `39103` — the hosted
+/// agent row alone makes the community an org.
+#[tokio::test]
+#[ignore]
+async fn the_landing_page_carries_the_notice_for_an_org_community() {
+    let org = Community::fresh().await;
+    let plain = Community::fresh_plain().await;
+
+    let (status, body) = org.get("/api/join-policy").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let notice = body["org"]["transparency_notice"]
+        .as_str()
+        .unwrap_or_else(|| panic!("an org community carries the notice: {body}"));
+    for must_say in [
+        "intelligent organization",
+        "every channel and every direct message",
+        "cite what it finds to any member",
+        "every decision is a person's",
+        "cannot be turned off by the community",
+    ] {
+        assert!(
+            notice.contains(must_say),
+            "notice lacks {must_say:?}: {notice}"
+        );
+    }
+    assert!(
+        notice.split("\n\n").count() >= 3,
+        "the notice is more than one paragraph: {notice}"
+    );
+
+    // Bootstrapping does not change what the page says — the notice is the
+    // operator's, not the Shapers'.
+    org.bootstrap().await;
+    let (status, after) = org.get("/api/join-policy").await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert_eq!(after["org"]["transparency_notice"], notice);
+
+    // A plain community on the same relay: no `org` half at all, and its
+    // invites still work exactly as before.
+    let (status, body) = plain.get("/api/join-policy").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.get("org").is_none(), "{body}");
+    let (status, body) = plain.mint_invite(&plain.owner).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = body["code"].as_str().expect("code").to_owned();
+    let joiner = Keys::generate();
+    let (status, body) = plain.claim_invite(&joiner, &code).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "joined");
+    assert_eq!(
+        plain.member_joined_rows().await,
+        vec![(
+            joiner.public_key().to_hex(),
+            json!({ "via": "invite", "minted_by": plain.owner.public_key().to_hex() })
+        )],
+        "the ledger fact is written for every community, org or not"
+    );
 }
