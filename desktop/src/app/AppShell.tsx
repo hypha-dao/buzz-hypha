@@ -64,6 +64,7 @@ import {
   useUserStatusSubscription,
 } from "@/features/user-status/hooks";
 import { useCommunityEmojiLiveUpdates } from "@/features/custom-emoji/hooks";
+import { useOrgAgentLiveUpdates } from "@/features/org/useOrgAgent";
 import { useArchiveSync } from "@/features/local-archive/useArchiveSync";
 import { useArchiveAgentMetricsBridge } from "@/features/local-archive/useArchiveAgentMetricsBridge";
 import { useObserverArchiveReconciliation } from "@/features/local-archive/useObserverArchiveSeed";
@@ -226,6 +227,7 @@ export function AppShell() {
   usePresenceSubscription();
   useUserStatusSubscription();
   useCommunityEmojiLiveUpdates();
+  useOrgAgentLiveUpdates();
   useMembershipNotifications(identityQuery.data?.pubkey);
   const presenceSession = usePresenceSession(deferredPubkey);
   const selfStatusQuery = useUserStatusQuery(

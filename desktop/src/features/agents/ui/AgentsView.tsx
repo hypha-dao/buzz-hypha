@@ -27,6 +27,8 @@ import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useBakedBuildEnvQuery } from "@/features/agents/hooks";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
+import { excludeOrgAgent } from "@/features/org/orgAgent";
+import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -44,6 +46,14 @@ export function AgentsView() {
   const inheritedDefaults = getInheritedAgentDefaults(globalConfig, bakedEnv);
   const agents = useManagedAgentActions();
   const personas = usePersonaActions();
+  // The org agent is what the community provides, not a member's agent to
+  // configure, so the door never lists it — even when `39103.agent` names a
+  // key this member runs locally (Design § Where it runs).
+  const orgAgentPubkey = useOrgAgentPubkey();
+  const doorAgents = React.useMemo(
+    () => excludeOrgAgent(agents.managedAgents, orgAgentPubkey),
+    [agents.managedAgents, orgAgentPubkey],
+  );
   const teamImportInputRef = React.useRef<HTMLInputElement | null>(null);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const fullAiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
@@ -97,7 +107,7 @@ export function AgentsView() {
     teamActions.createTeamMutation.isPending ||
     teamActions.updateTeamMutation.isPending ||
     teamActions.deleteTeamMutation.isPending;
-  const runningAgentCount = agents.managedAgents.filter((agent) =>
+  const runningAgentCount = doorAgents.filter((agent) =>
     isManagedAgentActive(agent),
   ).length;
   const hasSavedAgentDefaults = Boolean(
@@ -223,7 +233,7 @@ export function AgentsView() {
               defaultModel={inheritedDefaults.model.value}
               actionErrorMessage={agents.actionErrorMessage}
               actionNoticeMessage={agents.actionNoticeMessage}
-              agents={agents.managedAgents}
+              agents={doorAgents}
               agentsError={
                 agents.managedAgentsQuery.error instanceof Error
                   ? agents.managedAgentsQuery.error
