@@ -249,6 +249,18 @@ absorb an item into an unrelated slice.
   catalog UI stay. Whether teams of members' own agents belong on the Hypha
   door at all is a product call the Design does not make; leave the section
   until it does.
+- **`scripts/post-screenshots.sh` is hardwired to `block/buzz`.** `REPO`,
+  the raw-URL base, and the `gh pr comment` target all name the upstream
+  repo, and `GH_USER` comes from `gh api user`, which an app-token `gh`
+  cannot call. Run as-is on this fork it would comment on the wrong
+  repository and link images to a commit that repo does not have. D-5
+  posted its screenshots by running the same blob-tree / `--force-with-lease`
+  mechanics with `REPO=hypha-dao/buzz-hypha` and the branch
+  `agent-screenshots/cursor-agent`, then posting the comment separately.
+  Fix: derive `REPO` from `gh repo view --json nameWithOwner` (or accept an
+  env override) and fall back to a fixed branch name when `gh api user`
+  fails. Same for the `gh pr view … --repo block/buzz` cleanup commands in
+  AGENTS.md § PR Screenshots.
 - **Adding a smoke spec re-cuts the Playwright shards.** `--shard=N/4`
   splits the smoke project by test count, so `org-agent-defaults.spec.ts`
   moves the boundaries of `Desktop Smoke E2E (1–4)`; a spec that was in the
