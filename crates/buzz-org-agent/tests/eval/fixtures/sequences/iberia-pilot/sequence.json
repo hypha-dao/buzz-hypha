@@ -1,0 +1,198 @@
+{
+  "name": "iberia-pilot",
+  "org": "energy",
+  "seed": "orgs/energy/seed.json",
+  "snapshots": {
+    "before": [
+      "before.json"
+    ],
+    "gate": [
+      "before.json",
+      "gate.json"
+    ],
+    "outcome_a": [
+      "before.json",
+      "gate.json",
+      "outcome-a.json"
+    ],
+    "outcome_b": [
+      "before.json",
+      "gate.json",
+      "outcome-b.json"
+    ]
+  },
+  "parent": {
+    "id": "f2a7d2fa-f094-4ae5-af2d-0fc0513d2446",
+    "root": "09053164-d772-4645-a956-d7bff8910a71",
+    "depth": 1,
+    "title": "Pilot two — Andalusia",
+    "brief": "Pick the pilot site from the three candidate roofs in Alcalá la Real, sign the landowner, order the inverters — the count depends on the roof — install, and commission with the DSO.",
+    "holder": "ab6ba628605709fef62fe4034f25ee94d5240132547d15d3501247bc715cb0e3",
+    "holder_name": "Pedro"
+  },
+  "trigger": "item_accepted",
+  "gate": "site",
+  "why_gold": "The site is the gate: the landowner is whoever owns the chosen roof, the inverter count is the roof's size, and the DSO connection is the roof's feeder. One draft now; a five-piece batch orders inverters for a roof nobody has picked.",
+  "plan": [
+    {
+      "key": "site",
+      "piece": "pick the pilot site",
+      "order": 1,
+      "after": [],
+      "gate": true,
+      "held": null,
+      "title": "Pick the pilot site",
+      "requires": [
+        "municipal-relations"
+      ],
+      "suggested_holder": "ab6ba628605709fef62fe4034f25ee94d5240132547d15d3501247bc715cb0e3",
+      "unfilled": null
+    },
+    {
+      "key": "landowner",
+      "piece": "sign the landowner",
+      "order": 2,
+      "after": [
+        "site"
+      ],
+      "gate": false,
+      "held": "after pick the pilot site",
+      "title": "Landowner agreement",
+      "requires": [
+        "spanish-energy-law"
+      ],
+      "suggested_holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+      "unfilled": null
+    },
+    {
+      "key": "inverters",
+      "piece": "order the inverters",
+      "order": 3,
+      "after": [
+        "landowner"
+      ],
+      "gate": false,
+      "held": "after sign the landowner",
+      "title": "Order the inverters",
+      "requires": [
+        "grid-protocols"
+      ],
+      "suggested_holder": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+      "unfilled": null
+    },
+    {
+      "key": "install",
+      "piece": "install",
+      "order": 4,
+      "after": [
+        "inverters"
+      ],
+      "gate": false,
+      "held": "after order the inverters",
+      "title": "Installation",
+      "requires": [
+        "electrical-certification"
+      ],
+      "suggested_holder": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+      "unfilled": null
+    },
+    {
+      "key": "commission",
+      "piece": "commission with the DSO",
+      "order": 5,
+      "after": [
+        "install"
+      ],
+      "gate": false,
+      "held": "after install",
+      "title": "Commissioning with the DSO",
+      "requires": [
+        "grid-protocols"
+      ],
+      "suggested_holder": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+      "unfilled": null
+    }
+  ],
+  "draft_now": [
+    "site"
+  ],
+  "gate_stage": {
+    "drafts": {
+      "site": "b291e31cbb84f64f99adf3ac6f950d16890ff12d2eb608c2e167cd8f9cdfbccb"
+    },
+    "items": {
+      "site": "0ddd8355-7f56-4ae4-bb5e-10e1e2d083f0"
+    },
+    "gate_item": "0ddd8355-7f56-4ae4-bb5e-10e1e2d083f0",
+    "gate_holder": "ab6ba628605709fef62fe4034f25ee94d5240132547d15d3501247bc715cb0e3"
+  },
+  "outcomes": {
+    "a": {
+      "file": "outcome-a.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "2caf9b2b6eada75b5eaa89d747684c10f8fa6c92785a8d438e4e377a5d132e4f",
+      "said": "Site picked: the school roof, 38 kW usable. The landowner is the municipality, so the agreement goes through the council, not a private owner.",
+      "next_wave": [
+        {
+          "key": "landowner",
+          "piece": "sign the landowner",
+          "requires": [
+            "spanish-energy-law"
+          ],
+          "after": [
+            "0ddd8355-7f56-4ae4-bb5e-10e1e2d083f0"
+          ],
+          "must_mention": [
+            "municipality"
+          ]
+        }
+      ],
+      "held": [
+        "inverters",
+        "install",
+        "commission"
+      ],
+      "not_redrafted": [
+        "site"
+      ],
+      "fails": [
+        "an inverter order before the roof is signed",
+        "a private-landowner agreement"
+      ],
+      "why_gold": "The site answered who the landowner is — the municipality — so the agreement is the next piece and is written for a council. The inverter count is now knowable but the roof is not yet ours; inverters, install, and commissioning stay held in order."
+    },
+    "b": {
+      "file": "outcome-b.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "6c744e7cdfbdf88f952b8bbef4acbf9f388ed5c0ac076fa917c15646e5c7387e",
+      "said": "None of the three roofs passed the structural survey. The only option left is a ground-mount on municipal land by the depot — different permits, different inverter count, and we start the site search again.",
+      "next_wave": [
+        {
+          "key": "ground-site",
+          "piece": "municipal land for a ground-mount",
+          "title": "Secure municipal land for a ground-mount",
+          "requires": [
+            "municipal-relations"
+          ],
+          "gate": true,
+          "replaces": "site",
+          "after": [
+            "0ddd8355-7f56-4ae4-bb5e-10e1e2d083f0"
+          ]
+        }
+      ],
+      "held": [
+        "landowner",
+        "inverters",
+        "install",
+        "commission"
+      ],
+      "not_redrafted": [],
+      "fails": [
+        "a landowner agreement for a roof",
+        "any inverter order"
+      ],
+      "why_gold": "The gate came back with no site, so nothing downstream can start; the plan restarts with a re-scoped gate — municipal land for a ground-mount — and every later piece stays held behind it."
+    }
+  }
+}

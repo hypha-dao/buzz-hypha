@@ -1,0 +1,65 @@
+{
+  "org": "river",
+  "requirements": [
+    {
+      "requires": "council-licensing",
+      "expect": "one",
+      "candidates": [
+        {
+          "name": "Rafi",
+          "pubkey": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+          "open_limit": 2,
+          "open_items": [],
+          "at_limit": false
+        }
+      ],
+      "gold": {
+        "suggested_holder": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+        "matched_skills": [
+          "council-licensing"
+        ]
+      }
+    },
+    {
+      "requires": "hosting-events",
+      "expect": "two",
+      "candidates": [
+        {
+          "name": "Sam",
+          "pubkey": "3b2b59737a1d1bd8b3d939daf46b9657c35a935f76402133974f77e612aec0b5",
+          "open_limit": 1,
+          "open_items": [
+            "79a1b1af-b3cf-4852-8ed2-b945ccb73773"
+          ],
+          "at_limit": true
+        },
+        {
+          "name": "Tom",
+          "pubkey": "091a436bc5fb8ecdc34d05559b33dc92e2d45a08cb1033a4f307c0b6d9f4c9c5",
+          "open_limit": 4,
+          "open_items": [
+            "f633b9b4-a6ff-47ff-b6cf-2136dc043c5a",
+            "838a282b-7649-45cd-a8c2-d8b7e5e7e6ff",
+            "f34b2bd7-5e71-473f-a1e1-8b2c1d2f1656"
+          ],
+          "at_limit": false
+        }
+      ],
+      "gold": {
+        "suggested_holder": "091a436bc5fb8ecdc34d05559b33dc92e2d45a08cb1033a4f307c0b6d9f4c9c5",
+        "matched_skills": [
+          "hosting-events"
+        ]
+      }
+    },
+    {
+      "requires": "electrical-certification",
+      "expect": "nobody",
+      "candidates": [],
+      "gold": {
+        "suggested_holder": null,
+        "unfilled": "nobody here has electrical certification"
+      }
+    }
+  ]
+}

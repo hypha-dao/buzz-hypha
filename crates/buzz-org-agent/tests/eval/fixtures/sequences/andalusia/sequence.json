@@ -1,0 +1,186 @@
+{
+  "name": "andalusia",
+  "org": "energy",
+  "seed": "orgs/energy/seed.json",
+  "snapshots": {
+    "before": [
+      "before.json"
+    ],
+    "gate": [
+      "before.json",
+      "gate.json"
+    ],
+    "outcome_a": [
+      "before.json",
+      "gate.json",
+      "outcome-a.json"
+    ],
+    "outcome_b": [
+      "before.json",
+      "gate.json",
+      "outcome-b.json"
+    ]
+  },
+  "parent": {
+    "id": "63895c32-b13d-4081-a749-e33f01ac820b",
+    "root": "6cb3554e-a2d3-4501-b7e5-a2a8eeb8b87e",
+    "depth": 4,
+    "title": "Andalusia annex for the Spain template",
+    "brief": "Once §4 is translated, get the Junta's legal desk to confirm our reading of the self-consumption clause; then draft the annex and fold it into the Spain template. The reading decides whether the annex is two paragraphs or a separate chapter.",
+    "holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+    "holder_name": "Diego"
+  },
+  "trigger": "item_accepted",
+  "gate": "reading",
+  "why_gold": "The translation is already live under the decree ticket, so it is covered, not drafted. The Junta's reading is the gate — it decides whether the annex is two paragraphs or a chapter — so drafting the annex now writes the wrong document. One draft, its `after` pointing at the live translation.",
+  "plan": [
+    {
+      "key": "translation",
+      "piece": "§4 is translated",
+      "order": 1,
+      "after": [],
+      "gate": false,
+      "held": null,
+      "covered_by": "abe8eed9-1613-4b58-acd2-62ce94f5a2ad"
+    },
+    {
+      "key": "reading",
+      "piece": "confirm our reading of the self-consumption clause",
+      "order": 2,
+      "after": [
+        "translation"
+      ],
+      "gate": true,
+      "held": null,
+      "title": "Confirm the §4 reading with the Junta",
+      "requires": [
+        "spanish-energy-law"
+      ],
+      "suggested_holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+      "unfilled": null
+    },
+    {
+      "key": "annex",
+      "piece": "draft the annex",
+      "order": 3,
+      "after": [
+        "reading"
+      ],
+      "gate": false,
+      "held": "after confirm our reading of the self-consumption clause",
+      "title": "Draft the Andalusia annex",
+      "requires": [
+        "spanish-energy-law",
+        "legal-templates"
+      ],
+      "suggested_holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+      "unfilled": null
+    },
+    {
+      "key": "merge",
+      "piece": "fold it into the Spain template",
+      "order": 4,
+      "after": [
+        "annex"
+      ],
+      "gate": false,
+      "held": "after draft the annex",
+      "title": "Merge the annex into the Spain template",
+      "requires": [
+        "legal-templates"
+      ],
+      "suggested_holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07",
+      "unfilled": null
+    }
+  ],
+  "draft_now": [
+    "reading"
+  ],
+  "gate_stage": {
+    "drafts": {
+      "reading": "1982abeb6eee74c40123843cd7c4c55dd511f091bd5da2460bbea7363ea1c917"
+    },
+    "items": {
+      "reading": "8eab8ab2-c61c-4156-815c-da2751891103"
+    },
+    "gate_item": "8eab8ab2-c61c-4156-815c-da2751891103",
+    "gate_holder": "f31de6671fb787349743d6c51d6995041564651b03fd8b2ef64421396b6ecb07"
+  },
+  "outcomes": {
+    "a": {
+      "file": "outcome-a.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "643efa0362b8664c23d030292cb11591622cb74b688764d6a4329a28c0513a2e",
+      "said": "Junta confirms our reading: §4 applies to comunidades as written. The annex is two paragraphs on the regional registry, nothing more.",
+      "next_wave": [
+        {
+          "key": "annex",
+          "piece": "draft the annex",
+          "requires": [
+            "spanish-energy-law",
+            "legal-templates"
+          ],
+          "after": [
+            "8eab8ab2-c61c-4156-815c-da2751891103"
+          ],
+          "must_mention": [
+            "two paragraphs"
+          ]
+        }
+      ],
+      "held": [
+        "merge"
+      ],
+      "not_redrafted": [
+        "translation",
+        "reading"
+      ],
+      "fails": [
+        "a chapter-length annex",
+        "a merge drafted before the annex exists"
+      ],
+      "why_gold": "The reading sized the annex — two paragraphs — so that is the piece; the merge still waits on an annex that exists."
+    },
+    "b": {
+      "file": "outcome-b.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "b66577a6c8b1742a35699786b60074f288d3fcca53ac9d36712ea6ea0d42ad26",
+      "said": "The Junta says no — Andalusia puts shared self-consumption under its own 2026 regime. The annex becomes a separate chapter, and §3 of the Spain template has to change with it.",
+      "next_wave": [
+        {
+          "key": "annex",
+          "piece": "draft the annex",
+          "requires": [
+            "spanish-energy-law",
+            "legal-templates"
+          ],
+          "after": [
+            "8eab8ab2-c61c-4156-815c-da2751891103"
+          ],
+          "must_mention": [
+            "chapter"
+          ]
+        }
+      ],
+      "held": [
+        "merge"
+      ],
+      "not_redrafted": [
+        "translation",
+        "reading"
+      ],
+      "elsewhere": [
+        {
+          "piece": "§3 of the Spain template",
+          "under": "935ff281-b814-4d43-b0d9-0ef95c9901f9",
+          "why": "a change to the Spain template belongs under the Spain template, whose holder is Diego, not under the annex"
+        }
+      ],
+      "fails": [
+        "a two-paragraph annex",
+        "the §3 change drafted under the annex"
+      ],
+      "why_gold": "The answer changed the annex's shape — a chapter, not two paragraphs — and named a change outside this brief. The next piece is the re-scoped annex; the §3 change is a piece under a different parent and is not drafted here."
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "org": "energy",
+  "requirements": [
+    {
+      "requires": "electrical-certification",
+      "expect": "one",
+      "candidates": [
+        {
+          "name": "Tomas",
+          "pubkey": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+          "open_limit": 3,
+          "open_items": [
+            "c244a078-d846-4947-b211-d068e7df9077",
+            "77874655-4405-4436-9f4b-78a3483fddbc"
+          ],
+          "at_limit": false
+        }
+      ],
+      "gold": {
+        "suggested_holder": "e8a7526f831bf1913a58de8255e6eaacb7b265ea72d8705bfd945d2fa5de5418",
+        "matched_skills": [
+          "electrical-certification"
+        ]
+      }
+    },
+    {
+      "requires": "on-call-operations",
+      "expect": "two",
+      "candidates": [
+        {
+          "name": "Rowan",
+          "pubkey": "36e64439ab68d62e8623c849b94af139e052d71c9b671e77c4152be0db6d5b18",
+          "open_limit": 1,
+          "open_items": [
+            "25af011b-5f05-4570-9a02-9849167a4ea1"
+          ],
+          "at_limit": true
+        },
+        {
+          "name": "Surya",
+          "pubkey": "656dac41b3da7b15e60c18d6ec6cb93c1c4290ed303c613674cc8c088494d6a4",
+          "open_limit": 3,
+          "open_items": [
+            "7b38d703-e2d9-414c-8a30-1f4a90b16305",
+            "9b29dbe1-a7e5-4769-a7d0-78daf07c5f08"
+          ],
+          "at_limit": false
+        }
+      ],
+      "gold": {
+        "suggested_holder": "656dac41b3da7b15e60c18d6ec6cb93c1c4290ed303c613674cc8c088494d6a4",
+        "matched_skills": [
+          "on-call-operations"
+        ]
+      }
+    },
+    {
+      "requires": "dutch-cooperative-law",
+      "expect": "nobody",
+      "candidates": [],
+      "gold": {
+        "suggested_holder": null,
+        "unfilled": "nobody here has dutch cooperative law"
+      }
+    }
+  ]
+}

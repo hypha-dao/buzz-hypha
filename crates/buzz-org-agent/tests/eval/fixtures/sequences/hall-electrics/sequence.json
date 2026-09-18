@@ -1,0 +1,163 @@
+{
+  "name": "hall-electrics",
+  "org": "river",
+  "seed": "orgs/river/seed.json",
+  "snapshots": {
+    "before": [
+      "before.json"
+    ],
+    "gate": [
+      "before.json",
+      "gate.json"
+    ],
+    "outcome_a": [
+      "before.json",
+      "gate.json",
+      "outcome-a.json"
+    ],
+    "outcome_b": [
+      "before.json",
+      "gate.json",
+      "outcome-b.json"
+    ]
+  },
+  "parent": {
+    "id": "588b60cc-7197-4f30-b272-f64ddc567065",
+    "root": "39c3e589-1bda-43b9-9a9b-5259ef4a6218",
+    "depth": 1,
+    "title": "Hall electrics",
+    "brief": "The hall's wiring was last certified in 2019. Get the electrics certified first — the electrician's report says how much rewiring the hall needs — then do the rewiring, then book the council's inspection of the finished work before we open.",
+    "holder": "32825e15918f04878b115839bea1c1b7f7c3a6fd14500da0c64b0c7081c087e5",
+    "holder_name": "Noor"
+  },
+  "trigger": "item_accepted",
+  "gate": "certification",
+  "why_gold": "The report is the scope: until an electrician has certified — or failed — the wiring, nobody knows whether the rewiring is one circuit or the whole hall, and the council inspects finished work, not plans. One draft, and it names what River lacks: nobody here holds the certification.",
+  "plan": [
+    {
+      "key": "certification",
+      "piece": "get the electrics certified",
+      "order": 1,
+      "after": [],
+      "gate": true,
+      "held": null,
+      "title": "Electrical certification",
+      "requires": [
+        "electrical-certification"
+      ],
+      "suggested_holder": null,
+      "unfilled": "nobody here holds an electrical certification"
+    },
+    {
+      "key": "rewiring",
+      "piece": "do the rewiring",
+      "order": 2,
+      "after": [
+        "certification"
+      ],
+      "gate": false,
+      "held": "after get the electrics certified",
+      "title": "Rewiring",
+      "requires": [
+        "electrical-work"
+      ],
+      "suggested_holder": null,
+      "unfilled": "nobody here is an electrician"
+    },
+    {
+      "key": "inspection",
+      "piece": "the council's inspection of the finished work",
+      "order": 3,
+      "after": [
+        "rewiring"
+      ],
+      "gate": false,
+      "held": "after do the rewiring",
+      "title": "Council inspection",
+      "requires": [
+        "council-licensing"
+      ],
+      "suggested_holder": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+      "unfilled": null
+    }
+  ],
+  "draft_now": [
+    "certification"
+  ],
+  "gate_stage": {
+    "drafts": {
+      "certification": "a9a0b11ebcaa307cf6bbc09e4e8af301b4b2738fe8b73a9149d84db7d7fabb73"
+    },
+    "items": {
+      "certification": "34712198-f730-485d-9181-570354764351"
+    },
+    "gate_item": "34712198-f730-485d-9181-570354764351",
+    "gate_holder": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f"
+  },
+  "outcomes": {
+    "a": {
+      "file": "outcome-a.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "8ad4780467410d8004ae70e212ddb44a84dd46cb99984533a47e86c6a1bfbb30",
+      "said": "Electrician's report is in: the hall passes except the kitchen circuit, which has to be rewired before the council will sign it off.",
+      "next_wave": [
+        {
+          "key": "rewiring",
+          "piece": "do the rewiring",
+          "requires": [
+            "electrical-work"
+          ],
+          "after": [
+            "34712198-f730-485d-9181-570354764351"
+          ],
+          "must_mention": [
+            "kitchen"
+          ]
+        }
+      ],
+      "held": [
+        "inspection"
+      ],
+      "not_redrafted": [
+        "certification"
+      ],
+      "fails": [
+        "a whole-hall rewire",
+        "an inspection drafted before the rewiring exists"
+      ],
+      "why_gold": "The report scoped the rewiring to one circuit, so the next piece is that circuit and says so; the inspection still waits on finished work. Nobody here is an electrician, and the draft says that rather than naming a handy member."
+    },
+    "b": {
+      "file": "outcome-b.json",
+      "trigger": "child_done_unblocks",
+      "receipt": "4cac5732c8c296762a959697839dfbedc2e1d5581ed4266f40255b85866711fa",
+      "said": "Report is in and it is bad: the whole hall fails, and the electrician will not touch the rewire until a structural engineer has checked the ceiling void.",
+      "next_wave": [
+        {
+          "key": "structural-check",
+          "piece": "a structural check of the ceiling void",
+          "title": "Structural check of the ceiling void",
+          "requires": [
+            "structural-engineering"
+          ],
+          "gate": true,
+          "after": [
+            "34712198-f730-485d-9181-570354764351"
+          ]
+        }
+      ],
+      "held": [
+        "rewiring",
+        "inspection"
+      ],
+      "not_redrafted": [
+        "certification"
+      ],
+      "fails": [
+        "a kitchen-only rewire",
+        "any rewiring draft before the structural check"
+      ],
+      "why_gold": "The outcome added a step the brief never named: a structural check now gates the rewire. Drafting the rewiring — of any size — ignores what the report said; the next piece is the new gate, and the rest of the plan moves behind it."
+    }
+  }
+}

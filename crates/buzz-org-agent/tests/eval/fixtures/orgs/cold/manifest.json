@@ -1,0 +1,89 @@
+{
+  "org": "cold",
+  "locales": [
+    "en"
+  ],
+  "now": 1780218000,
+  "relay": "14c9e8042d96be7652164f2fceafd74055f2ac665dbc503af3e69efa044e60d7",
+  "agent": "33c7800e23e1d6ad4b15b3847a552afcbd8ebdea3b69026444728209aa908f3e",
+  "reader": "bd1218be1769974f24a1bbbf9046e5425ff6e93facd10b8fc3a764d61eb214bf",
+  "people": {
+    "Ada": "dc9d8cb6920950e9519c0b464776660c4107f2e0b6e987950ddad6abc4b97eac"
+  },
+  "shapers": [
+    "dc9d8cb6920950e9519c0b464776660c4107f2e0b6e987950ddad6abc4b97eac"
+  ],
+  "rooms": {
+    "shapers": {
+      "id": "949faf5b-e585-42cb-a51f-e91beea17610",
+      "name": "shapers",
+      "dm": false
+    }
+  },
+  "direction": {
+    "mission": {
+      "version": 1,
+      "event": "b2729a5cbca3e0b0e3d41ba30a97e2673def60824861f509607e11ef1a97692c",
+      "lines": {}
+    },
+    "vision": {
+      "version": 1,
+      "event": "b1b539607a7e9d386e0f7117d8f542cc0bffc9af84edc63cfe0daa1288cc4eb9",
+      "lines": {}
+    },
+    "objectives": {
+      "version": 1,
+      "event": "1211978f444c3d41e6607dde5ea3713da8bd621677d1719570e83d1cbd5ab96e",
+      "lines": {
+        "l_c85b7adf": "The first repair café opens before July.",
+        "l_778cfce5": "Three volunteers can each run a bench by September."
+      }
+    },
+    "strategy": {
+      "version": 1,
+      "event": "e23fcb924017566cadd4f361ff3a032c0db75ee896e1532526a6657ba122852a",
+      "lines": {
+        "l_f27e261a": "Borrow before we buy: tools and the room come from people who have them.",
+        "l_a8dbf6c8": "No charging. A donation tin, nothing else."
+      }
+    }
+  },
+  "items": {},
+  "proposals": {
+    "shapers-add-Ada": {
+      "id": "01b53727-a30d-4555-8019-bd34600cb22f",
+      "kind": "shapers",
+      "status": "passed"
+    },
+    "direction-mission-v1": {
+      "id": "702a222a-8f2e-4512-8d42-4d27176ca73c",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-vision-v1": {
+      "id": "88d46a1f-3ddc-4e7b-b6d7-5a67fce6d087",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-objectives-v1": {
+      "id": "ccfe81a5-d037-4ecd-9707-28eb0d2a1dd7",
+      "kind": "direction",
+      "status": "passed"
+    },
+    "direction-strategy-v1": {
+      "id": "c3639e09-9575-47b2-a7ca-2015e1d74d85",
+      "kind": "direction",
+      "status": "passed"
+    }
+  },
+  "counts": {
+    "13534": 1,
+    "39000": 1,
+    "39002": 1,
+    "39100": 4,
+    "39102": 10,
+    "39103": 1,
+    "50001": 1,
+    "50002": 4
+  }
+}
