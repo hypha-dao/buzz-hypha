@@ -183,6 +183,19 @@ async fn acquire_channel_membership_lock(
     community_id: CommunityId,
     channel_id: Uuid,
 ) -> Result<()> {
+    acquire_channel_membership_lock_on(tx, community_id, channel_id).await
+}
+
+/// [`acquire_channel_membership_lock`] on a caller-owned connection that is
+/// already inside a transaction — the relay-managed room writers
+/// (`crate::relay_rooms`) run on the command executor's transaction rather
+/// than opening their own. Same key, same serialization against the
+/// pool-based writers.
+pub(crate) async fn acquire_channel_membership_lock_on(
+    conn: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    channel_id: Uuid,
+) -> Result<()> {
     crate::observability::observe_advisory_lock(
         crate::observability::LockType::Membership,
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
@@ -191,7 +204,7 @@ async fn acquire_channel_membership_lock(
                 community_id.as_uuid(),
                 channel_id
             ))
-            .execute(&mut **tx),
+            .execute(conn),
     )
     .await?;
     Ok(())
