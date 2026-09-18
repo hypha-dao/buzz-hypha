@@ -26,7 +26,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-2a  | merged | [#6](https://github.com/hypha-dao/buzz-hypha/pull/6) | `88aad25b9` | Migration `0045_intelligent_org`, twelve `io_*` tables, `schema.sql`, deletion catalog, typed transaction-scoped store `buzz-db/src/store/intelligent_org.rs`, desired-state/migration parity test per table. |
 | R-2b  | merged | [#7](https://github.com/hypha-dao/buzz-hypha/pull/7) | `1e935fab0` | `EventQuery.custom_tags`: every single-letter tag filter without a dedicated column is pushed as JSONB containment before `LIMIT` (V2). 600-draft `#n` proof through the production seam. |
 | R-3   | merged | [#9](https://github.com/hypha-dao/buzz-hypha/pull/9) | `1f6767a49` | `handlers/intelligent_org/{mod,apply,authorize,state,shapers}.rs`; `apply` is the one write path (projection row, relay-signed `39xxx`, ledger, `#shapers` roster) on the `persist_command_event` transaction; `50001` bootstrap, `50019`, `50020`; ingest scope + executor routing for `50001–50021`; `buzz-db/src/store/relay_rooms.rs` (transaction-scoped room + roster sync). Six Postgres-lane proofs through `ingest_event` and six E2E through `POST /events`. |
-| R-4a  |        |    |           | **Next.** Every non-bootstrap `shapers` op is rejected `invalid: … not implemented yet` until it lands. |
+| R-4a  | open   | [#13](https://github.com/hypha-dao/buzz-hypha/pull/13) |           | `handlers/intelligent_org/proposals.rs` (open with frozen `eligible`/`needed`, D1 opener vote, `50003`, tally, execution dispatch, one `apply` per settle); `shapers.rs` opens add / remove / rules / agent and executes them against the live `39103` (`shaper_offered`, `shaper_removed`, `rules_changed`, `agent_changed`); `authorize::{open_shapers, agent_candidate, rules_content, vote}`; `apply` writes `io_votes` from the `39102` projection; `store::get_proposal_opening_receipt`. Money and join kinds refused with the fixed reasons. Seven Postgres-lane proofs through `ingest_event`, five E2E through `POST /events`; the R-3 offered-seat SQL seed now goes through a real passed add. `direction`/`dri`/`project` votes that would pass are refused `invalid: execution of … not implemented yet` until R-4b/R-5a. |
 | R-4b  |        |    |           | |
 | R-5a  |        |    |           | |
 | R-5b  |        |    |           | |
@@ -324,7 +324,47 @@ absorb an item into an unrelated slice.
   provisioned, then withdrew — keeps showing the notice. That is the
   conservative failure (a notice nobody needed) and matches the document;
   if the operator slice wants withdrawal to also withdraw the notice, add
-  the predicate there and update D7 together.
+  the predicate there and update D7 together.- **Time-driven proposal and seat transitions are R-6's; R-4a only refuses
+  at the edge.** A vote at or after `39102.expires_at` is refused `invalid:
+  proposal has expired`, and an `io_shaper_accept` after
+  `at + offer_window_secs` is refused `invalid: the offer has lapsed`, but
+  the `39102` stays `open` and the seat stays in `39103.offered` until the
+  scheduler writes `expired` / `shaper_offer_lapsed`. A new `shapers/add`
+  for a `p` whose seat has lapsed is accepted (`authorize::has_live_seat`
+  ignores lapsed seats), so R-6's lapse sweep must tolerate a `p` that
+  already has a fresh seat — drop by `(p, proposal)`, not by `p`.
+- **`shapers/agent` execution does not yet move the agent's memberships.**
+  §5.3 says a passed `agent` op moves membership in every channel and DM
+  from the old agent to the new one (ledger `agent_membership_synced`). R-4a
+  rewrites `39103.agent`/`agent_hosted` and the `#shapers` roster (the R-3
+  sync swaps the agent row there) and nothing else — by plan that is R-8,
+  which should add the move to `shapers::execute` for `ShapersOp::Agent`
+  inside the same transaction.
+- **`shapers/add` does not require its `p` to be a NIP-43 member.** The
+  Protocol only says so for `op=agent`, and R-4a follows it. A seat can
+  therefore be offered to a pubkey the door will not admit under
+  `REQUIRE_RELAY_MEMBERSHIP`; the offer lapses unaccepted. Either the Design
+  should say that an add implies (or requires) an invite, or `open_shapers`
+  should check membership for add too — a one-line change once decided.
+- **Passing a `shapers/add` for a `p` who is already seated is a no-op, not
+  a refusal.** Opening is refused (`invalid: already a Shaper`), but a
+  proposal that was open when `p` got a seat by another add still passes on
+  its votes and executes nothing (no `shaper_offered`, no `39103` rewrite);
+  likewise a `remove` whose `p` already stepped down. This is R-4a's
+  reading of §5.3 "any open proposal keeps its stored `eligible`" — the
+  proposal is decided honestly, the execution is idempotent. The
+  Protocol's §5.3 `shapers` rows should say so explicitly. The converse
+  edge: when execution itself must refuse (a `remove` that would now leave
+  zero Shapers, an `agent` whose `p` lost membership or became a Shaper
+  mid-vote), the **passing vote is refused** and the proposal stays `open`
+  rather than passing without effect; nothing is written. R-6 should treat
+  such a proposal like any other — it expires.
+- **Two byte-identical commands in one second are one Nostr event.** Same
+  signer, tags, content, and `created_at` second → same `id` → the second
+  is `duplicate: already processed`, not a fresh refusal. This is correct
+  relay behavior, but it bit a Postgres-lane test that re-sent an identical
+  open expecting `invalid: already a Shaper`. Test authors: vary the
+  content (`why`) between otherwise identical commands.>>>>>>> 4b254fca (docs(intelligent-org): progress — R-4a open as #13, follow-ups, relay-key recipe line)
 
 ---
 
@@ -380,7 +420,10 @@ cargo test -p buzz-relay --lib intelligent_org::postgres_tests -- --include-igno
 **E2E lane** (`crates/buzz-test-client/tests/e2e_intelligent_org.rs`, C-3).
 Needs a running relay and `DATABASE_URL` for seeding; every test makes its
 own community (a fresh `*.localhost` sent in the `Host` header), so the suite
-is rerunnable against a shared dev relay. Start the relay without MinIO:
+is rerunnable against a shared dev relay. Start the relay without MinIO (a
+fresh `.env` from `.env.example` has no relay key; `just bootstrap` writes
+one, or `scripts/ensure-local-relay-key.sh .env` alone on a host without
+Docker):
 
 ```bash
 set -o allexport; source .env; set +o allexport

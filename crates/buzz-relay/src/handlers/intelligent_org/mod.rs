@@ -8,8 +8,10 @@
 //! - [`authorize`] — the pure who-may-send decisions of §3.2;
 //! - [`apply`] — the single write path: projection row, state event, ledger,
 //!   and the `#shapers` roster, all on the command's transaction (V3);
-//! - one handler per command, `shapers` for `50001`/`50019`/`50020` in this
-//!   slice.
+//! - [`proposals`] — opening, the D1 opener vote, `50003`, the tally, and
+//!   execution dispatch (§5.3);
+//! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
+//!   `shapers` execution rows, `proposals` for `50003`.
 //!
 //! Client `EVENT`s of `39100–39105` never reach here: ingest rejects them as
 //! `restricted: relay-only kind` before verification.
@@ -18,23 +20,27 @@ pub mod apply;
 pub mod authorize;
 #[cfg(test)]
 mod postgres_tests;
+mod proposals;
 mod shapers;
 pub mod state;
 
 use std::sync::Arc;
 
-use buzz_core::intelligent_org::tag;
+use buzz_core::intelligent_org::{tag, Shapers};
 use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
     KIND_IO_MONEY_RELEASED, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
-    KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
+use buzz_db::intelligent_org::{self as store, LedgerEntry};
 use nostr::Event;
 use serde::de::DeserializeOwned;
+use sqlx::{Postgres, Transaction};
 use tracing::warn;
 use uuid::Uuid;
 
+use super::command_executor::{persist_command_event, PersistResult};
 use super::ingest::{IngestAuth, IngestError, IngestResult};
 use crate::state::AppState;
 
@@ -61,6 +67,7 @@ pub async fn handle_command(
     };
     match kind {
         KIND_IO_SHAPERS_PROPOSE => shapers::propose(&cmd).await,
+        KIND_IO_VOTE => proposals::vote(&cmd).await,
         KIND_IO_SHAPER_ACCEPT => shapers::accept(&cmd).await,
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
@@ -111,6 +118,97 @@ impl Command<'_> {
             message,
         }
     }
+
+    /// A ledger row this command causes, stamped at the command's time and
+    /// pointing back at it as the receipt.
+    pub fn ledger(
+        &self,
+        verb: &str,
+        object_type: &str,
+        object_id: &str,
+        detail: serde_json::Value,
+    ) -> Result<LedgerEntry, IngestError> {
+        Ok(LedgerEntry {
+            at: store::ts(self.at).map_err(|e| internal("ledger time", e))?,
+            actor: self.actor_hex.clone(),
+            verb: verb.to_owned(),
+            object_type: object_type.to_owned(),
+            object_id: object_id.to_owned(),
+            receipt_event_id: Some(self.receipt_bytes()),
+            detail,
+        })
+    }
+
+    /// Whether `pubkey` holds a NIP-43 relay membership in this community.
+    pub async fn is_member(&self, pubkey: &str) -> Result<bool, IngestError> {
+        Ok(self
+            .state
+            .db
+            .get_relay_member(self.tenant.community(), pubkey)
+            .await
+            .map_err(|e| internal("read relay membership", e))?
+            .is_some())
+    }
+}
+
+/// Ledger `object_type` values this module writes.
+pub(crate) mod object {
+    /// The Shaper set; `object_id` is a pubkey.
+    pub const SHAPERS: &str = "shapers";
+    /// A proposal; `object_id` is its uuid.
+    pub const PROPOSAL: &str = "proposal";
+    /// The org agent; `object_id` is its pubkey.
+    pub const AGENT: &str = "agent";
+}
+
+pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
+    IngestError::Internal(format!("error: {context}: {error}"))
+}
+
+/// Relay wall-clock seconds — the floor for state `created_at` (see `apply`).
+pub(crate) fn wall_clock() -> u64 {
+    chrono::Utc::now().timestamp().unsigned_abs()
+}
+
+/// What `persist_command_event` said about the command.
+pub(crate) enum Persisted {
+    /// Already processed; the accepted result to return.
+    Replay(IngestResult),
+    /// Stored on this transaction, which now also holds the executor lock.
+    Open(Transaction<'static, Postgres>),
+}
+
+/// Store the command and take the executor lock, or report a replay.
+pub(crate) async fn begin(cmd: &Command<'_>) -> Result<Persisted, IngestError> {
+    let mut tx = match persist_command_event(&cmd.state.db, cmd.tenant, cmd.event, None).await? {
+        PersistResult::Duplicate => {
+            return Ok(Persisted::Replay(
+                cmd.accepted("duplicate: already processed".into()),
+            ));
+        }
+        PersistResult::Inserted(tx) => tx,
+    };
+    store::lock_executor(&mut tx, cmd.tenant.community())
+        .await
+        .map_err(|e| internal("take executor lock", e))?;
+    Ok(Persisted::Open(tx))
+}
+
+pub(crate) async fn commit(tx: Transaction<'static, Postgres>) -> Result<(), IngestError> {
+    tx.commit()
+        .await
+        .map_err(|e| internal("commit transaction", e))
+}
+
+/// The live `39103` content on `tx`, if the community has one.
+pub(crate) async fn current_shapers(
+    tx: &mut Transaction<'static, Postgres>,
+    cmd: &Command<'_>,
+) -> Result<Option<Shapers>, IngestError> {
+    Ok(store::get_shapers(tx, cmd.tenant.community())
+        .await
+        .map_err(|e| internal("read io_shapers", e))?
+        .map(|row| row.content))
 }
 
 /// `["e", <id>, "", "draft"]` on any command (§3.2 draft settlement).

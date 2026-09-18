@@ -521,6 +521,41 @@ pub async fn get_proposal(
     row.map(proposal_row).transpose()
 }
 
+/// The `["receipt", <opening-command-id>]` of a proposal's live `39102`
+/// (Protocol §4.4), read from the stored head, so every rewrite of the
+/// proposal keeps citing the command that opened it. `None` when the
+/// proposal or its head is missing; an error when the head has no receipt
+/// tag, which the executor never writes.
+pub async fn get_proposal_opening_receipt(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    id: Uuid,
+) -> Result<Option<String>> {
+    let tags: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT e.tags FROM io_proposals p \
+         JOIN events e ON e.community_id = p.community_id AND e.id = p.event_id \
+         WHERE p.community_id = $1 AND p.id = $2 AND e.deleted_at IS NULL",
+    )
+    .bind(community_id.as_uuid())
+    .bind(id)
+    .fetch_optional(conn)
+    .await?;
+    let Some(tags) = tags else {
+        return Ok(None);
+    };
+    let receipt = tags
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.as_array())
+        .find(|t| t.first().and_then(|v| v.as_str()) == Some("receipt"))
+        .and_then(|t| t.get(1).and_then(|v| v.as_str()))
+        .ok_or_else(|| {
+            DbError::InvalidData(format!("39102 head of proposal {id} has no receipt tag"))
+        })?;
+    Ok(Some(receipt.to_owned()))
+}
+
 /// Proposals in `status` whose `expires_at` is at or before `before` — the
 /// §6.3 rule 5 sweep when `status` is [`ProposalStatus::Open`].
 pub async fn list_proposals_expiring(

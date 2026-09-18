@@ -1,4 +1,5 @@
-//! `50001` bootstrap, `50019` accept, `50020` step down (Protocol §3.2, §6.4).
+//! `50001` propose, `50019` accept, `50020` step down, and the `shapers`
+//! execution rows of §5.3 (Protocol §3.2, §4.5, §6.4).
 //!
 //! Each handler follows one shape: parse the tags and content with no
 //! database; persist the command (`persist_command_event`, which returns the
@@ -7,20 +8,29 @@
 //! [`super::authorize`]; build the next content; hand everything to
 //! [`super::apply::apply`]; commit; fan out. A refusal after the persist
 //! drops the transaction, so a rejected command is never stored (§3.2).
+//!
+//! A `shapers` proposal's `39102.payload` is the command content plus the
+//! `op` and (when present) `p` its tags carried, so the proposal can be
+//! executed from its own content when the passing vote arrives.
 
 use buzz_core::channel::{ChannelType, ChannelVisibility};
 use buzz_core::intelligent_org::{
-    DecisionRules, Executed, Proposal, ProposalKind, ProposalStatus, Shapers, ShapersOp, Vote,
-    VoteChoice, WhyContent, DEFAULT_DECISION_WINDOW_SECS, DEFAULT_OFFER_WINDOW_SECS,
+    DecisionRule, DecisionRules, Executed, OfferedSeat, Proposal, ProposalKind, ProposalStatus,
+    RulesContent, Shapers, ShapersOp, Vote, VoteChoice, WhyContent, DEFAULT_DECISION_WINDOW_SECS,
+    DEFAULT_OFFER_WINDOW_SECS,
 };
-use buzz_db::intelligent_org::{self as store, LedgerEntry};
+use buzz_db::intelligent_org::{self as store};
 use buzz_db::relay_rooms;
+use serde::Deserialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use super::apply::{apply, ApplyContext, Projection};
-use super::{authorize, content_value, parse_content, pubkey_tag, tag_value, uuid_tag, Command};
-use crate::handlers::command_executor::{persist_command_event, PersistResult};
+use super::apply::{apply, ApplyContext, CastVote, Projection};
+use super::proposals::{self, Execution, Opening};
+use super::{
+    authorize, begin, commit, content_value, current_shapers, internal, object, parse_content,
+    pubkey_tag, tag_value, uuid_tag, wall_clock, Command, Persisted,
+};
 use crate::handlers::ingest::{IngestError, IngestResult};
 
 /// The `#shapers` room's name as stored (the leading `#` is presentation).
@@ -29,58 +39,12 @@ pub const SHAPERS_ROOM_NAME: &str = "shapers";
 pub const SHAPERS_ROOM_DESCRIPTION: &str =
     "Direction talk for the Shapers and the org agent. Membership follows the Shaper set.";
 
-/// Ledger `object_type` for Shaper-set rows.
-const OBJECT_SHAPERS: &str = "shapers";
-const OBJECT_PROPOSAL: &str = "proposal";
-const OBJECT_AGENT: &str = "agent";
-
-fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
-    IngestError::Internal(format!("error: {context}: {error}"))
-}
-
-fn wall_clock() -> u64 {
-    chrono::Utc::now().timestamp().unsigned_abs()
-}
-
-fn ledger_at(at: u64) -> Result<chrono::DateTime<chrono::Utc>, IngestError> {
-    store::ts(at).map_err(|e| internal("ledger time", e))
-}
-
-enum Persisted {
-    Replay(IngestResult),
-    Open(Transaction<'static, Postgres>),
-}
-
-/// Store the command and take the executor lock, or report a replay.
-async fn begin(cmd: &Command<'_>) -> Result<Persisted, IngestError> {
-    let mut tx = match persist_command_event(&cmd.state.db, cmd.tenant, cmd.event, None).await? {
-        PersistResult::Duplicate => {
-            return Ok(Persisted::Replay(
-                cmd.accepted("duplicate: already processed".into()),
-            ));
-        }
-        PersistResult::Inserted(tx) => tx,
-    };
-    store::lock_executor(&mut tx, cmd.tenant.community())
-        .await
-        .map_err(|e| internal("take executor lock", e))?;
-    Ok(Persisted::Open(tx))
-}
-
-async fn commit(tx: Transaction<'static, Postgres>) -> Result<(), IngestError> {
-    tx.commit()
-        .await
-        .map_err(|e| internal("commit transaction", e))
-}
-
-async fn current_shapers(
-    tx: &mut Transaction<'static, Postgres>,
-    cmd: &Command<'_>,
-) -> Result<Option<Shapers>, IngestError> {
-    Ok(store::get_shapers(tx, cmd.tenant.community())
-        .await
-        .map_err(|e| internal("read io_shapers", e))?
-        .map(|row| row.content))
+/// `39102.executed` for every `shapers` op: the one Shaper set.
+fn executed_shapers() -> Executed {
+    Executed {
+        kind: object::SHAPERS.to_owned(),
+        id: object::SHAPERS.to_owned(),
+    }
 }
 
 async fn actor_is_owner(cmd: &Command<'_>) -> Result<bool, IngestError> {
@@ -103,26 +67,51 @@ fn shapers_op(cmd: &Command<'_>) -> Result<ShapersOp, IngestError> {
     })
 }
 
-fn ledger(
-    cmd: &Command<'_>,
-    verb: &str,
-    object_type: &str,
-    object_id: &str,
-    detail: serde_json::Value,
-) -> Result<LedgerEntry, IngestError> {
-    Ok(LedgerEntry {
-        at: ledger_at(cmd.at)?,
-        actor: cmd.actor_hex.clone(),
-        verb: verb.to_owned(),
-        object_type: object_type.to_owned(),
-        object_id: object_id.to_owned(),
-        receipt_event_id: Some(cmd.receipt_bytes()),
-        detail,
-    })
+fn op_wire(op: ShapersOp) -> String {
+    serde_json::to_value(op)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
-/// `io_shapers_propose`. This slice executes the bootstrap self-add (§6.4);
-/// every other `shapers` proposal opens in R-4a.
+/// The `op` and `p` a `shapers` proposal's payload carries alongside the
+/// command content.
+#[derive(Debug, Deserialize)]
+struct ShapersPayload {
+    op: ShapersOp,
+    #[serde(default)]
+    p: Option<String>,
+}
+
+/// The command content with `op` and `p` folded in (module docs).
+fn payload_with_op(
+    mut content: serde_json::Value,
+    op: ShapersOp,
+    subject: Option<&str>,
+) -> Result<serde_json::Value, IngestError> {
+    let fields = content.as_object_mut().ok_or_else(|| {
+        IngestError::Rejected("invalid: command content must be a JSON object".into())
+    })?;
+    fields.insert("op".into(), serde_json::Value::String(op_wire(op)));
+    if let Some(p) = subject {
+        fields.insert("p".into(), serde_json::Value::String(p.to_owned()));
+    }
+    Ok(content)
+}
+
+/// The §4.4 subject of a `shapers` proposal — `p` for add and remove (the
+/// person named or the seat), none for rules and agent.
+pub(super) fn subject_of(payload: &serde_json::Value) -> Option<String> {
+    let parsed: ShapersPayload = serde_json::from_value(payload.clone()).ok()?;
+    match parsed.op {
+        ShapersOp::Add | ShapersOp::Remove => parsed.p,
+        ShapersOp::Rules | ShapersOp::Agent => None,
+    }
+}
+
+/// `io_shapers_propose`: the owner's bootstrap self-add while no `39103`
+/// exists (§6.4); otherwise a Shaper opens a `shapers` proposal — add and
+/// remove under `rules.shapers`, rules and agent always under `all` (§4.5).
 pub(super) async fn propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
     let op = shapers_op(cmd)?;
     let subject = pubkey_tag(cmd.event, "p")?;
@@ -131,32 +120,60 @@ pub(super) async fn propose(cmd: &Command<'_>) -> Result<IngestResult, IngestErr
             "invalid: op=add and op=remove need a p tag".into(),
         ));
     }
-    let payload = content_value(cmd.event)?;
-    if matches!(op, ShapersOp::Add | ShapersOp::Remove | ShapersOp::Agent) {
-        parse_content::<WhyContent>(cmd.event)?;
+    let content = content_value(cmd.event)?;
+    match op {
+        ShapersOp::Add | ShapersOp::Remove | ShapersOp::Agent => {
+            parse_content::<WhyContent>(cmd.event)?;
+        }
+        ShapersOp::Rules => {
+            // `rules` is required, so empty content is not `{}` here.
+            let rules: RulesContent = serde_json::from_value(content.clone())
+                .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+            authorize::rules_content(&rules)?;
+        }
     }
+    let payload = payload_with_op(content, op, subject.as_deref())?;
 
     let mut tx = match begin(cmd).await? {
         Persisted::Replay(result) => return Ok(result),
         Persisted::Open(tx) => tx,
     };
-    match current_shapers(&mut tx, cmd).await? {
-        None => {
-            let is_owner = actor_is_owner(cmd).await?;
-            authorize::bootstrap(op, subject.as_deref(), &cmd.actor_hex, is_owner)?;
-            bootstrap(cmd, tx, payload).await
-        }
-        Some(shapers) => {
-            authorize::require_shaper(&shapers, &cmd.actor_hex)?;
-            let op = serde_json::to_value(op)
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_owned))
-                .unwrap_or_default();
-            Err(IngestError::Rejected(format!(
-                "invalid: shapers op={op} proposals are not implemented yet"
-            )))
-        }
-    }
+    let Some(shapers) = current_shapers(&mut tx, cmd).await? else {
+        let is_owner = actor_is_owner(cmd).await?;
+        authorize::bootstrap(op, subject.as_deref(), &cmd.actor_hex, is_owner)?;
+        return bootstrap(cmd, tx, payload).await;
+    };
+
+    let subject_is_member = match (op, subject.as_deref()) {
+        (ShapersOp::Agent, Some(p)) => cmd.is_member(p).await?,
+        _ => false,
+    };
+    authorize::open_shapers(
+        &shapers,
+        &cmd.actor_hex,
+        op,
+        subject.as_deref(),
+        subject_is_member,
+        cmd.at,
+    )?;
+    let rule = match op {
+        ShapersOp::Add | ShapersOp::Remove => shapers.rules.shapers,
+        ShapersOp::Rules | ShapersOp::Agent => DecisionRule::ALL,
+    };
+    let opening = Opening {
+        kind: ProposalKind::Shapers,
+        rule,
+        subject: match op {
+            ShapersOp::Add | ShapersOp::Remove => subject.clone(),
+            ShapersOp::Rules | ShapersOp::Agent => None,
+        },
+        item: None,
+        payload,
+        detail: serde_json::json!({
+            "kind": "shapers", "op": op_wire(op), "p": subject, "rule": rule,
+        }),
+    };
+    proposals::open_and_settle(cmd, tx, shapers, opening).await
 }
 
 /// The owner's self-add when no `39103` exists: create `#shapers`, read the
@@ -218,52 +235,44 @@ async fn bootstrap(
             receipt: receipt.clone(),
         }],
         decided_at: Some(cmd.at),
-        executed: Some(Executed {
-            kind: OBJECT_SHAPERS.to_owned(),
-            id: OBJECT_SHAPERS.to_owned(),
-        }),
+        executed: Some(executed_shapers()),
         settlement: None,
     };
 
     let mut rows = vec![
-        ledger(
-            cmd,
+        cmd.ledger(
             "proposal_opened",
-            OBJECT_PROPOSAL,
+            object::PROPOSAL,
             &proposal_id,
             serde_json::json!({
-                "kind": "shapers", "op": "add", "subject": cmd.actor_hex, "bootstrap": true
+                "kind": "shapers", "op": "add", "p": cmd.actor_hex, "bootstrap": true
             }),
         )?,
-        ledger(
-            cmd,
+        cmd.ledger(
             "vote_cast",
-            OBJECT_PROPOSAL,
+            object::PROPOSAL,
             &proposal_id,
             serde_json::json!({ "vote": "agree", "with_open": true }),
         )?,
-        ledger(
-            cmd,
+        cmd.ledger(
             "proposal_passed",
-            OBJECT_PROPOSAL,
+            object::PROPOSAL,
             &proposal_id,
             serde_json::json!({
-                "needed": 1, "agrees": 1, "executed": { "kind": "shapers", "id": "shapers" }
+                "needed": 1, "agrees": 1, "executed": executed_shapers()
             }),
         )?,
-        ledger(
-            cmd,
+        cmd.ledger(
             "shaper_added",
-            OBJECT_SHAPERS,
+            object::SHAPERS,
             &cmd.actor_hex,
             serde_json::json!({ "proposal": proposal_id, "founder": true, "room": room }),
         )?,
     ];
     if let Some(agent) = &agent {
-        rows.push(ledger(
-            cmd,
+        rows.push(cmd.ledger(
             "agent_changed",
-            OBJECT_AGENT,
+            object::AGENT,
             agent,
             serde_json::json!({ "from": null, "to": agent, "hosted": true, "why": "bootstrap" }),
         )?);
@@ -280,7 +289,11 @@ async fn bootstrap(
             proposal: Box::new(proposal),
             subject: Some(cmd.actor_hex.clone()),
             item: None,
-            receipt,
+            receipt: receipt.clone(),
+            cast: vec![CastVote {
+                receipt,
+                reason: None,
+            }],
         },
         Projection::Shapers(shapers),
     ];
@@ -288,6 +301,138 @@ async fn bootstrap(
     commit(tx).await?;
     super::finish(cmd, applied, Some(room)).await;
     Ok(cmd.accepted(serde_json::json!({ "proposal": proposal_id, "room": room }).to_string()))
+}
+
+/// The §5.3 execution rows for a passed `shapers` proposal, against the
+/// `39103` live when the passing vote arrives. An add whose `p` is already a
+/// Shaper, or a remove whose `p` already left, passes with nothing to do —
+/// the seat or the departure happened by another path — and writes no
+/// `39103`; every other op returns the next Shaper set.
+pub(super) async fn execute(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    shapers: &Shapers,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let payload: ShapersPayload = serde_json::from_value(proposal.payload.clone())
+        .map_err(|e| internal("shapers proposal payload", e))?;
+    let mut next = shapers.clone();
+    let mut rows = Vec::new();
+    match payload.op {
+        ShapersOp::Add => {
+            let p = payload
+                .p
+                .ok_or_else(|| internal("shapers/add payload", "no p"))?;
+            if !authorize::is_shaper(&next, &p) {
+                next.offered.retain(|seat| seat.p != p);
+                next.offered.push(OfferedSeat {
+                    p: p.clone(),
+                    proposal: proposal.id.clone(),
+                    at: cmd.at,
+                });
+                rows.push(cmd.ledger(
+                    "shaper_offered",
+                    object::SHAPERS,
+                    &p,
+                    serde_json::json!({
+                        "proposal": proposal.id,
+                        "lapses_at": cmd.at.saturating_add(next.offer_window_secs),
+                    }),
+                )?);
+            }
+        }
+        ShapersOp::Remove => {
+            let p = payload
+                .p
+                .ok_or_else(|| internal("shapers/remove payload", "no p"))?;
+            if authorize::is_shaper(&next, &p) {
+                if next.shapers.len() == 1 {
+                    return Err(IngestError::Rejected("invalid: last shaper".into()));
+                }
+                next.shapers.retain(|s| s != &p);
+                rows.push(cmd.ledger(
+                    "shaper_removed",
+                    object::SHAPERS,
+                    &p,
+                    serde_json::json!({ "proposal": proposal.id }),
+                )?);
+            }
+        }
+        ShapersOp::Rules => {
+            let content: RulesContent = serde_json::from_value(proposal.payload.clone())
+                .map_err(|e| internal("shapers/rules payload", e))?;
+            authorize::rules_content(&content)?;
+            let from = rules_detail(&next);
+            next.rules = content.rules;
+            if let Some(secs) = content.decision_window_secs {
+                next.decision_window_secs = secs;
+            }
+            if let Some(secs) = content.offer_window_secs {
+                next.offer_window_secs = secs;
+            }
+            if next != *shapers {
+                rows.push(cmd.ledger(
+                    "rules_changed",
+                    object::SHAPERS,
+                    object::SHAPERS,
+                    serde_json::json!({
+                        "proposal": proposal.id, "from": from, "to": rules_detail(&next),
+                    }),
+                )?);
+            }
+        }
+        ShapersOp::Agent => {
+            let from = next.agent.clone();
+            match payload.p {
+                Some(p) => {
+                    let is_member = cmd.is_member(&p).await?;
+                    authorize::agent_candidate(&next, &p, is_member)?;
+                    next.agent = Some(p);
+                    next.agent_hosted = false;
+                }
+                None => {
+                    let hosted = store::get_live_hosted_agent(tx, cmd.tenant.community())
+                        .await
+                        .map_err(|e| internal("read io_hosted_agents", e))?
+                        .map(|row| hex::encode(row.pubkey));
+                    next.agent_hosted = hosted.is_some();
+                    next.agent = hosted;
+                }
+            }
+            if next != *shapers {
+                rows.push(cmd.ledger(
+                    "agent_changed",
+                    object::AGENT,
+                    next.agent.as_deref().unwrap_or("none"),
+                    serde_json::json!({
+                        "from": from, "to": next.agent, "hosted": next.agent_hosted,
+                        "why": "proposal", "proposal": proposal.id,
+                    }),
+                )?);
+            }
+        }
+    }
+
+    let projections = if next == *shapers {
+        vec![]
+    } else {
+        next.updated_at = cmd.at;
+        next.receipt = cmd.receipt_hex();
+        vec![Projection::Shapers(next)]
+    };
+    Ok(Execution {
+        executed: executed_shapers(),
+        projections,
+        rows,
+    })
+}
+
+fn rules_detail(shapers: &Shapers) -> serde_json::Value {
+    serde_json::json!({
+        "rules": shapers.rules,
+        "decision_window_secs": shapers.decision_window_secs,
+        "offer_window_secs": shapers.offer_window_secs,
+    })
 }
 
 /// `io_shaper_accept`: take the seat a passed `shapers/add` offered.
@@ -313,10 +458,9 @@ pub(super) async fn accept(cmd: &Command<'_>) -> Result<IngestResult, IngestErro
     next.updated_at = cmd.at;
     next.receipt = cmd.receipt_hex();
 
-    let rows = [ledger(
-        cmd,
+    let rows = [cmd.ledger(
         "shaper_added",
-        OBJECT_SHAPERS,
+        object::SHAPERS,
         &cmd.actor_hex,
         serde_json::json!({ "proposal": proposal }),
     )?];
@@ -357,10 +501,9 @@ pub(super) async fn step_down(cmd: &Command<'_>) -> Result<IngestResult, IngestE
     next.updated_at = cmd.at;
     next.receipt = cmd.receipt_hex();
 
-    let rows = [ledger(
-        cmd,
+    let rows = [cmd.ledger(
         "shaper_stepped_down",
-        OBJECT_SHAPERS,
+        object::SHAPERS,
         &cmd.actor_hex,
         serde_json::json!({ "why": content.why }),
     )?];
@@ -381,4 +524,46 @@ pub(super) async fn step_down(cmd: &Command<'_>) -> Result<IngestResult, IngestE
     commit(tx).await?;
     super::finish(cmd, applied, None).await;
     Ok(cmd.accepted("{}".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payload_folds_op_and_p_into_the_content_and_subject_reads_them_back() {
+        let p = hex::encode([7u8; 32]);
+        let payload = payload_with_op(
+            serde_json::json!({ "why": "knows the domain" }),
+            ShapersOp::Add,
+            Some(&p),
+        )
+        .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({ "why": "knows the domain", "op": "add", "p": p })
+        );
+        assert_eq!(subject_of(&payload).as_deref(), Some(p.as_str()));
+
+        let agent = payload_with_op(serde_json::json!({}), ShapersOp::Agent, Some(&p)).unwrap();
+        assert_eq!(
+            subject_of(&agent),
+            None,
+            "an agent's p is not a §4.4 subject"
+        );
+        let rules = payload_with_op(
+            serde_json::json!({ "rules": { "shapers": "all" } }),
+            ShapersOp::Rules,
+            None,
+        )
+        .unwrap();
+        assert_eq!(subject_of(&rules), None);
+        let content: RulesContent = serde_json::from_value(rules).unwrap();
+        assert_eq!(content.rules.shapers, DecisionRule::ALL);
+
+        assert!(matches!(
+            payload_with_op(serde_json::json!([]), ShapersOp::Rules, None),
+            Err(IngestError::Rejected(m)) if m == "invalid: command content must be a JSON object"
+        ));
+    }
 }
