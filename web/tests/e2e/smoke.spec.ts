@@ -201,6 +201,61 @@ test("invite can enroll a NIP-07 identity for browser access", async ({
   expect(claimObserved).toBe(true);
 });
 
+test("invite shows the org transparency notice without gating the join", async ({
+  page,
+}) => {
+  // Readiness D7: the relay's fixed text arrives as `org.transparency_notice`
+  // on /api/join-policy for an intelligent organization. The page renders it
+  // above the join controls and it gates nothing — no checkbox, no disabled
+  // button. A plain community (no `org`) renders no notice at all.
+  const notice =
+    "This community is run as an intelligent organization. Its org agent is a\nmember of every channel and every direct message here.\n\nThe agent drafts and suggests. Every decision is a person's, signed by them.";
+  let orgCommunity = true;
+  await page.route("**/api/join-policy", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        orgCommunity ? { org: { transparency_notice: notice } } : {},
+      ),
+    });
+  });
+  await page.route("https://api.github.com/**", async (route) => {
+    await route.fulfill({ status: 500 });
+  });
+
+  await page.goto("/invite/demo-code");
+  const noticeBox = page.getByTestId("invite-org-transparency-notice");
+  await expect(noticeBox).toBeVisible();
+  await expect(
+    noticeBox.getByRole("heading", { name: "Before you join" }),
+  ).toBeVisible();
+  await expect(noticeBox.getByRole("paragraph")).toHaveText([
+    "This community is run as an intelligent organization. Its org agent is a member of every channel and every direct message here.",
+    "The agent drafts and suggests. Every decision is a person's, signed by them.",
+  ]);
+  await expect(noticeBox.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByTestId("invite-join-policy-notice")).toHaveCount(0);
+
+  const acceptInvite = page.getByRole("link", {
+    name: "Accept invite in Buzz",
+  });
+  await expect(acceptInvite).toBeVisible();
+  const noticeBounds = await noticeBox.boundingBox();
+  const acceptBounds = await acceptInvite.boundingBox();
+  expect(noticeBounds?.y).toBeLessThan(acceptBounds?.y ?? 0);
+  expect(noticeBounds?.width).toBe(acceptBounds?.width);
+
+  orgCommunity = false;
+  await page.goto("/invite/demo-code");
+  await expect(
+    page.getByRole("link", { name: "Accept invite in Buzz" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("invite-org-transparency-notice")).toHaveCount(
+    0,
+  );
+});
+
 test("invite asks Safari users to choose their Mac download", async ({
   browser,
 }) => {

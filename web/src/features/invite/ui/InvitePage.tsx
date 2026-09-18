@@ -14,12 +14,19 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { InviteJoinPolicyNotice } from "./InviteJoinPolicyNotice";
+import { InviteOrgTransparencyNotice } from "./InviteOrgTransparencyNotice";
 
 type JoinPolicy = {
   terms_markdown?: string;
   privacy_markdown?: string;
   age_attestation_required: boolean;
   version: string;
+};
+
+/** `GET /api/join-policy`: the join policy half and the org notice half. */
+type JoinPolicyResponse = {
+  policy?: JoinPolicy | null;
+  org?: { transparency_notice?: string } | null;
 };
 
 type PolicyDocument = { title: string; markdown: string };
@@ -46,6 +53,7 @@ export function InvitePage({ code }: { code: string }) {
     undefined,
   );
   const [document, setDocument] = React.useState<PolicyDocument | null>(null);
+  const [orgNotice, setOrgNotice] = React.useState<string | null>(null);
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
   const [agreementConfirmed, setAgreementConfirmed] = React.useState(false);
   const [opening, setOpening] = React.useState(false);
@@ -83,10 +91,19 @@ export function InvitePage({ code }: { code: string }) {
     fetch("/api/join-policy")
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const config = (await response.json()) as { policy?: JoinPolicy };
+        const config = (await response.json()) as JoinPolicyResponse;
         setPolicy(config.policy ?? null);
+        const notice = config.org?.transparency_notice;
+        setOrgNotice(
+          typeof notice === "string" && notice.trim().length > 0
+            ? notice
+            : null,
+        );
       })
-      .catch(() => setPolicy(undefined));
+      .catch(() => {
+        setPolicy(undefined);
+        setOrgNotice(null);
+      });
   }, []);
 
   const acceptPolicy = async (): Promise<string | undefined> => {
@@ -204,10 +221,16 @@ export function InvitePage({ code }: { code: string }) {
           </h1>
           <p className="mt-9 font-mono text-lg text-black/70">{host}</p>
 
+          {orgNotice ? (
+            <div className="mt-9 w-full max-w-md">
+              <InviteOrgTransparencyNotice notice={orgNotice} />
+            </div>
+          ) : null}
+
           <div
             className={`grid w-full max-w-md overflow-hidden transition-[grid-template-rows,margin,opacity,transform] duration-[220ms] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none ${
               hasPolicyRequirements
-                ? "mt-9 -mb-4 grid-rows-[1fr] opacity-100 translate-y-0"
+                ? `${orgNotice ? "mt-3" : "mt-9"} -mb-4 grid-rows-[1fr] opacity-100 translate-y-0`
                 : "m-0 grid-rows-[0fr] opacity-0 -translate-y-1"
             }`}
           >
