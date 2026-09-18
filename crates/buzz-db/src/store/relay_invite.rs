@@ -16,6 +16,11 @@
 //! join-policy evidence insert, and `use_count` increment all commit together.
 //! `FOR UPDATE` serializes concurrent claims for one invite across relay
 //! processes — exactly one claimant can win the final slot.
+//!
+//! A claim that admits a new member also appends the intelligent
+//! organization's `member_joined` ledger row (Protocol §6.6) in the same
+//! transaction, so the ledger fact never depends on the best-effort NIP-43
+//! publishes the relay layer performs afterwards.
 
 use buzz_core::invite::{
     encode_v2_code, hash_v2_code, MAX_INVITE_TTL_SECS, MAX_INVITE_USES, MIN_INVITE_TTL_SECS,
@@ -26,7 +31,15 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row as _};
 
 use crate::error::Result;
+use crate::store::intelligent_org::{insert_ledger, LedgerEntry};
 use crate::{CommunityId, Db};
+
+/// Ledger verb written when an invite claim admits a new member (Protocol §6.2).
+pub const LEDGER_VERB_MEMBER_JOINED: &str = "member_joined";
+/// Ledger `object_type` of a membership row; `object_id` is the member's pubkey hex.
+pub const LEDGER_OBJECT_MEMBER: &str = "member";
+/// `detail.via` of a `member_joined` row written by an invite claim.
+pub const LEDGER_VIA_INVITE: &str = "invite";
 
 /// Outcome of a v2 invite claim. Expected invalid/expired/exhausted states are
 /// typed variants so the relay layer can map them to distinct HTTP responses
@@ -214,11 +227,13 @@ pub async fn reap_expired_relay_invites(pool: &PgPool, cutoff: DateTime<Utc>) ->
 /// 8. Insert relay member with role `member`, `added_by = 'invite'`.
 /// 9. Insert join-policy acceptance evidence (if configured).
 /// 10. Increment `use_count`.
-/// 11. Commit.
+/// 11. Append the `member_joined` ledger row (`actor` = the claimant,
+///     `detail.via = "invite"`, `detail.minted_by` = the invite's minter).
+/// 12. Commit.
 ///
 /// `FOR UPDATE` serializes concurrent claims so exactly one claimant wins the
-/// final slot. Membership insertion, policy evidence, and consumption share
-/// one commit — a failure in any rolls back all.
+/// final slot. Membership insertion, policy evidence, consumption, and the
+/// ledger row share one commit — a failure in any rolls back all.
 pub async fn claim_relay_invite(
     pool: &PgPool,
     community: CommunityId,
@@ -235,7 +250,7 @@ pub async fn claim_relay_invite(
 
     // 2. SELECT FOR UPDATE — lock the invite row for the duration of this txn.
     let row = sqlx::query(
-        "SELECT id, max_uses, use_count, expires_at \
+        "SELECT id, max_uses, use_count, expires_at, created_by \
          FROM relay_invites \
          WHERE community_id = $1 AND token_hash = $2 \
          FOR UPDATE",
@@ -256,6 +271,7 @@ pub async fn claim_relay_invite(
     let max_uses: Option<i32> = invite.try_get("max_uses")?;
     let use_count: i32 = invite.try_get("use_count")?;
     let expires_at: DateTime<Utc> = invite.try_get("expires_at")?;
+    let created_by: String = invite.try_get("created_by")?;
 
     // Expiry is checked before membership deliberately. An expired bearer must
     // not authorize fresh policy-acceptance evidence, even for an existing
@@ -377,7 +393,27 @@ pub async fn claim_relay_invite(
         .execute(&mut *tx)
         .await?;
 
-    // 11. Commit.
+    // 11. The ledger fact rides the same commit as the membership row
+    // (Protocol §6.6; V7): a failed NIP-43 publish later cannot lose it.
+    insert_ledger(
+        &mut tx,
+        community,
+        &LedgerEntry {
+            at: Utc::now(),
+            actor: claimer_pubkey.to_owned(),
+            verb: LEDGER_VERB_MEMBER_JOINED.to_owned(),
+            object_type: LEDGER_OBJECT_MEMBER.to_owned(),
+            object_id: claimer_pubkey.to_owned(),
+            receipt_event_id: None,
+            detail: serde_json::json!({
+                "via": LEDGER_VIA_INVITE,
+                "minted_by": created_by,
+            }),
+        },
+    )
+    .await?;
+
+    // 12. Commit.
     tx.commit().await?;
 
     let new_uses_remaining = max_uses.map(|mu| mu - new_use_count);
@@ -509,6 +545,11 @@ mod postgres_tests {
             .execute(&mut *tx)
             .await
             .expect("delete test members");
+        sqlx::query("DELETE FROM io_ledger WHERE community_id = $1")
+            .bind(community.as_uuid())
+            .execute(&mut *tx)
+            .await
+            .expect("delete test ledger rows");
         sqlx::query("DELETE FROM communities WHERE id = $1")
             .bind(community.as_uuid())
             .execute(&mut *tx)
@@ -894,6 +935,84 @@ mod postgres_tests {
         delete_test_community(&pool, community).await;
     }
 
+    async fn member_joined_rows(pool: &PgPool, community: CommunityId) -> Vec<LedgerEntry> {
+        sqlx::query(
+            "SELECT at, actor, verb, object_type, object_id, receipt_event_id, detail \
+             FROM io_ledger WHERE community_id = $1 ORDER BY id",
+        )
+        .bind(community.as_uuid())
+        .fetch_all(pool)
+        .await
+        .expect("read ledger rows")
+        .into_iter()
+        .map(|r| LedgerEntry {
+            at: r.get("at"),
+            actor: r.get("actor"),
+            verb: r.get("verb"),
+            object_type: r.get("object_type"),
+            object_id: r.get("object_id"),
+            receipt_event_id: r.get("receipt_event_id"),
+            detail: r.get("detail"),
+        })
+        .collect()
+    }
+
+    /// Protocol §6.6: a claim that admits a member leaves `member_joined`
+    /// with `actor = <claimant>`, `detail.via = "invite"`, and
+    /// `detail.minted_by` = whoever minted the code — once per admission,
+    /// never for a retry or a refused claim.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn joined_claims_write_one_member_joined_ledger_row_naming_the_minter() {
+        let pool = setup_pool().await;
+        let community = make_test_community(&pool).await;
+        let minter = test_pubkey();
+        let first = test_pubkey();
+        let second = test_pubkey();
+        let invite = mint_relay_invite(&pool, community, &minter, 3600, Some(1))
+            .await
+            .expect("mint bounded invite");
+        let hash = hash_v2_code(&invite.code);
+        assert!(member_joined_rows(&pool, community).await.is_empty());
+
+        assert!(matches!(
+            claim_relay_invite(&pool, community, &hash, &first, None)
+                .await
+                .expect("first claim"),
+            ClaimOutcome::Joined { .. }
+        ));
+        let rows = member_joined_rows(&pool, community).await;
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].actor, first);
+        assert_eq!(rows[0].verb, LEDGER_VERB_MEMBER_JOINED);
+        assert_eq!(rows[0].object_type, LEDGER_OBJECT_MEMBER);
+        assert_eq!(rows[0].object_id, first);
+        assert_eq!(rows[0].receipt_event_id, None, "an HTTP claim has no event");
+        assert_eq!(
+            rows[0].detail,
+            serde_json::json!({ "via": LEDGER_VIA_INVITE, "minted_by": minter })
+        );
+
+        assert!(matches!(
+            claim_relay_invite(&pool, community, &hash, &first, None)
+                .await
+                .expect("idempotent retry"),
+            ClaimOutcome::AlreadyMember { .. }
+        ));
+        assert_eq!(
+            claim_relay_invite(&pool, community, &hash, &second, None)
+                .await
+                .expect("exhausted claim"),
+            ClaimOutcome::Exhausted
+        );
+        assert_eq!(
+            member_joined_rows(&pool, community).await,
+            rows,
+            "neither a retry nor a refused claim adds a row"
+        );
+        delete_test_community(&pool, community).await;
+    }
+
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn policy_evidence_failure_rolls_back_membership_and_consumption() {
@@ -913,6 +1032,10 @@ mod postgres_tests {
             .await
             .expect("membership after rollback"));
         assert_eq!(use_count(&pool, community, invite.invite_id).await, 0);
+        assert!(
+            member_joined_rows(&pool, community).await.is_empty(),
+            "no ledger row without a membership row"
+        );
 
         assert!(matches!(
             claim_relay_invite(&pool, community, &hash, &pubkey, None)

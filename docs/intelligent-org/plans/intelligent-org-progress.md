@@ -36,7 +36,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-9a  |        |    |           | R-9b is wave 6. |
 | R-10  |        |    |           | |
 | R-11  |        |    |           | |
-| R-12  |        |    |           | Needs only R-3; can run parallel to R-4+. |
+| R-12  | open   | [#12](https://github.com/hypha-dao/buzz-hypha/pull/12) |           | `POST /api/invites` admits a pubkey in the live `39103.shapers` (`Db::is_org_shaper`, one `io_shapers` read per request, no cache); `claim_relay_invite` appends `member_joined` (`actor` = claimant, `detail.via = "invite"`, `detail.minted_by` = the minter) on the claim's own transaction; `GET /api/join-policy` carries `org.transparency_notice` (`api::invites::ORG_TRANSPARENCY_NOTICE`, `Db::is_org_community`: an `io_hosted_agents` row or an `io_shapers` row) and `web/` renders it on `/invite/<code>` above the join controls, gating nothing. Two Postgres-lane proofs in `api::invites`, two in `buzz-db`, two E2E in `e2e_intelligent_org.rs`, one web smoke spec. `shapers.rs`/`apply.rs` untouched. |
 | R-13  |        |    |           | |
 | C-1   | merged | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) | `46ef9be4a` | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
 | C-2   |        |    |           | After R-3. |
@@ -89,6 +89,19 @@ absorb an item into an unrelated slice.
   `Rust / Unit Tests`, both `Server Cross-Compile (*-linux-musl)`,
   `Windows Rust` — plus the local Postgres lane below. GitHub CI becomes the
   gate when the fork goes to production (owner's decision, 17 Sep).
+- **`PostgreSQL Tests` flakes** on
+  `buzz-db runtime::replica_fence::postgres_tests::cluster_global_probe_commits_tokens_and_sessions_prove_coverage`
+  (`first probe: MaskedActivity { masked: 1 }`). The probe reads
+  `pg_stat_activity` cluster-wide and fails closed when any *other* client
+  backend is non-idle with no `xact_start` yet — which, with nextest running
+  ~400 Postgres tests in parallel against one CI cluster, is simply a
+  neighbouring test between statements. Seen once on R-12
+  ([#12](https://github.com/hypha-dao/buzz-hypha/pull/12), rebased head;
+  the same lane was green on the previous head and the test passes 3/3
+  locally in isolation). Not an org-work regression. A deflake would run
+  the `replica_fence` probes in their own nextest test group
+  (`test-groups` with `max-threads = 1`, or serialising against the whole
+  lane) so no sibling backend is in flight during the sample.
 - **`Rust / Unit Tests` flakes** on
   `buzz-agent::fake_llm::cancelled_turn_with_usage_emits_notification_before_response`
   (asserts `stopReason: cancelled`, sees `null`). nextest fail-fast then
@@ -267,6 +280,51 @@ absorb an item into an unrelated slice.
   green shard 3 may now run in a standing-red one and vice versa. Judge the
   shards by which specs failed, not by shard number, until the standing red
   set is fixed.
+- **`e2e_intelligent_org.rs` runs in no CI lane.** `Relay E2E`
+  (`.github/workflows/_ci-relay.yml`) selects `e2e_relay invite`, the persona,
+  team-catalog, interop, and project suites — not this file. R-3 and R-12 ran
+  it locally against `just relay` (recipe below). Adding `--test
+  e2e_intelligent_org` to that step is a one-line change once someone checks
+  that the CI relay's `DATABASE_URL` is reachable from the test process (the
+  suite seeds `communities`, `relay_members`, `io_hosted_agents` by SQL) and
+  that its `REQUIRE_RELAY_MEMBERSHIP` posture matches the dev relay. Until
+  then the E2E proof for every R slice is local-only; say so in each PR.
+- **`web/tests/e2e/smoke.spec.ts` runs in no CI lane either.** The `Web`
+  job runs `just web-check` and `just web-build`; Playwright is wired for
+  the desktop only. R-12's landing-page spec ran locally with `cd web &&
+  pnpm test:e2e:smoke` (7 specs). A `Web Smoke E2E` step mirroring the
+  desktop one would close this; it needs `playwright install chromium` in
+  the job.
+- **`member_joined` is written by the invite claim only.** Owners and
+  admins keep Buzz's direct add (`kind:9030`) and the founder is a member by
+  creating the community; Protocol §6.6 calls those relay administration,
+  outside the org's decisions, and R-12 left them without a ledger row. The
+  Overview's "who invited whom" (§6.6) therefore starts at the first invite;
+  founding and directly-added members have no `member_joined`. If R-9a or
+  the Overview wants a complete membership history, decide whether the
+  direct-add handler writes `member_joined` with `detail.via = "admin"` (a
+  Protocol §6.2 verb-list addition) or the Overview derives founders from
+  `relay_members.added_by IS NULL`. R-12 also writes the row for every
+  community on the relay, org or not — the ledger is a fact table and the
+  claim does not know whether a `39103` will be bootstrapped later.
+- **`member_joined.detail.minted_by` is `relay_invites.created_by` as
+  stored** — a pubkey hex string the mint handler wrote from the NIP-98
+  signer, never re-validated as 32 bytes at claim time. The `io_ledger.actor`
+  column is `text`, so this matches the rest of the ledger; a reader that
+  wants bytes must parse and may see a legacy or malformed value from an
+  invite minted before R-12 (none exist on the staging relay today).
+- **The org agent's greeting DM on join** (Protocol §6.6: "the org agent
+  greets the new member in a DM") is agent work — wave 3, on the agent's
+  `member_joined` ledger read — not part of R-12.
+- **`Db::is_org_community` treats a retired hosted agent as still making
+  the community an org.** It tests `EXISTS (io_hosted_agents WHERE
+  community_id = $1)` with no `retired_at IS NULL`, exactly D7's wording
+  ("has an `io_hosted_agents` row or a `39103`"). A community whose hosted
+  key was retired *and* whose `39103` was never bootstrapped — an operator
+  provisioned, then withdrew — keeps showing the notice. That is the
+  conservative failure (a notice nobody needed) and matches the document;
+  if the operator slice wants withdrawal to also withdraw the notice, add
+  the predicate there and update D7 together.
 
 ---
 
@@ -331,6 +389,21 @@ BUZZ_GIT_CONFORMANCE_PROBE=false BUZZ_AUTO_MIGRATE=true cargo run -p buzz-relay
 RELAY_URL=ws://localhost:3000 DATABASE_URL=postgres://buzz:buzz_dev@localhost:5432/buzz \
   cargo test -p buzz-test-client --test e2e_intelligent_org -- --ignored
 ```
+
+**Web lane** (anything under `web/`, e.g. the R-12 invite landing page):
+
+```bash
+cd web && pnpm install --frozen-lockfile
+pnpm check && pnpm typecheck                 # what CI's Web job runs (plus the build)
+pnpm exec playwright install chromium        # once
+pnpm test:e2e:smoke                          # builds, serves dist on :4173, runs tests/e2e/smoke.spec.ts
+```
+
+To see the real page rather than the mocked `/api/join-policy`, start the
+relay with `BUZZ_WEB_DIR=./web/dist` after `pnpm build` and browse
+`http://<host>.localhost:3000/invite/<code>` — Chromium resolves
+`*.localhost` to loopback, and a non-default port is part of the community
+host, so seed the community as `<host>.localhost:3000`.
 
 If the host has no native Postgres client tools (macOS with Postgres only in
 Docker), install `libpq` (`brew install libpq`, then

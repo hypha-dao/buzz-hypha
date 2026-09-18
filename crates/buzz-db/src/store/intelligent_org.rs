@@ -10,7 +10,10 @@
 //! Every function takes a `&mut PgConnection` so the executor can run it on
 //! the transaction `persist_command_event` returns (V3): the command event,
 //! the projection change, the ledger row, and the state event either all
-//! commit or none do. Nothing here opens a transaction or touches the pool.
+//! commit or none do. Nothing here opens a transaction or touches the pool —
+//! except the [`Db`] reads at the bottom, which the relay's HTTP handlers
+//! outside the executor (invite mint, the invite landing page) call as one
+//! pool-scoped lookup each.
 //!
 //! Pubkeys and event ids are hex in content and `BYTEA` in the tables;
 //! conversion failures surface as [`DbError::InvalidData`] rather than
@@ -28,7 +31,7 @@ use serde::Serialize;
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
-use crate::{DbError, Result};
+use crate::{observability, Db, DbError, Result};
 
 // ── Conversions ───────────────────────────────────────────────────────────────
 
@@ -1381,6 +1384,46 @@ pub async fn retire_hosted_agent(
     Ok(result.rows_affected() == 1)
 }
 
+// ── Pool-scoped reads for handlers outside the executor ───────────────────────
+
+impl Db {
+    /// Whether `pubkey_hex` is in the community's live `39103.shapers`, read
+    /// from `io_shapers` at request time (Protocol §6.6 — invite mint
+    /// authorisation). `false` before bootstrap or for a pubkey that is not a
+    /// Shaper; a malformed pubkey is simply not one.
+    pub async fn is_org_shaper(&self, community: CommunityId, pubkey_hex: &str) -> Result<bool> {
+        let mut conn = observability::acquire_writer(
+            &self.pool,
+            observability::WriterOperation::Authorization,
+        )
+        .await?;
+        Ok(get_shapers(&mut conn, community)
+            .await?
+            .is_some_and(|row| row.content.shapers.iter().any(|p| p == pubkey_hex)))
+    }
+
+    /// Whether the community is an intelligent organization for the purposes
+    /// of the invite landing page's transparency notice (Readiness D7,
+    /// Protocol §6.6): it has an `io_hosted_agents` row (the operator
+    /// provisioned an org agent for it) or an `io_shapers` row (a `39103`
+    /// has been bootstrapped).
+    pub async fn is_org_community(&self, community: CommunityId) -> Result<bool> {
+        let mut conn = observability::acquire_writer(
+            &self.pool,
+            observability::WriterOperation::Authorization,
+        )
+        .await?;
+        let is_org: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM io_hosted_agents WHERE community_id = $1) \
+                 OR EXISTS (SELECT 1 FROM io_shapers WHERE community_id = $1)",
+        )
+        .bind(community.as_uuid())
+        .fetch_one(&mut *conn)
+        .await?;
+        Ok(is_org)
+    }
+}
+
 #[cfg(test)]
 mod postgres_tests {
     use super::*;
@@ -2215,6 +2258,71 @@ mod postgres_tests {
         )
         .await
         .unwrap_or(false));
+    }
+
+    /// The two pool-scoped reads the invite handlers use: Shaper membership
+    /// comes from `io_shapers` at request time, and "is an org" from either a
+    /// hosted-agent row or a bootstrapped `39103`.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn db_reads_shapers_and_org_presence_for_invite_handlers() {
+        let (pool, community) = context().await;
+        let db = crate::Db::from_pool(pool.clone());
+        assert!(!db.is_org_community(community).await.unwrap());
+        assert!(!db.is_org_shaper(community, &hex_id(1)).await.unwrap());
+
+        let mut conn = pool.acquire().await.expect("acquire");
+        insert_hosted_agent(
+            &mut conn,
+            community,
+            &HostedAgentRow {
+                pubkey: vec![0xA1; 32],
+                provisioned_at: at(1_700_000_000),
+                budget: None,
+                retired_at: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            db.is_org_community(community).await.unwrap(),
+            "a provisioned hosted agent makes the community an org"
+        );
+        assert!(
+            !db.is_org_shaper(community, &hex_id(1)).await.unwrap(),
+            "nobody is a Shaper before bootstrap"
+        );
+
+        let (other_pool, other) = context().await;
+        let other_db = crate::Db::from_pool(other_pool.clone());
+        let mut other_conn = other_pool.acquire().await.expect("acquire");
+        upsert_shapers(
+            &mut other_conn,
+            other,
+            &ShapersRow {
+                content: shapers(None),
+                room_channel_id: None,
+                event_id: vec![1; 32],
+                updated_at: at(1_700_000_000),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            other_db.is_org_community(other).await.unwrap(),
+            "a bootstrapped 39103 makes the community an org"
+        );
+        assert!(other_db.is_org_shaper(other, &hex_id(1)).await.unwrap());
+        assert!(other_db.is_org_shaper(other, &hex_id(2)).await.unwrap());
+        assert!(!other_db.is_org_shaper(other, &hex_id(3)).await.unwrap());
+        assert!(
+            !other_db.is_org_shaper(other, "not-a-pubkey").await.unwrap(),
+            "a malformed pubkey is simply not a Shaper"
+        );
+        assert!(
+            !db.is_org_shaper(community, &hex_id(1)).await.unwrap(),
+            "Shaper sets are per community"
+        );
     }
 
     #[tokio::test]
