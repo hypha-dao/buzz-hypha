@@ -38,7 +38,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-11  |        |    |           | |
 | R-12  |        |    |           | Needs only R-3; can run parallel to R-4+. |
 | R-13  |        |    |           | |
-| C-1   | open   | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) |           | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
+| C-1   | merged | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) | `46ef9be4a` | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
 | C-2   |        |    |           | After R-3. |
 | C-3   |        |    |           | Grows with every R. |
 
