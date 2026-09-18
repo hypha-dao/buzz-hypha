@@ -25,7 +25,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-1b  | merged | [#5](https://github.com/hypha-dao/buzz-hypha/pull/5) | `6c8501abf` | `buzz-core/src/intelligent_org.rs`: serde + schemars types for every Protocol §4 schema. ~1360 non-test lines, kept whole on purpose (see PR). |
 | R-2a  | merged | [#6](https://github.com/hypha-dao/buzz-hypha/pull/6) | `88aad25b9` | Migration `0045_intelligent_org`, twelve `io_*` tables, `schema.sql`, deletion catalog, typed transaction-scoped store `buzz-db/src/store/intelligent_org.rs`, desired-state/migration parity test per table. |
 | R-2b  | merged | [#7](https://github.com/hypha-dao/buzz-hypha/pull/7) | `1e935fab0` | `EventQuery.custom_tags`: every single-letter tag filter without a dedicated column is pushed as JSONB containment before `LIMIT` (V2). 600-draft `#n` proof through the production seam. |
-| R-3   | open   | [#9](https://github.com/hypha-dao/buzz-hypha/pull/9) |           | `handlers/intelligent_org/{mod,apply,authorize,state,shapers}.rs`; `apply` is the one write path (projection row, relay-signed `39xxx`, ledger, `#shapers` roster) on the `persist_command_event` transaction; `50001` bootstrap, `50019`, `50020`; ingest scope + executor routing for `50001–50021`; `buzz-db/src/store/relay_rooms.rs` (transaction-scoped room + roster sync). Six Postgres-lane proofs through `ingest_event` and six E2E through `POST /events`. |
+| R-3   | merged | [#9](https://github.com/hypha-dao/buzz-hypha/pull/9) | `1f6767a49` | `handlers/intelligent_org/{mod,apply,authorize,state,shapers}.rs`; `apply` is the one write path (projection row, relay-signed `39xxx`, ledger, `#shapers` roster) on the `persist_command_event` transaction; `50001` bootstrap, `50019`, `50020`; ingest scope + executor routing for `50001–50021`; `buzz-db/src/store/relay_rooms.rs` (transaction-scoped room + roster sync). Six Postgres-lane proofs through `ingest_event` and six E2E through `POST /events`. |
 | R-4a  |        |    |           | **Next.** Every non-bootstrap `shapers` op is rejected `invalid: … not implemented yet` until it lands. |
 | R-4b  |        |    |           | |
 | R-5a  |        |    |           | |
@@ -89,10 +89,13 @@ absorb an item into an unrelated slice.
   (asserts `stopReason: cancelled`, sees `null`). nextest fail-fast then
   cancels ~100 other tests. Seen on `main` and on R-2a's first run; a rerun
   passes. Not an org-work regression; worth a deflake in `buzz-agent`.
-- **The `PostgreSQL Tests` lane does not run in this fork's PR CI**
-  (`Relay Artifact Producer / PostgreSQL Tests` is skipped). Every slice that
-  touches `buzz-db` or `buzz-relay` handlers must run it locally (recipe
-  below) and say so in the PR.
+- **The `PostgreSQL Tests` lane runs in PR CI only when the paths filter
+  selects it.** `Relay Artifact Producer / PostgreSQL Tests` was skipped on
+  R-2a/R-2b; on R-3 ([#9](https://github.com/hypha-dao/buzz-hypha/pull/9))
+  `PostgreSQL Domain / PostgreSQL Tests` ran and passed. Do not rely on it:
+  every slice that touches `buzz-db` or `buzz-relay` handlers must run the
+  lane locally (recipe below) and say so in the PR, and should check which
+  Postgres job CI actually ran.
 - **`mesh_demo::demo_join_forwarded_arm_round_trips_echo`** fails locally on
   clean `main` (HTTP 504 from an environment dependency). Ignore locally;
   unrelated.
