@@ -795,7 +795,6 @@ async fn a_failure_after_the_projection_write_leaves_nothing_behind() {
     assert_eq!(c.roster(room).await.len(), 3);
 }
 
-
 // ── R-12: invites ────────────────────────────────────────────────────────────
 
 /// Protocol §6.6, Features 6a: any Shaper can create an invite link; a plain
@@ -825,12 +824,7 @@ async fn a_shaper_who_is_not_owner_or_admin_mints_and_a_plain_member_cannot() {
     let add = c.offer_seat(&shaper).await;
     c.submit_ok(
         &shaper,
-        &signed(
-            &shaper,
-            KIND_IO_SHAPER_ACCEPT,
-            vec![tag(["e", &add])],
-            "{}",
-        ),
+        &signed(&shaper, KIND_IO_SHAPER_ACCEPT, vec![tag(["e", &add])], "{}"),
     )
     .await;
     let state = c.shapers_state().await.expect("39103 after accept");
