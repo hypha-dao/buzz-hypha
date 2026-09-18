@@ -11,6 +11,8 @@
 //! 2. writes the typed projection row that mirrors it — for `39103` that
 //!    includes making the `#shapers` roster equal to `shapers ∪ {agent}`
 //!    (§6.4), so a roster that disagrees with the Shaper set cannot commit;
+//!    for `39102` that includes the `io_votes` row of every vote the command
+//!    cast, so a vote the table holds is always one the `39102` holds;
 //! 3. stores the state event as the coordinate's live head;
 //!
 //! then appends the ledger rows. Nothing here commits: the handler commits
@@ -23,7 +25,7 @@ use buzz_core::channel::MemberRole;
 use buzz_core::event::StoredEvent;
 use buzz_core::intelligent_org::{Proposal, Shapers};
 use buzz_core::CommunityId;
-use buzz_db::intelligent_org::{self as store, LedgerEntry, ProposalRow, ShapersRow};
+use buzz_db::intelligent_org::{self as store, LedgerEntry, ProposalRow, ShapersRow, VoteRow};
 use buzz_db::relay_rooms::{self, DesiredMember, RosterChange};
 use buzz_db::replaceable::{ParameterizedReplacePrecondition, ParameterizedReplaceStatus};
 use buzz_db::{Db, DbError};
@@ -56,8 +58,9 @@ pub const AGENT_ROOM_ROLE: MemberRole = MemberRole::Member;
 pub enum Projection {
     /// The community's Shaper set (`39103`, `io_shapers`, the `#shapers` roster).
     Shapers(Shapers),
-    /// A proposal (`39102`, `io_proposals`). `subject` and `item` feed the
-    /// §4.4 marker tags; `receipt` is the opening command.
+    /// A proposal (`39102`, `io_proposals`, `io_votes`). `subject` and `item`
+    /// feed the §4.4 marker tags; `receipt` is the opening command; `cast`
+    /// names the votes this command added to `proposal.votes`.
     Proposal {
         /// Canonical §4.4 content.
         proposal: Box<Proposal>,
@@ -67,7 +70,20 @@ pub enum Projection {
         item: Option<String>,
         /// The opening command's id, hex.
         receipt: String,
+        /// The votes this command cast, each already present in
+        /// `proposal.votes`; written to `io_votes`.
+        cast: Vec<CastVote>,
     },
+}
+
+/// One vote the command cast, for its `io_votes` row: the `Vote` in the
+/// proposal whose `receipt` this is, plus the reason the command carried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CastVote {
+    /// The casting command's id, hex — equal to `Vote::receipt`.
+    pub receipt: String,
+    /// The `50003` content's `reason`, when given.
+    pub reason: Option<String>,
 }
 
 impl Projection {
@@ -79,6 +95,7 @@ impl Projection {
                 subject,
                 item,
                 receipt,
+                ..
             } => state::proposal(proposal, subject.as_deref(), item.as_deref(), receipt),
         }
     }
@@ -183,6 +200,7 @@ async fn write_proposal(
     conn: &mut PgConnection,
     ctx: &ApplyContext<'_>,
     proposal: &Proposal,
+    cast: &[CastVote],
     event_id: &[u8],
     created_at: u64,
 ) -> Result<(), IngestError> {
@@ -193,7 +211,34 @@ async fn write_proposal(
     };
     store::upsert_proposal(conn, ctx.community, &row)
         .await
-        .map_err(|e| internal("write io_proposals", e))
+        .map_err(|e| internal("write io_proposals", e))?;
+
+    let proposal_id = Uuid::parse_str(&proposal.id).map_err(|e| internal("proposal id", e))?;
+    for cast in cast {
+        let vote = proposal
+            .votes
+            .iter()
+            .find(|v| v.receipt == cast.receipt)
+            .ok_or_else(|| {
+                IngestError::Internal(format!(
+                    "error: cast vote {} is not in proposal {}",
+                    cast.receipt, proposal.id
+                ))
+            })?;
+        let row = VoteRow {
+            proposal_id,
+            voter: store::hex32(&vote.p).map_err(|e| internal("voter pubkey", e))?,
+            vote: vote.vote,
+            reason: cast.reason.clone(),
+            receipt_event_id: store::hex32(&vote.receipt)
+                .map_err(|e| internal("vote receipt", e))?,
+            cast_at: store::ts(vote.at).map_err(|e| internal("vote time", e))?,
+        };
+        store::upsert_vote(conn, ctx.community, &row)
+            .await
+            .map_err(|e| internal("write io_votes", e))?;
+    }
+    Ok(())
 }
 
 /// Write `projections` and `ledger` on `tx`. See the module docs for the
@@ -228,8 +273,8 @@ pub async fn apply(
                 let changes = write_shapers(tx, ctx, shapers, &event_id, created_at).await?;
                 applied.roster.extend(changes);
             }
-            Projection::Proposal { proposal, .. } => {
-                write_proposal(tx, ctx, proposal, &event_id, created_at).await?;
+            Projection::Proposal { proposal, cast, .. } => {
+                write_proposal(tx, ctx, proposal, cast, &event_id, created_at).await?;
             }
         }
 
