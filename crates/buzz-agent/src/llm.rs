@@ -1,3 +1,10 @@
+//! HTTP client and request builders for the configured LLM provider.
+//!
+//! [`Llm::complete`] keeps buzz-agent's own request shape.
+//! [`Llm::complete_with`] is the path the org agent reuses (Org agent § 3.1,
+//! § 21): `temperature` and `tool_choice` are optional; `None` / `None`
+//! keeps the body `buzz-agent` already sends.
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +43,25 @@ enum DatabricksV2Route {
     MlflowChatCompletions,
 }
 
+/// Optional per-call fields on [`Llm::complete_with`].
+///
+/// `None` / `None` is the request `buzz-agent` already sends: no
+/// `temperature`, and `tool_choice: "auto"` on OpenAI-family bodies that
+/// list tools (Anthropic still omits it). A `Some` is written onto the
+/// JSON body as a number / string.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CompleteOverrides {
+    /// Sampling temperature. `None` omits the field.
+    pub temperature: Option<f32>,
+    /// Provider `tool_choice` string (`"auto"`, `"required"`, or a tool
+    /// name). `None` leaves the body `buzz-agent` already sends.
+    pub tool_choice: Option<String>,
+}
+
+/// HTTP client for one configured LLM provider.
+///
+/// [`Llm::complete`] is buzz-agent's own path (`CompleteOverrides::default()`).
+/// The org agent reuses [`Llm::complete_with`] (Org agent § 3.1, § 21).
 pub struct Llm {
     http: Client,
     /// One-shot sticky flag: set when a Chat Completions request comes
@@ -59,6 +85,7 @@ pub struct Llm {
 const LLM_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl Llm {
+    /// Build a client from `cfg`'s provider, base URL, and credentials.
     pub fn new(cfg: &Config) -> Result<Self, AgentError> {
         let http = Client::builder()
             .connect_timeout(LLM_CONNECT_TIMEOUT)
@@ -76,6 +103,8 @@ impl Llm {
         })
     }
 
+    /// Complete one model turn with buzz-agent's own request shape
+    /// (`temperature` and `tool_choice` both `None`).
     pub async fn complete(
         &self,
         cfg: &Config,
@@ -84,24 +113,50 @@ impl Llm {
         tools: &[ToolDef],
         effective_model: &str,
     ) -> Result<LlmResponse, AgentError> {
+        self.complete_with(
+            cfg,
+            system_prompt,
+            history,
+            tools,
+            effective_model,
+            CompleteOverrides::default(),
+        )
+        .await
+    }
+
+    /// Same request path as [`Self::complete`], with optional `temperature`
+    /// and `tool_choice`. `None` on either field is a no-op.
+    pub async fn complete_with(
+        &self,
+        cfg: &Config,
+        system_prompt: &str,
+        history: &[HistoryItem],
+        tools: &[ToolDef],
+        effective_model: &str,
+        overrides: CompleteOverrides,
+    ) -> Result<LlmResponse, AgentError> {
         let effort = cfg.thinking_effort;
         let call_start = std::time::Instant::now();
         let result = match cfg.provider {
-            Provider::Anthropic => self
-                .post_anthropic(
+            Provider::Anthropic => {
+                let mut body = anthropic_body(
                     cfg,
-                    &anthropic_body(
-                        cfg,
-                        system_prompt,
-                        history,
-                        tools,
-                        effective_model,
-                        effort,
-                        "anthropic",
-                    ),
-                )
-                .await
-                .and_then(parse_anthropic),
+                    system_prompt,
+                    history,
+                    tools,
+                    effective_model,
+                    effort,
+                    "anthropic",
+                );
+                apply_complete_overrides(
+                    &mut body,
+                    overrides.temperature,
+                    overrides.tool_choice.as_deref(),
+                );
+                self.post_anthropic(cfg, &body)
+                    .await
+                    .and_then(parse_anthropic)
+            }
             Provider::OpenRouter => {
                 let mut body =
                     openai_body(cfg, system_prompt, history, tools, effective_model, None);
@@ -110,6 +165,11 @@ impl Llm {
                     cfg.thinking_effort,
                     effective_model,
                     cfg.prompt_caching,
+                );
+                apply_complete_overrides(
+                    &mut body,
+                    overrides.temperature,
+                    overrides.tool_choice.as_deref(),
                 );
                 self.post_openrouter(cfg, &body)
                     .await
@@ -129,16 +189,20 @@ impl Llm {
                     // carries the former "unknown model: max→xhigh, others pass" behavior.
                     let e = effort
                         .map(|ef| normalize_effort_for_provider(provider_str, request_model, ef));
-                    if use_responses {
-                        (
-                            responses_body(cfg, system_prompt, history, tools, request_model, e),
-                            parse_responses as OpenAiParse,
-                        )
+                    let mut body = if use_responses {
+                        responses_body(cfg, system_prompt, history, tools, request_model, e)
                     } else {
-                        (
-                            openai_body(cfg, system_prompt, history, tools, request_model, e),
-                            parse_openai as OpenAiParse,
-                        )
+                        openai_body(cfg, system_prompt, history, tools, request_model, e)
+                    };
+                    apply_complete_overrides(
+                        &mut body,
+                        overrides.temperature,
+                        overrides.tool_choice.as_deref(),
+                    );
+                    if use_responses {
+                        (body, parse_responses as OpenAiParse)
+                    } else {
+                        (body, parse_openai as OpenAiParse)
                     }
                 })
                 .await
@@ -149,32 +213,44 @@ impl Llm {
                         // OpenAI Responses path: normalize effort via manifest normalization_policy.
                         let e = effort
                             .map(|ef| normalize_effort_for_databricks_v2(ef, effective_model));
-                        (
-                            responses_body(cfg, system_prompt, history, tools, effective_model, e),
-                            parse_responses as OpenAiParse,
-                        )
+                        let mut body =
+                            responses_body(cfg, system_prompt, history, tools, effective_model, e);
+                        apply_complete_overrides(
+                            &mut body,
+                            overrides.temperature,
+                            overrides.tool_choice.as_deref(),
+                        );
+                        (body, parse_responses as OpenAiParse)
                     }
                     DatabricksV2Route::AnthropicMessages => {
                         // Anthropic Messages path: normalize effort (none|minimal → omit).
                         let e = effort.and_then(normalize_effort_for_anthropic_route);
-                        (
-                            anthropic_body(
-                                cfg,
-                                system_prompt,
-                                history,
-                                tools,
-                                effective_model,
-                                e,
-                                "databricks_v2",
-                            ),
-                            parse_anthropic as OpenAiParse,
-                        )
+                        let mut body = anthropic_body(
+                            cfg,
+                            system_prompt,
+                            history,
+                            tools,
+                            effective_model,
+                            e,
+                            "databricks_v2",
+                        );
+                        apply_complete_overrides(
+                            &mut body,
+                            overrides.temperature,
+                            overrides.tool_choice.as_deref(),
+                        );
+                        (body, parse_anthropic as OpenAiParse)
                     }
                     DatabricksV2Route::MlflowChatCompletions => {
                         let e = effort
                             .map(|ef| normalize_effort_for_databricks_v2(ef, effective_model));
-                        let body =
+                        let mut body =
                             openai_body(cfg, system_prompt, history, tools, effective_model, e);
+                        apply_complete_overrides(
+                            &mut body,
+                            overrides.temperature,
+                            overrides.tool_choice.as_deref(),
+                        );
                         (body, parse_openai as OpenAiParse)
                     }
                 })
@@ -237,6 +313,8 @@ impl Llm {
         stamped
     }
 
+    /// Summarize history for a handoff. Unchanged by the `complete` overrides:
+    /// this path has no tools and does not take `temperature` or `tool_choice`.
     pub async fn summarize(
         &self,
         cfg: &Config,
@@ -559,6 +637,21 @@ impl Llm {
             );
         }
         true
+    }
+}
+
+/// Write optional [`Llm::complete_with`] overrides onto a provider request body.
+///
+/// `None` is a no-op, so `temperature: None` / `tool_choice: None` leave the
+/// body `buzz-agent` already sends (no `temperature`; OpenAI-family
+/// `tool_choice: "auto"` when tools are present; Anthropic omits it). A
+/// `Some` is written as a JSON number / string.
+fn apply_complete_overrides(body: &mut Value, temperature: Option<f32>, tool_choice: Option<&str>) {
+    if let Some(t) = temperature {
+        body["temperature"] = json!(t);
+    }
+    if let Some(choice) = tool_choice {
+        body["tool_choice"] = json!(choice);
     }
 }
 
@@ -2766,6 +2859,138 @@ mod tests {
             .filter(|request| request.method == "POST")
             .filter_map(|request| request.body.as_ref()?.get("model")?.as_str())
             .collect()
+    }
+
+    fn emit_project_tool() -> ToolDef {
+        ToolDef {
+            name: "emit_project".into(),
+            description: "emit a project draft".into(),
+            input_schema: json!({"type": "object", "properties": {}}),
+        }
+    }
+
+    fn posted_body(requests: &[CapturedHttpRequest]) -> &Value {
+        requests
+            .iter()
+            .find(|request| request.method == "POST")
+            .and_then(|request| request.body.as_ref())
+            .expect("complete must POST a JSON body")
+    }
+
+    fn responses_ok(text: &str) -> Value {
+        json!({
+            "status": "completed",
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": text}],
+            }],
+        })
+    }
+
+    /// A-0: `tool_choice` (and `temperature`) must reach the provider request
+    /// through [`Llm::complete`], not a test-only helper. Chat Completions and
+    /// Responses are both the production body path.
+    #[tokio::test]
+    async fn tool_choice_reaches_the_provider_request() {
+        let history = [HistoryItem::User("hello".into())];
+        let tools = vec![emit_project_tool()];
+        for openai_api in [OpenAiApi::Chat, OpenAiApi::Responses] {
+            let stub = match openai_api {
+                OpenAiApi::Chat => chat_response("ok"),
+                OpenAiApi::Responses => responses_ok("ok"),
+                OpenAiApi::Auto => unreachable!(),
+            };
+            let (base_url, captured) = spawn_sequence_stub(vec![StubHttpResponse::ok(stub)]).await;
+            let mut config = cfg(Provider::OpenAi);
+            config.base_url = base_url;
+            config.openai_api = openai_api;
+            let llm = Llm::new(&config).unwrap();
+
+            llm.complete_with(
+                &config,
+                "system",
+                &history,
+                &tools,
+                "model",
+                CompleteOverrides {
+                    temperature: Some(0.2),
+                    tool_choice: Some("emit_project".into()),
+                },
+            )
+            .await
+            .unwrap();
+
+            let requests = captured.lock().await;
+            let body = posted_body(&requests);
+            assert_eq!(
+                body["tool_choice"], "emit_project",
+                "tool_choice must reach the {openai_api:?} provider request"
+            );
+            // `0.2` is the Org agent draft temperature; the wire number is the
+            // f32 the request path wrote (`json!(t)`), not an f64 literal.
+            assert_eq!(body["temperature"], json!(0.2f32));
+
+            let mut expected = match openai_api {
+                OpenAiApi::Chat => openai_body(&config, "system", &history, &tools, "model", None),
+                OpenAiApi::Responses => {
+                    responses_body(&config, "system", &history, &tools, "model", None)
+                }
+                OpenAiApi::Auto => unreachable!(),
+            };
+            expected["tool_choice"] = json!("emit_project");
+            expected["temperature"] = json!(0.2f32);
+            assert_eq!(
+                body, &expected,
+                "complete must send today's {openai_api:?} body plus the overrides"
+            );
+        }
+    }
+
+    /// A-0: `None` / `None` is a no-op on the production request path — the
+    /// body is the one `openai_body` / `responses_body` already emit.
+    #[tokio::test]
+    async fn none_temperature_and_tool_choice_keep_todays_request() {
+        let history = [HistoryItem::User("hello".into())];
+        let tools = vec![emit_project_tool()];
+        for openai_api in [OpenAiApi::Chat, OpenAiApi::Responses] {
+            let stub = match openai_api {
+                OpenAiApi::Chat => chat_response("ok"),
+                OpenAiApi::Responses => responses_ok("ok"),
+                OpenAiApi::Auto => unreachable!(),
+            };
+            let (base_url, captured) = spawn_sequence_stub(vec![StubHttpResponse::ok(stub)]).await;
+            let mut config = cfg(Provider::OpenAi);
+            config.base_url = base_url;
+            config.openai_api = openai_api;
+            let llm = Llm::new(&config).unwrap();
+
+            llm.complete(&config, "system", &history, &tools, "model")
+                .await
+                .unwrap();
+
+            let requests = captured.lock().await;
+            let body = posted_body(&requests);
+            assert!(
+                body.get("temperature").is_none(),
+                "temperature: None must omit the field on {openai_api:?}"
+            );
+            assert_eq!(
+                body["tool_choice"], "auto",
+                "tool_choice: None must keep today's auto on {openai_api:?}"
+            );
+
+            let expected = match openai_api {
+                OpenAiApi::Chat => openai_body(&config, "system", &history, &tools, "model", None),
+                OpenAiApi::Responses => {
+                    responses_body(&config, "system", &history, &tools, "model", None)
+                }
+                OpenAiApi::Auto => unreachable!(),
+            };
+            assert_eq!(
+                body, &expected,
+                "None/None must be byte-identical to today's {openai_api:?} request"
+            );
+        }
     }
 
     /// An explicit model is sent verbatim and never rewritten to something
