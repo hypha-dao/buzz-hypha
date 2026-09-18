@@ -38,7 +38,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-11  |        |    |           | |
 | R-12  |        |    |           | Needs only R-3; can run parallel to R-4+. |
 | R-13  |        |    |           | |
-| C-1   |        |    |           | Needs only R-1; can start now. |
+| C-1   | open   | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) |           | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
 | C-2   |        |    |           | After R-3. |
 | C-3   |        |    |           | Grows with every R. |
 
@@ -144,6 +144,37 @@ absorb an item into an unrelated slice.
 - **The relay refuses to start without MinIO/S3** — the git object-store
   conformance probe runs at boot and is fatal. `BUZZ_GIT_CONFORMANCE_PROBE=false`
   skips it for local org work that never touches media (recipe below).
+- ~~**No lane ran `buzz-sdk`'s tests.** `just test-unit` enumerates crates
+  by hand and `buzz-sdk` was not among them, so the C-1 "Proves" tests (and
+  the crate's 306 existing builder tests) would have run nowhere in CI.~~
+  Fixed in C-1 ([#11](https://github.com/hypha-dao/buzz-hypha/pull/11)):
+  `cargo nextest run -p buzz-sdk --lib` in `just test-unit` and the
+  plain-cargo fallback in `scripts/run-tests.sh`. Locally:
+  `cargo test -p buzz-sdk --lib intelligent_org`.
+- ~~**The retired-tag guard did not scan `crates/buzz-sdk`.**
+  `RETIRED_TAG_SCAN_ROOTS` in `scripts/check-org-kinds-parity.mjs` listed
+  `buzz-cli` and the desktop/agent roots but not the SDK the CLI builds
+  on.~~ Fixed in C-1: `crates/buzz-sdk` added; `just org-kinds-check` fails
+  on a retired name there.
+- **The SDK half of the `allow_self_tagging` follow-up above is done**
+  (C-1: `intelligent_org::io_event` sets it on every `build_io_*`;
+  `self_add_bootstrap_keeps_its_p_tag` proves the bootstrap keeps its `p`
+  and shows nostr's default builder dropping it). Strike that bullet when
+  C-2's `org bootstrap` is built on `build_io_shapers_propose` and its
+  argument → event test covers the owner's self-add.
+- **`50003`, `50014`, and `50019` carry a proposal UUID in an `e` tag**
+  (Protocol §4.8). nostr's `Tag::parse` accepts it (standardization is
+  lazy) and R-3 reads it with `uuid_tag`, but nostr's typed accessors
+  (`Tags::event_ids`, `as_standardized`) return nothing for it. C-2 and C-3
+  must read that tag as a plain value, as `handlers/intelligent_org` does,
+  never through the `EventId` helpers; the C-1 test
+  `vote_accept_and_step_down_tag_sets` pins the wire form.
+- **Protocol §4.8 gives `50021` no `p` tag** ("`pubkey` is the signer,
+  never a tag"), so `build_io_profile_set` has no self-`p` to preserve; the
+  flag is set uniformly anyway. The self-`p` builders are `50001`
+  (add/remove/agent), `50005` (`offer_to`), `50006`, `50013`, `50015`,
+  `50016`, `50100` (`needs` = author), and `50102` (`dri` = signer) —
+  `every_builder_whose_p_may_be_the_signer_keeps_it`.
 
 ---
 
