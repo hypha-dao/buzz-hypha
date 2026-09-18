@@ -49,6 +49,38 @@ export const WELCOME_TEAM_STARTERS = [
 
 export type WelcomeTeamAgents = [ManagedAgent, ManagedAgent, ManagedAgent];
 
+/**
+ * The Welcome Team cannot be provisioned because its starter personas are not
+ * in the store. The Hypha fork seeds no sample personas (AGENTS.md § Hypha
+ * fork), so on this build the Welcome channel is an ordinary empty channel:
+ * callers treat this error as "skip the team", not as a failure to retry.
+ */
+export class WelcomeTeamUnavailableError extends Error {
+  constructor(missing: readonly string[]) {
+    super(
+      `The Welcome Team starter personas are not installed on this build (missing ${missing.join(", ")}).`,
+    );
+    this.name = "WelcomeTeamUnavailableError";
+  }
+}
+
+/** Starter personas (by id) absent from `personas`; empty when all are present. */
+export function missingWelcomeTeamStarters(
+  personas: readonly Pick<AgentPersona, "id">[],
+): string[] {
+  const present = new Set(personas.map((persona) => persona.id));
+  return WELCOME_TEAM_STARTERS.filter(
+    ({ personaId }) => !present.has(personaId),
+  ).map(({ personaId }) => personaId);
+}
+
+/** True when every Welcome Team starter persona exists in the store. */
+export function hasWelcomeTeamStarters(
+  personas: readonly Pick<AgentPersona, "id">[],
+): boolean {
+  return missingWelcomeTeamStarters(personas).length === 0;
+}
+
 const welcomeTeamPromises = new Map<string, Promise<WelcomeTeamAgents>>();
 
 function normalizeRelayUrl(relayUrl: string | null | undefined) {
@@ -163,10 +195,9 @@ async function ensureWelcomeTeamPersonasActive() {
     personas.map((persona) => [persona.id, persona]),
   );
 
-  for (const starter of WELCOME_TEAM_STARTERS) {
-    if (!personasById.has(starter.personaId)) {
-      throw new Error(`${starter.name} agent not found.`);
-    }
+  const missing = missingWelcomeTeamStarters(personas);
+  if (missing.length > 0) {
+    throw new WelcomeTeamUnavailableError(missing);
   }
 
   // Persona activation is a read-modify-write operation over one shared file.
