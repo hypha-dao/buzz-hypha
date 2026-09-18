@@ -14,10 +14,12 @@
 
 pub mod broker;
 pub mod builders;
+pub mod intelligent_org;
 pub mod mentions;
 pub mod nip_oa;
 
 pub use builders::*;
+pub use intelligent_org::*;
 
 /// Re-export kind constants so consumers don't need buzz-core directly.
 pub use buzz_core::kind;

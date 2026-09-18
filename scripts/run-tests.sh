@@ -87,6 +87,10 @@ run_unit_tests() {
   run_test_step "buzz-voice tests" \
     cargo test -p buzz-voice --lib -- --nocapture
 
+  # buzz-sdk builders, including the intelligent-org build_io_* guard (C-1).
+  run_test_step "buzz-sdk tests" \
+    cargo test -p buzz-sdk --lib -- --nocapture
+
   run_test_step "buzz-cli tests" \
     cargo test -p buzz-cli -- --nocapture
 
