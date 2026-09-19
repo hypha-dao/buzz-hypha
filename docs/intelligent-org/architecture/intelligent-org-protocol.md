@@ -1146,12 +1146,13 @@ membership.
 **Not a participant, for display.** `39103.agent` is excluded from the
 **DM identity**: the participant set that dedupes `41010` opens (two people
 opening "the DM between us" find the same one), that the relay writes as
-the `p` tags of the DM's `39000`, and that the `41010` system message lists
-as `participants`, is computed without it; the 2–9 participant cap counts
-humans only. Membership lists (`39002`) do carry the agent — they are the
-truth. All of this is relay-side (Codebase verification V5); a client that
-renders a member count from `39002` subtracts `39103.agent`. A 1:1 stays a
-1:1; a room with five people shows five.
+the `p` tags of the DM's `39000` and `39002`, and that the `41010` system
+message lists as `participants`, is computed without it; the 2–9
+participant cap counts humans only. `channel_members` is the membership
+truth and always holds the agent. A non-DM channel's `39002` still lists
+it. All of this is relay-side (Codebase verification V5). Clients do not
+subtract `39103.agent` from a DM `39002` — the list already matches
+identity. A 1:1 stays a 1:1; a room with five people shows five.
 
 **The agent DM.** A member's DM with the org agent is the DM whose
 participant set minus `39103.agent` is exactly that member: its identity

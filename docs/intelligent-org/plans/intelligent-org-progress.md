@@ -32,7 +32,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-5b  |        |    |           | |
 | R-6   |        |    |           | |
 | R-7   |        |    |           | |
-| R-8   | open | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) |           | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
+| R-8   | open | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) |           | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
 | R-9a  |        |    |           | R-9b is wave 6. |
 | R-10  |        |    |           | |
 | R-11  |        |    |           | |
@@ -422,12 +422,14 @@ absorb an item into an unrelated slice.
   path required a channel tag. D-0's command proof (`io_done` →
   `__BUZZ_E2E_SIGNED_EVENTS__`) needs that exemption. The real relay
   already routes these through the R-3 ingest path.
-- **Protocol §6.8 vs the R-8 prove on DM `39002`.** The Protocol says the
-  agent's membership is visible on `39002`. The named prove (and V5) says
+- ~~**Protocol §6.8 vs the R-8 prove on DM `39002`.** The Protocol said the
+  agent's membership is visible on `39002`; the named prove (and V5) said
   a two-human DM's `39000`/`39002` list two `p` while `channel_members`
-  holds three. R-8 implements the prove: DMs omit the agent from discovery
-  `p` tags; a non-DM channel's `39002` still lists it. Protocol should
-  split those sentences.
+  holds three.~~ Fixed in [#29](https://github.com/hypha-dao/buzz-hypha/pull/29):
+  Protocol §6.8 now names `channel_members` as membership truth, DM
+  `39000`/`39002` as identity (humans only), and only a non-DM channel's
+  `39002` as listing the agent. Clients do not subtract `39103.agent`
+  from a DM `39002`.
 - **Bootstrap / `shapers/agent` backfill writes `channel_members` only.**
   It does not re-emit `39000`/`39002` for rooms that already existed.
   A `9001` that drops the agent is repaired on the next `41010` /
