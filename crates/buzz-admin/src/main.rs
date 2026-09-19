@@ -21,6 +21,7 @@
 //! the guard against parallel adds (e.g. `xargs -P`).
 
 mod deletions;
+mod org;
 
 use std::sync::Arc;
 
@@ -56,6 +57,10 @@ enum Command {
         /// use RELAY_OWNER_PUBKEY config to set the relay owner.
         #[arg(long, default_value = "member")]
         role: String,
+
+        /// Community host (`communities.host`). Defaults to the RELAY_URL authority.
+        #[arg(long)]
+        host: Option<String>,
     },
     /// Remove a pubkey from the relay membership list.
     ///
@@ -104,6 +109,20 @@ enum Command {
         /// an ephemeral key (events will be unverifiable after restart).
         #[arg(long)]
         relay_key: Option<String>,
+    },
+    /// Intelligent-org operator helpers (hosted org agent).
+    Org {
+        #[command(subcommand)]
+        command: OrgCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum OrgCommand {
+    /// Hosted org-agent registry and profile (O-1).
+    HostedAgent {
+        #[command(subcommand)]
+        command: org::HostedAgentCommand,
     },
 }
 
@@ -154,7 +173,9 @@ async fn run(cli: Cli) -> Result<i32> {
             println!("Database migrations complete.");
             Ok(0)
         }
-        Command::AddMember { pubkey, role } => cmd_add_member(pubkey, role).await,
+        Command::AddMember { pubkey, role, host } => {
+            cmd_add_member(pubkey, role, host.as_deref()).await
+        }
         Command::RemoveMember { pubkey, role } => cmd_remove_member(pubkey, role).await,
         Command::ListMembers => cmd_list_members().await,
         Command::ProductFeedback {
@@ -165,10 +186,13 @@ async fn run(cli: Cli) -> Result<i32> {
             reconcile_channels(channel, relay_key).await?;
             Ok(0)
         }
+        Command::Org {
+            command: OrgCommand::HostedAgent { command },
+        } => org::run(command).await,
     }
 }
 
-async fn cmd_add_member(pubkey_arg: String, role: String) -> Result<i32> {
+async fn cmd_add_member(pubkey_arg: String, role: String, host: Option<&str>) -> Result<i32> {
     if let Err(msg) = validate_role(&role) {
         eprintln!("error: {msg}");
         return Ok(1);
@@ -184,7 +208,7 @@ async fn cmd_add_member(pubkey_arg: String, role: String) -> Result<i32> {
 
     let (db, pubsub, relay_keypair) = connect_member_services().await?;
 
-    let tenant = resolve_admin_tenant(&db).await?;
+    let tenant = resolve_admin_tenant_for_host(&db, host).await?;
     match db
         .add_relay_member(tenant.community(), &pubkey_hex, &role, None)
         .await
@@ -313,7 +337,7 @@ fn validate_role(role: &str) -> std::result::Result<(), String> {
 }
 
 /// Parse a bech32 npub or 64-char hex pubkey into lowercase hex.
-fn parse_pubkey_hex(input: &str) -> std::result::Result<String, String> {
+pub(crate) fn parse_pubkey_hex(input: &str) -> std::result::Result<String, String> {
     nostr::PublicKey::parse(input)
         .map(|pk| pk.to_hex())
         .map_err(|e| format!("invalid pubkey '{input}': {e}"))
@@ -430,7 +454,7 @@ async fn connect_member_services() -> Result<(Db, Arc<PubSubManager>, Keys)> {
     Ok((db, pubsub, relay_keypair))
 }
 
-async fn connect_db() -> Result<Db> {
+pub(crate) async fn connect_db() -> Result<Db> {
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string());
     let db = Db::new(
@@ -452,6 +476,22 @@ async fn connect_db() -> Result<Db> {
 /// deliberately NOT a default tenant: an unmapped host fails closed with an
 /// error, mirroring the relay's own `bind_community` row-zero seam. The CLI is
 /// single-community per invocation — there is no cross-community sweep.
+pub(crate) async fn resolve_admin_tenant_for_host(
+    db: &Db,
+    host: Option<&str>,
+) -> Result<TenantContext> {
+    if let Some(host) = host {
+        let record = db.lookup_community_by_host(host).await?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "host '{host}' is not mapped to a community.\n\
+                 Create the community (start the relay, or INSERT into communities) first."
+            )
+        })?;
+        return Ok(TenantContext::resolved(record.id, record.host));
+    }
+    resolve_admin_tenant(db).await
+}
+
 async fn resolve_admin_tenant(db: &Db) -> Result<TenantContext> {
     let relay_url =
         std::env::var("RELAY_URL").unwrap_or_else(|_| "ws://localhost:3000".to_string());

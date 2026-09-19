@@ -55,6 +55,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
 | A-1   | merged | [#30](https://github.com/hypha-dao/buzz-hypha/pull/30) | `6251d748f` | `crates/buzz-org-agent` skeleton and ruler: `OrgState` + `apply` + the § 5.2 table; Protocol §4 tag checks live in `inbound` (the E-1 decoder calls through); fixture loader is `#[cfg(any(test, feature = "fixtures"))]`; `RelayLink` / outbox / `ModelClient` (`BuzzAgentModel` via `Llm::complete_with`, `Recorded`); `judge` (15 gates incl. `sequence`); `route`; `publish` `Permitted` chokepoint (`50009` only from `jobs_impl::done_from_talk`); `FakeRelay`; harness loader over E-1; `run` / `dry-run` / `replay` / `doctor`. Nothing drafts. |
+| O-1   | open   |    |           | `scripts/org-agent-provision.sh <community>`: mint into the operator store, `kind:0` name `"Org agent"`, NIP-43 add via `buzz-admin add-member`, `io_hosted_agents` via `buzz-admin org hosted-agent set` (`Db::set_hosted_agent`), launch `buzz-org-agent run`. Second run is idempotent. Named prove: `just org-agent-provision-check` / `scripts/test-org-agent-provision.sh`. |
 
 ### Waves 5–8
 
@@ -120,14 +121,17 @@ absorb an item into an unrelated slice.
 - **`mesh_demo::demo_join_forwarded_arm_round_trips_echo`** fails locally on
   clean `main` (HTTP 504 from an environment dependency). Ignore locally;
   unrelated.
-- **`io_hosted_agents` has no writer yet.** Design § Where it runs says the
+- ~~**`io_hosted_agents` has no writer yet.** Design § Where it runs says the
   operator's supervisor records `community → pubkey`; nothing in the repo
   does (no `buzz-admin` subcommand, no bootstrap hook). R-3 reads the table
   at `39103` bootstrap and its tests seed the row by SQL. A community
   bootstrapped on a relay with no row gets `agent: null, agent_hosted:
   false` — valid `39103`, but not the hosted default the Design promises.
   Owner: the operator/agent-hosting slice (wave 3 `A-*`/`O-*`), or a small
-  `buzz-admin org hosted-agent set` sooner.
+  `buzz-admin org hosted-agent set` sooner.~~ Fixed in O-1:
+  `buzz-admin org hosted-agent set` writes the row through
+  `Db::set_hosted_agent` (idempotent for the same key); the provision
+  script is the operator entry point.
 - **nostr's `EventBuilder` drops a `p` tag that names the signer** unless
   `.allow_self_tagging()` is set. The bootstrap `io_shapers_propose` *is*
   that self-tag, so a client built on the default builder sends a command
@@ -469,6 +473,16 @@ absorb an item into an unrelated slice.
   it on every path that leaves `done` (reopen, and any later rewrite of
   a live item). The 7-day window reads that column, not the command's
   `created_at`.
+- **O-1 writes `kind:0` through `replace_addressable_event`, not `POST /events`.**
+  The event is in the community store and `/query` / SQL see it; the
+  ingest `kind:0` → `users` table sync (`side_effects`) does not run.
+  Clients that read the profile event are fine. If a surface only reads
+  `users.display_name`, it will miss the name until something republishes
+  through ingest. A-2 / the live `RelayIo` publish path can close this.
+- **O-1 NIP-43 add is `buzz-admin add-member` (13534 roster), not a client
+  `kind:9030`.** Same operator seam V4 already named; `publish_nip43_delta`
+  stays in-process-only (buzz-admin module doc). Design's "as the owner
+  would" is the membership row + live list, not a new HTTP API.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
@@ -494,6 +508,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 just file-size-check
 just org-kinds-check                       # any change near kinds/tags
 cargo test -p buzz-core -p buzz-auth -p buzz-db -p buzz-relay --lib
+cargo test -p buzz-admin                   # O-1 mint + kind:0 name
+just org-agent-provision-check             # O-1: local relay + Postgres
 ```
 
 **Postgres lane** (any change under `buzz-db`, `buzz-relay` handlers,

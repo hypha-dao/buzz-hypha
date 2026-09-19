@@ -11,9 +11,8 @@
 //! the transaction `persist_command_event` returns (V3): the command event,
 //! the projection change, the ledger row, and the state event either all
 //! commit or none do. Nothing here opens a transaction or touches the pool —
-//! except the [`Db`] reads at the bottom, which the relay's HTTP handlers
-//! outside the executor (invite mint, the invite landing page) call as one
-//! pool-scoped lookup each.
+//! except the [`Db`] methods at the bottom: the invite handlers' pool-scoped
+//! reads, and the operator writer [`Db::set_hosted_agent`] (O-1).
 //!
 //! Pubkeys and event ids are hex in content and `BYTEA` in the tables;
 //! conversion failures surface as [`DbError::InvalidData`] rather than
@@ -1357,6 +1356,15 @@ pub struct HostedAgentRow {
     pub retired_at: Option<DateTime<Utc>>,
 }
 
+/// Outcome of [`Db::set_hosted_agent`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostedAgentSet {
+    /// A new live row was written.
+    Inserted,
+    /// The live row already names this pubkey.
+    AlreadySet,
+}
+
 /// Register a hosted key. Fails with a unique violation while another key is
 /// live (`retired_at IS NULL`); retire it first.
 pub async fn insert_hosted_agent(
@@ -1456,6 +1464,54 @@ impl Db {
         .fetch_one(&mut *conn)
         .await?;
         Ok(is_org)
+    }
+
+    /// Operator provisioning: record the hosted org-agent key for `community`.
+    ///
+    /// Idempotent when the live row already names `pubkey_hex`. A different
+    /// live key is [`DbError::InvalidData`] — replacement is retire-then-set
+    /// (or a passed `shapers/agent`), not a silent overwrite.
+    pub async fn set_hosted_agent(
+        &self,
+        community: CommunityId,
+        pubkey_hex: &str,
+        budget: Option<serde_json::Value>,
+    ) -> Result<HostedAgentSet> {
+        let pubkey = hex32(pubkey_hex)?;
+        let mut tx = self.begin_event_write_transaction().await?;
+        if let Some(live) = get_live_hosted_agent(&mut tx, community).await? {
+            if live.pubkey == pubkey {
+                return Ok(HostedAgentSet::AlreadySet);
+            }
+            return Err(DbError::InvalidData(
+                "community already has a live hosted agent (retire it first)".into(),
+            ));
+        }
+        insert_hosted_agent(
+            &mut tx,
+            community,
+            &HostedAgentRow {
+                pubkey,
+                provisioned_at: Utc::now(),
+                budget,
+                retired_at: None,
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(HostedAgentSet::Inserted)
+    }
+
+    /// Hex pubkey of the live hosted org-agent key, if any.
+    pub async fn live_hosted_agent_pubkey(&self, community: CommunityId) -> Result<Option<String>> {
+        let mut conn = observability::acquire_writer(
+            &self.pool,
+            observability::WriterOperation::Authorization,
+        )
+        .await?;
+        Ok(get_live_hosted_agent(&mut conn, community)
+            .await?
+            .map(|row| hex::encode(row.pubkey)))
     }
 }
 
@@ -2293,6 +2349,42 @@ mod postgres_tests {
         )
         .await
         .unwrap_or(false));
+    }
+
+    /// O-1 writer: the same key is a no-op; a second live key is refused.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn set_hosted_agent_is_idempotent_for_the_same_key() {
+        let (pool, community) = context().await;
+        let db = crate::Db::from_pool(pool);
+        let hex = hex_id(0xB1);
+        assert_eq!(
+            db.set_hosted_agent(community, &hex, None).await.unwrap(),
+            HostedAgentSet::Inserted
+        );
+        assert_eq!(
+            db.set_hosted_agent(community, &hex, None).await.unwrap(),
+            HostedAgentSet::AlreadySet
+        );
+        assert_eq!(
+            db.live_hosted_agent_pubkey(community)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(hex.as_str())
+        );
+        let other = hex_id(0xB2);
+        assert!(
+            db.set_hosted_agent(community, &other, None).await.is_err(),
+            "a different live key must not overwrite"
+        );
+        assert_eq!(
+            db.live_hosted_agent_pubkey(community)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(hex.as_str())
+        );
     }
 
     /// The two pool-scoped reads the invite handlers use: Shaper membership
