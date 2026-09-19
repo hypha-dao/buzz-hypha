@@ -34,7 +34,10 @@ export function HealthCard({ health }: HealthCardProps) {
         >
           Project health — the agent's read
         </h2>
-        <p className="text-sm font-semibold capitalize" data-testid="org-health-band">
+        <p
+          className="text-sm font-semibold capitalize"
+          data-testid="org-health-band"
+        >
           {health.band}
         </p>
       </div>
@@ -56,8 +59,8 @@ export function HealthCard({ health }: HealthCardProps) {
 
       <TooltipProvider delayDuration={200}>
         <ul className="mt-4 space-y-2">
-          {health.sentences.map((sentence, index) => (
-            <li key={`${sentence.text}-${index}`}>
+          {health.sentences.map((sentence) => (
+            <li key={`${sentence.text}:${sentence.rows.join(",")}`}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
