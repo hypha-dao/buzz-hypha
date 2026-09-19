@@ -276,6 +276,27 @@ async fn bootstrap(
             agent,
             serde_json::json!({ "from": null, "to": agent, "hosted": true, "why": "bootstrap" }),
         )?);
+        let agent_bytes = store::hex32(agent).map_err(|e| internal("agent pubkey", e))?;
+        let counts = buzz_db::org_agent_membership::backfill_agent_membership(
+            &mut tx,
+            community,
+            &agent_bytes,
+            &cmd.actor_bytes,
+            Some(room),
+        )
+        .await
+        .map_err(|e| internal("backfill agent membership", e))?;
+        rows.push(cmd.ledger(
+            "agent_membership_synced",
+            object::AGENT,
+            agent,
+            serde_json::json!({
+                "agent": agent,
+                "channels": counts.channels,
+                "dms": counts.dms,
+                "why": buzz_db::org_agent_membership::AGENT_MEMBERSHIP_WHY_BOOTSTRAP,
+            }),
+        )?);
     }
 
     let ctx = ApplyContext {
@@ -409,6 +430,60 @@ pub(super) async fn execute(
                         "why": "proposal", "proposal": proposal.id,
                     }),
                 )?);
+                let from_bytes = from
+                    .as_deref()
+                    .map(store::hex32)
+                    .transpose()
+                    .map_err(|e| internal("previous agent pubkey", e))?;
+                let to_bytes = next
+                    .agent
+                    .as_deref()
+                    .map(store::hex32)
+                    .transpose()
+                    .map_err(|e| internal("next agent pubkey", e))?;
+                if let Some(from_bytes) = from_bytes {
+                    let counts = buzz_db::org_agent_membership::move_agent_membership(
+                        tx,
+                        cmd.tenant.community(),
+                        &from_bytes,
+                        to_bytes.as_deref(),
+                        &cmd.actor_bytes,
+                    )
+                    .await
+                    .map_err(|e| internal("move agent membership", e))?;
+                    rows.push(cmd.ledger(
+                        "agent_membership_synced",
+                        object::AGENT,
+                        next.agent.as_deref().unwrap_or("none"),
+                        serde_json::json!({
+                            "agent": next.agent,
+                            "channels": counts.channels,
+                            "dms": counts.dms,
+                            "why": buzz_db::org_agent_membership::AGENT_MEMBERSHIP_WHY_AGENT_CHANGED,
+                        }),
+                    )?);
+                } else if let Some(to_bytes) = to_bytes {
+                    let counts = buzz_db::org_agent_membership::backfill_agent_membership(
+                        tx,
+                        cmd.tenant.community(),
+                        &to_bytes,
+                        &cmd.actor_bytes,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| internal("backfill agent membership", e))?;
+                    rows.push(cmd.ledger(
+                        "agent_membership_synced",
+                        object::AGENT,
+                        next.agent.as_deref().unwrap_or("none"),
+                        serde_json::json!({
+                            "agent": next.agent,
+                            "channels": counts.channels,
+                            "dms": counts.dms,
+                            "why": buzz_db::org_agent_membership::AGENT_MEMBERSHIP_WHY_AGENT_CHANGED,
+                        }),
+                    )?);
+                }
             }
         }
     }

@@ -205,10 +205,11 @@ which is the point.
 
 **Consequence.** R-8 stays one slice and is relay-only. Development plan
 risk 2 ("R-8 likely needs a desktop half") is withdrawn; replace it with:
-_R-8's proof must assert on `39002` (three `p`), `39000` (two `p`), the
-`41010` system message (two participants), a nine-human DM still opening
-with the agent as a tenth row, and a second `41010` finding the same
-channel._
+_R-8's proof must assert on `39000` and `39002` (two `p` each) while
+`channel_members` holds three, the `41010` system message (two
+participants), a nine-human DM still opening with the agent as a tenth
+row, and a second `41010` finding the same channel. Protocol §6.8 names
+`channel_members` as membership truth and DM `39000`/`39002` as identity._
 
 ## V6 — receipt read against the membership gate (CS-10)
 

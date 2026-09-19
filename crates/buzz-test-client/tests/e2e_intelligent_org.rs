@@ -2,11 +2,13 @@
 //! slice at a time. This file holds the R-3 lines — the executor spine and
 //! the Shapers — the R-4a lines — `shapers` proposals, votes, and their
 //! execution — the R-4b lines — `50002` / `50004`-opening / `50015`,
-//! `50003` on those kinds, and `direction` / `dri` execution — and the
-//! R-12 lines — invites minted by Shapers, the `member_joined` ledger row,
-//! the transparency notice — driven through the relay's real HTTP door
-//! (`POST /events`, `POST /query`, `POST /api/invites`,
-//! `GET /api/join-policy`, NIP-98) exactly as a client or the `buzz` CLI would.
+//! `50003` on those kinds, and `direction` / `dri` execution — the R-8
+//! lines — bootstrap backfill of `39103.agent` and the `shapers/agent`
+//! membership move — and the R-12 lines — invites minted by Shapers, the
+//! `member_joined` ledger row, the transparency notice — driven through
+//! the relay's real HTTP door (`POST /events`, `POST /query`,
+//! `POST /api/invites`, `GET /api/join-policy`, NIP-98) exactly as a
+//! client or the `buzz` CLI would.
 //!
 //! Every test gets its own community (a fresh `Host`) on the running relay,
 //! because a `39103` bootstrap happens once per community and the relay
@@ -29,10 +31,10 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use buzz_core::kind::{
-    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
-    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_VOTE, KIND_IO_WORK_ITEM,
+    KIND_DM_OPEN, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_PROPOSAL, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
+    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use reqwest::StatusCode;
@@ -671,6 +673,48 @@ impl Community {
             .await
             .expect("toggle room deletion");
     }
+
+    /// Active membership pubkeys of `channel`, hex-sorted.
+    async fn member_pubkeys(&self, channel: Uuid) -> Vec<String> {
+        self.roster(channel)
+            .await
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
+    }
+
+    async fn open_dm(&self, keys: &Keys, others: &[&Keys]) -> Uuid {
+        let tags = others
+            .iter()
+            .map(|k| tag(["p", &k.public_key().to_hex()]))
+            .collect();
+        let message = self
+            .submit_ok(keys, &signed(keys, KIND_DM_OPEN, tags, ""))
+            .await;
+        let payload = message.strip_prefix("response:").expect("response: prefix");
+        let reply: Value = serde_json::from_str(payload).expect("dm reply");
+        Uuid::parse_str(reply["channel_id"].as_str().expect("channel_id")).expect("uuid")
+    }
+
+    async fn create_stream(&self, keys: &Keys) -> Uuid {
+        let id = Uuid::new_v4();
+        self.submit_ok(
+            keys,
+            &signed(
+                keys,
+                KIND_NIP29_CREATE_GROUP,
+                vec![
+                    tag(["h", &id.to_string()]),
+                    tag(["name", &format!("room-{id}")]),
+                    tag(["channel_type", "stream"]),
+                    tag(["visibility", "open"]),
+                ],
+                "",
+            ),
+        )
+        .await;
+        id
+    }
 }
 
 // ── R-3: executor spine and Shapers ──────────────────────────────────────────
@@ -722,6 +766,7 @@ async fn bootstrap_emits_39103_with_the_hosted_pubkey_and_agent_hosted() {
             "proposal_passed",
             "shaper_added",
             "agent_changed",
+            "agent_membership_synced",
         ]
     );
 
@@ -1544,7 +1589,7 @@ async fn rules_and_agent_need_all_and_the_agent_must_be_a_non_shaper_member() {
     );
     assert_eq!(
         c.ledger_verbs().await.last().map(String::as_str),
-        Some("agent_changed")
+        Some("agent_membership_synced")
     );
 
     // op=agent with no p returns to the hosted default.
@@ -1854,4 +1899,55 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
         .query(&c.owner, json!({ "kinds": [KIND_IO_WORK_ITEM] }))
         .await
         .is_empty());
+}
+
+// ── R-8: bootstrap backfill and shapers/agent membership move ────────────────
+
+#[tokio::test]
+#[ignore]
+async fn bootstrap_backfills_existing_rooms_and_shapers_agent_moves_every_row() {
+    let c = Community::fresh().await;
+    let alice = Keys::generate();
+    c.seed_member(&alice, "member").await;
+    let before_room = c.create_stream(&c.owner).await;
+    let before_dm = c.open_dm(&c.owner, &[&alice]).await;
+    let hosted = c.agent.public_key().to_hex();
+    assert!(
+        !c.member_pubkeys(before_room).await.contains(&hosted),
+        "no 39103 yet: the agent is not in the room"
+    );
+
+    let (_, room) = c.bootstrap().await;
+    assert!(
+        c.member_pubkeys(before_room).await.contains(&hosted),
+        "bootstrap backfills existing channels"
+    );
+    assert!(
+        c.member_pubkeys(before_dm).await.contains(&hosted),
+        "bootstrap backfills existing DMs"
+    );
+    assert!(
+        c.ledger_verbs()
+            .await
+            .contains(&"agent_membership_synced".to_owned()),
+        "bootstrap writes the backfill ledger row"
+    );
+
+    let new_agent = Keys::generate();
+    let new_hex = new_agent.public_key().to_hex();
+    c.seed_member(&new_agent, "member").await;
+    c.propose_ok(
+        &c.owner,
+        "agent",
+        Some(&new_hex),
+        r#"{"why":"our own"}"#,
+        true,
+    )
+    .await;
+
+    for channel in [room, before_room, before_dm] {
+        let members = c.member_pubkeys(channel).await;
+        assert!(members.contains(&new_hex), "the new key is in every room");
+        assert!(!members.contains(&hosted), "the old key is in no room");
+    }
 }

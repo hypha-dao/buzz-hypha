@@ -22,9 +22,14 @@ use std::time::Duration;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use buzz_core::kind::{
+    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_SHAPERS_PROPOSE, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+};
 use buzz_test_client::{BuzzTestClient, RelayMessage, TestClientError};
-use nostr::{Alphabet, EventBuilder, Filter, Keys, Kind, SingleLetterTag, Tag};
+use nostr::{Alphabet, EventBuilder, Filter, Keys, Kind, SingleLetterTag, Tag, Timestamp};
 use sha2::{Digest, Sha256};
+use sqlx::Row;
 use uuid::Uuid;
 
 fn relay_url() -> String {
@@ -3350,5 +3355,318 @@ async fn test_nip29_relay_rejects_last_owner_self_demotion() {
             .as_deref(),
         Some("owner"),
         "the last owner must keep their role"
+    );
+}
+
+// ── R-8: the agent everywhere (DM identity + channel create) ─────────────────
+
+fn relay_org_tag<const N: usize>(parts: [&str; N]) -> Tag {
+    Tag::parse(parts).expect("tag")
+}
+
+fn relay_org_signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> nostr::Event {
+    EventBuilder::new(Kind::Custom(kind as u16), content)
+        .tags(tags)
+        .allow_self_tagging()
+        .custom_created_at(Timestamp::now())
+        .sign_with_keys(keys)
+        .expect("sign")
+}
+
+/// Isolated community with a hosted org agent, addressed by `Host`.
+struct RelayOrgHost {
+    host: String,
+    id: Uuid,
+    pool: sqlx::PgPool,
+    owner: Keys,
+    agent: Keys,
+}
+
+impl RelayOrgHost {
+    async fn fresh() -> Self {
+        let pool = e2e_db_pool().await;
+        let host = format!("io-r8-{}.localhost", Uuid::new_v4().simple());
+        let id = ensure_test_community(&host).await;
+        let community = Self {
+            host,
+            id,
+            pool,
+            owner: Keys::generate(),
+            agent: Keys::generate(),
+        };
+        community
+            .seed_member(&community.owner.clone(), "owner")
+            .await;
+        sqlx::query(
+            "INSERT INTO io_hosted_agents (community_id, pubkey, provisioned_at) \
+             VALUES ($1, $2, now())",
+        )
+        .bind(id)
+        .bind(community.agent.public_key().to_bytes().to_vec())
+        .execute(&community.pool)
+        .await
+        .expect("seed hosted agent");
+        community
+    }
+
+    async fn seed_member(&self, keys: &Keys, role: &str) {
+        seed_relay_member(&self.host, keys, role).await;
+    }
+
+    async fn submit_ok(&self, keys: &Keys, event: &nostr::Event) -> String {
+        let body = serde_json::to_string(event).expect("serialize");
+        let resp = invite_post_with_host(keys, Some(&self.host), "/events", &body).await;
+        let status = resp.status();
+        let parsed: serde_json::Value = resp.json().await.expect("json body");
+        assert!(
+            status.is_success(),
+            "POST /events failed: {status} {parsed}"
+        );
+        assert_eq!(parsed["accepted"], true, "{parsed}");
+        parsed["message"].as_str().expect("message").to_owned()
+    }
+
+    async fn bootstrap(&self) {
+        let owner_hex = self.owner.public_key().to_hex();
+        self.submit_ok(
+            &self.owner,
+            &relay_org_signed(
+                &self.owner,
+                KIND_IO_SHAPERS_PROPOSE,
+                vec![
+                    relay_org_tag(["op", "add"]),
+                    relay_org_tag(["p", &owner_hex]),
+                ],
+                r#"{"why":"first Shaper"}"#,
+            ),
+        )
+        .await;
+    }
+
+    async fn member_pubkeys(&self, channel: Uuid) -> Vec<String> {
+        let rows = sqlx::query(
+            "SELECT pubkey FROM channel_members \
+             WHERE community_id = $1 AND channel_id = $2 AND removed_at IS NULL",
+        )
+        .bind(self.id)
+        .bind(channel)
+        .fetch_all(&self.pool)
+        .await
+        .expect("read members");
+        let mut members: Vec<String> = rows
+            .into_iter()
+            .map(|r| hex::encode(r.get::<Vec<u8>, _>("pubkey")))
+            .collect();
+        members.sort();
+        members
+    }
+
+    async fn discovery_p_tags(&self, kind: u32, channel: Uuid) -> Vec<String> {
+        let row = sqlx::query(
+            "SELECT tags FROM events \
+             WHERE community_id = $1 AND kind = $2 AND channel_id = $3 \
+               AND deleted_at IS NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(self.id)
+        .bind(kind as i32)
+        .bind(channel)
+        .fetch_optional(&self.pool)
+        .await
+        .expect("read discovery");
+        let Some(row) = row else {
+            return Vec::new();
+        };
+        let tags: serde_json::Value = row.get("tags");
+        let mut p: Vec<String> = tags
+            .as_array()
+            .expect("tags")
+            .iter()
+            .filter(|t| t[0] == "p")
+            .map(|t| t[1].as_str().expect("p").to_owned())
+            .collect();
+        p.sort();
+        p
+    }
+
+    async fn dm_system_participants(&self, channel: Uuid) -> Vec<String> {
+        let content: String = sqlx::query_scalar(
+            "SELECT content FROM events \
+             WHERE community_id = $1 AND kind = 40099 AND channel_id = $2 \
+               AND deleted_at IS NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(self.id)
+        .bind(channel)
+        .fetch_one(&self.pool)
+        .await
+        .expect("system message");
+        let body: serde_json::Value = serde_json::from_str(&content).expect("system json");
+        let mut p: Vec<String> = body["participants"]
+            .as_array()
+            .expect("participants")
+            .iter()
+            .map(|v| v.as_str().expect("hex").to_owned())
+            .collect();
+        p.sort();
+        p
+    }
+
+    async fn open_dm(&self, keys: &Keys, others: &[&Keys]) -> Uuid {
+        let tags = others
+            .iter()
+            .map(|k| relay_org_tag(["p", &k.public_key().to_hex()]))
+            .collect();
+        let message = self
+            .submit_ok(keys, &relay_org_signed(keys, KIND_DM_OPEN, tags, ""))
+            .await;
+        let payload = message.strip_prefix("response:").expect("response: prefix");
+        let reply: serde_json::Value = serde_json::from_str(payload).expect("dm reply");
+        Uuid::parse_str(reply["channel_id"].as_str().expect("channel_id")).expect("uuid")
+    }
+
+    async fn add_dm_member(&self, keys: &Keys, channel: Uuid, extra: &Keys) {
+        self.submit_ok(
+            keys,
+            &relay_org_signed(
+                keys,
+                KIND_DM_ADD_MEMBER,
+                vec![
+                    relay_org_tag(["h", &channel.to_string()]),
+                    relay_org_tag(["p", &extra.public_key().to_hex()]),
+                ],
+                "",
+            ),
+        )
+        .await;
+    }
+
+    async fn create_stream(&self, keys: &Keys) -> Uuid {
+        let id = Uuid::new_v4();
+        self.submit_ok(
+            keys,
+            &relay_org_signed(
+                keys,
+                KIND_NIP29_CREATE_GROUP,
+                vec![
+                    relay_org_tag(["h", &id.to_string()]),
+                    relay_org_tag(["name", &format!("room-{id}")]),
+                    relay_org_tag(["channel_type", "stream"]),
+                    relay_org_tag(["visibility", "open"]),
+                ],
+                "",
+            ),
+        )
+        .await;
+        id
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn org_agent_everywhere_two_members_share_one_dm_that_hides_the_agent() {
+    let h = RelayOrgHost::fresh().await;
+    h.bootstrap().await;
+    let alice = Keys::generate();
+    let bob = Keys::generate();
+    h.seed_member(&alice, "member").await;
+    h.seed_member(&bob, "member").await;
+    let alice_hex = alice.public_key().to_hex();
+    let bob_hex = bob.public_key().to_hex();
+    let agent_hex = h.agent.public_key().to_hex();
+
+    let first = h.open_dm(&alice, &[&bob]).await;
+    let second = h.open_dm(&bob, &[&alice]).await;
+    assert_eq!(first, second, "two humans opening our DM find one channel");
+
+    let mut humans = vec![alice_hex.clone(), bob_hex.clone()];
+    humans.sort();
+    let mut members = vec![alice_hex, bob_hex, agent_hex];
+    members.sort();
+    assert_eq!(h.member_pubkeys(first).await, members);
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_METADATA, first).await,
+        humans,
+        "39000 lists two p"
+    );
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_MEMBERS, first).await,
+        humans,
+        "39002 lists two p"
+    );
+    assert_eq!(
+        h.dm_system_participants(first).await,
+        humans,
+        "the 41010 system message names two participants"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn org_agent_everywhere_nine_human_dm_and_41011_keeps_identity() {
+    let h = RelayOrgHost::fresh().await;
+    h.bootstrap().await;
+    let mut people: Vec<Keys> = (0..9).map(|_| Keys::generate()).collect();
+    for keys in &people {
+        h.seed_member(keys, "member").await;
+    }
+    let opener = people.remove(0);
+    let others: Vec<&Keys> = people.iter().collect();
+    let dm = h.open_dm(&opener, &others).await;
+    assert_eq!(
+        h.member_pubkeys(dm).await.len(),
+        10,
+        "nine humans plus agent"
+    );
+
+    let extra = Keys::generate();
+    h.seed_member(&extra, "member").await;
+    let carol = Keys::generate();
+    h.seed_member(&carol, "member").await;
+    let pair = h.open_dm(&opener, &[&carol]).await;
+    h.add_dm_member(&opener, pair, &extra).await;
+    let again = h.open_dm(&opener, &[&carol, &extra]).await;
+    let via_carol = h.open_dm(&carol, &[&opener, &extra]).await;
+    assert_eq!(again, via_carol);
+    assert_ne!(again, pair, "41011 created a new identity set");
+    assert_eq!(h.member_pubkeys(again).await.len(), 4, "3 humans + agent");
+}
+
+#[tokio::test]
+#[ignore]
+async fn org_agent_everywhere_member_only_41010_and_channel_lists_agent() {
+    let h = RelayOrgHost::fresh().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    h.seed_member(&member, "member").await;
+    let member_hex = member.public_key().to_hex();
+    let agent_hex = h.agent.public_key().to_hex();
+
+    let tagged_self = h.open_dm(&member, &[&member]).await;
+    let tagged_agent = h.open_dm(&member, &[&h.agent]).await;
+    assert_eq!(
+        tagged_self, tagged_agent,
+        "[member] and [member, agent] are the same DM"
+    );
+    let mut members = vec![member_hex.clone(), agent_hex.clone()];
+    members.sort();
+    assert_eq!(h.member_pubkeys(tagged_self).await, members);
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_METADATA, tagged_self)
+            .await,
+        vec![member_hex],
+        "the agent DM's 39000 is {{member}}"
+    );
+
+    let room = h.create_stream(&member).await;
+    assert!(
+        h.member_pubkeys(room).await.contains(&agent_hex),
+        "a member-created channel has the agent in channel_members"
+    );
+    assert!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_MEMBERS, room)
+            .await
+            .contains(&agent_hex),
+        "a channel created by a member has the agent in 39002"
     );
 }

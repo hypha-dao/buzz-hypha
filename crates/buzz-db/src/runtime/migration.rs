@@ -702,7 +702,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 45);
+        assert_eq!(migrations.len(), 46);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -1142,7 +1142,8 @@ mod postgres_tests {
         assert!(roster_fence.contains("ERRCODE = '23514'"));
 
         // Fresh desired-state bootstrap must install the identical executable
-        // fence as migration 0032. CI and isolated relay startup use schema.sql
+        // fence as the latest roster-fence migration (0046; 0032 installed the
+        // first version). CI and isolated relay startup use schema.sql
         // without running migrations, so drift reopens rolling-deploy races.
         fn extract_roster_fence(sql: &str) -> &str {
             let fence_start = "CREATE OR REPLACE FUNCTION guard_channel_roster_snapshot()";
@@ -1151,8 +1152,9 @@ mod postgres_tests {
             let relative_end = sql[start..].find(fence_end).expect("roster fence trigger");
             &sql[start..start + relative_end + fence_end.len()]
         }
+        assert_eq!(migrations[45].version, 46);
         assert_eq!(
-            extract_roster_fence(roster_fence),
+            extract_roster_fence(migrations[45].sql.as_str()),
             extract_roster_fence(desired_schema)
         );
 

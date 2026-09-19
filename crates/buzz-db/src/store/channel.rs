@@ -162,6 +162,9 @@ pub async fn create_channel(
     .execute(&mut *tx)
     .await?;
 
+    crate::org_agent_membership::ensure_live_agent_member(&mut tx, community_id, id, created_by)
+        .await?;
+
     let row = sqlx::query(
         r#"
         SELECT id, name, channel_type::text AS channel_type, visibility::text AS visibility,
@@ -259,6 +262,14 @@ pub async fn create_channel_with_id(
         .bind(created_by)
         .bind(created_by)
         .execute(&mut *tx)
+        .await?;
+
+        crate::org_agent_membership::ensure_live_agent_member(
+            &mut tx,
+            community_id,
+            channel_id,
+            created_by,
+        )
         .await?;
     }
 

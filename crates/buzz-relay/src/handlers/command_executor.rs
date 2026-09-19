@@ -313,15 +313,12 @@ async fn handle_dm_open(
     // 1. Extract participant pubkeys from `p` tags
     let p_tags = extract_p_tags(event);
 
-    // 2. Validate: at least 1 other participant, max 8 others (9 total)
+    // 2. Validate: at least one `p` tag. The 2–9 cap counts humans only
+    // (Protocol §6.8); a lone `[member]` or `[member, agent]` is the agent DM
+    // when `39103.agent` is set (Readiness D2).
     if p_tags.is_empty() {
         return Err(IngestError::Rejected(
             "invalid: pubkeys must contain at least 1 other participant".into(),
-        ));
-    }
-    if p_tags.len() > 8 {
-        return Err(IngestError::Rejected(
-            "invalid: pubkeys may contain at most 8 other participants (9 total)".into(),
         ));
     }
 
@@ -331,12 +328,36 @@ async fn handle_dm_open(
         other_bytes.push(decode_pubkey(hex_str)?);
     }
 
-    // 3. Build full participant set (self + others, deduplicated)
-    let mut all_bytes: Vec<Vec<u8>> = vec![self_bytes.clone()];
+    let agent = state
+        .db
+        .org_agent_pubkey(tenant.community())
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: read 39103.agent: {e}")))?;
+
+    // 3. Build the human identity set (self + others, minus the org agent).
+    let mut humans: Vec<Vec<u8>> = vec![self_bytes.clone()];
     for ob in &other_bytes {
-        if !all_bytes.iter().any(|b| b == ob) {
-            all_bytes.push(ob.clone());
+        if buzz_db::org_agent_membership::is_org_agent(ob, agent.as_deref()) {
+            continue;
         }
+        if !humans.iter().any(|b| b == ob) {
+            humans.push(ob.clone());
+        }
+    }
+    if humans.len() > 9 {
+        return Err(IngestError::Rejected(
+            "invalid: pubkeys may contain at most 8 other participants (9 total)".into(),
+        ));
+    }
+    if humans.len() == 1 && agent.is_none() {
+        return Err(IngestError::Rejected(
+            "invalid: pubkeys must contain at least 1 other participant".into(),
+        ));
+    }
+    if humans.is_empty() {
+        return Err(IngestError::Rejected(
+            "invalid: pubkeys must contain at least 1 other participant".into(),
+        ));
     }
 
     // Persist the command event (idempotency) — returns open transaction
@@ -351,11 +372,12 @@ async fn handle_dm_open(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: open_dm
-    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
+    // 4. Execute: open_dm on the human identity set. `create_dm` adds the
+    // agent to `channel_members` without touching `participant_hash`.
+    let human_refs: Vec<&[u8]> = humans.iter().map(|b| b.as_slice()).collect();
     let (channel, was_created) = state
         .db
-        .open_dm(tenant.community(), &all_refs, &self_bytes)
+        .open_dm(tenant.community(), &human_refs, &self_bytes)
         .await
         .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
 
@@ -373,12 +395,15 @@ async fn handle_dm_open(
         )
         .increment(1);
 
-        // Invalidate caches for all participants
-        for pk in &all_bytes {
+        // Invalidate caches for the humans and the silent agent member.
+        for pk in &humans {
             state.invalidate_membership(tenant, channel.id, pk);
         }
+        if let Some(agent) = agent.as_deref() {
+            state.invalidate_membership(tenant, channel.id, agent);
+        }
 
-        let participant_hexes: Vec<String> = all_bytes.iter().map(hex::encode).collect();
+        let participant_hexes: Vec<String> = humans.iter().map(hex::encode).collect();
         if let Err(e) = emit_system_message(
             tenant,
             state,
@@ -399,7 +424,7 @@ async fn handle_dm_open(
             warn!(channel = %channel.id, "DM open: discovery emission failed: {e}");
         }
 
-        for participant in &all_bytes {
+        for participant in &humans {
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,
@@ -484,18 +509,31 @@ async fn handle_dm_add_member(
         .await
         .map_err(|e| IngestError::Internal(format!("error: get members: {e}")))?;
 
-    let mut all_bytes: Vec<Vec<u8>> = existing_members.into_iter().map(|m| m.pubkey).collect();
+    let agent = state
+        .db
+        .org_agent_pubkey(tenant.community())
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: read 39103.agent: {e}")))?;
 
-    // Decode and merge new pubkeys
+    let mut humans: Vec<Vec<u8>> = existing_members
+        .into_iter()
+        .map(|m| m.pubkey)
+        .filter(|pk| !buzz_db::org_agent_membership::is_org_agent(pk, agent.as_deref()))
+        .collect();
+
+    // Decode and merge new pubkeys (the agent is not an addable participant).
     for hex_str in &p_tags {
         let bytes = decode_pubkey(hex_str)?;
-        if !all_bytes.iter().any(|b| b == &bytes) {
-            all_bytes.push(bytes);
+        if buzz_db::org_agent_membership::is_org_agent(&bytes, agent.as_deref()) {
+            continue;
+        }
+        if !humans.iter().any(|b| b == &bytes) {
+            humans.push(bytes);
         }
     }
 
-    // 5. Enforce max 9 participants
-    if all_bytes.len() > 9 {
+    // 5. Enforce max 9 humans — the agent does not count (V5).
+    if humans.len() > 9 {
         return Err(IngestError::Rejected(
             "invalid: DM supports at most 9 participants".into(),
         ));
@@ -513,11 +551,12 @@ async fn handle_dm_add_member(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 6. Execute: open_dm with expanded set (creates NEW DM — DM sets are immutable)
-    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
+    // 6. Execute: open_dm with the expanded human set (creates NEW DM —
+    // DM identity sets are immutable). The agent is added as a silent member.
+    let human_refs: Vec<&[u8]> = humans.iter().map(|b| b.as_slice()).collect();
     let (new_channel, was_created) = state
         .db
-        .open_dm(tenant.community(), &all_refs, &self_bytes)
+        .open_dm(tenant.community(), &human_refs, &self_bytes)
         .await
         .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
 
@@ -535,15 +574,18 @@ async fn handle_dm_add_member(
         )
         .increment(1);
 
-        for pk in &all_bytes {
+        for pk in &humans {
             state.invalidate_membership(tenant, new_channel.id, pk);
+        }
+        if let Some(agent) = agent.as_deref() {
+            state.invalidate_membership(tenant, new_channel.id, agent);
         }
 
         if let Err(e) = emit_group_discovery_events(tenant, state, new_channel.id).await {
             warn!(channel = %new_channel.id, "DM add_member: discovery emission failed: {e}");
         }
 
-        for participant_bytes in &all_bytes {
+        for participant_bytes in &humans {
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,

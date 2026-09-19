@@ -28,6 +28,8 @@ pub mod git_repo;
 pub mod intelligent_org;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
+/// Org-agent membership in every channel and DM (Protocol §6.8).
+pub mod org_agent_membership;
 /// Monthly table partition management.
 pub mod partition;
 /// Buzz product-feedback sidecar persistence.

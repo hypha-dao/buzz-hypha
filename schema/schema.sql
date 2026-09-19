@@ -1030,7 +1030,26 @@ BEGIN
       FROM channel_members cm
      WHERE cm.community_id = NEW.community_id
        AND cm.channel_id = NEW.channel_id
-       AND cm.removed_at IS NULL;
+       AND cm.removed_at IS NULL
+       AND NOT (
+           -- V5 / Protocol §6.8: DM identity excludes 39103.agent from 39002.
+           -- The agent stays a real channel_members row; the snapshot does not
+           -- name it. Non-DM rooms still require an exact match.
+           EXISTS (
+               SELECT 1
+                 FROM channels ch
+                WHERE ch.community_id = cm.community_id
+                  AND ch.id = cm.channel_id
+                  AND ch.channel_type = 'dm'
+           )
+           AND EXISTS (
+               SELECT 1
+                 FROM io_shapers s
+                WHERE s.community_id = cm.community_id
+                  AND s.agent IS NOT NULL
+                  AND s.agent = cm.pubkey
+           )
+       );
 
     -- A roster is canonical only when every p tag uses the emitted four-field
     -- shape, contains a 32-byte hex pubkey and valid authoritative role, has no
