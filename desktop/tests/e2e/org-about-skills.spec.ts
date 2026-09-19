@@ -52,9 +52,9 @@ test.describe("About & skills on the existing profile (D-4)", () => {
     await expect(
       page.getByRole("heading", { name: "About & skills" }),
     ).toBeVisible();
-    await expect(page.getByLabel("About")).toBeVisible();
+    await expect(page.getByLabel("About", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Skills", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Open limit")).toBeVisible();
+    await expect(page.getByLabel("Open limit", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Save About & skills" }),
     ).toBeVisible();
