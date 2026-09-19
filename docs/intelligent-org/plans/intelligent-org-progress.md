@@ -51,6 +51,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | Slice | Status | PR | Merged as | Notes |
 | ----- | ------ | -- | --------- | ----- |
 | D-0   | merged | [#27](https://github.com/hypha-dao/buzz-hypha/pull/27) | `f010ffc32` | Desktop only. `org` preview feature (V14); routes `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render empty states; sidebar group; live REQ hooks per Protocol §6.5 with backfill/live overlap; `commands.ts` + `useOrgCommands` (C-1 tags, `sign_event` → EVENT). Reuses D-5 `orgAgent` / `useOrgAgent`. Bodies are D-1 / D-2 / D-3. |
+| D-3   | open | [#35](https://github.com/hypha-dao/buzz-hypha/pull/35) |           | Desktop only. Work door tree from `39101` (roots + one level; deeper on the item page); item page — brief, holder, dates, breadcrumb, children with state chips and the parent `39101` children counters (R-5a leftover), trail `{kinds:[50001–50021], "#i":[id]}` newest first, **Open room** from `home.channel` (hidden when absent — R-9a), health card from the latest `50101` with rows on hover/focus. Mark done / Release / Set due publish `50009` / `50010` / `50011` through `useOrgCommands` (relay execution is R-5b). Playwright: `org-work.spec.ts`. |
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
@@ -406,8 +407,10 @@ absorb an item into an unrelated slice.
 - **D-0 has no command UI yet.** The Playwright proof for kind/tags binds
   the production `publishOrgCommand` path through
   `window.__BUZZ_E2E_ORG_COMMANDS__` (`useOrgCommandE2eBridge` on Overview,
-  e2e builds only). D-1 / D-2 / D-3 should keep asserting on that same
+  e2e builds only). D-1 / D-2 should keep asserting on that same
   `sign_event` capture; drop the window hook once a real tap exists.
+  D-3's Mark done is a real tap (`org-mark-done` → `buildIoDone` →
+  `__BUZZ_E2E_SIGNED_EVENTS__`).
 - **My Work REQs `39103` in addition to the Protocol §6.5 set** so the
   hook can apply the Shaper `#n=shaper` addendum once the newest
   `d=shapers` names the viewer. D-5 already watches `39103.agent`; a later
@@ -468,6 +471,17 @@ absorb an item into an unrelated slice.
   (`invalid: kind {k} is not implemented yet`) until R-5b.
 - **Project home is still R-9a.** A passed `project` writes no room and
   leaves `39101.home` absent.
+- **D-3 Open room hides when `home.channel` is missing** rather than
+  stubbing a room. The mock seeds one channel id so the tap is proveable;
+  a live community will not show the button until R-9a writes `home`.
+- **D-3 item-page health is a second live REQ.** Protocol §6.5 lists
+  `{kinds:[50101], "#i":[…]}` on the Work door; the Prototype map puts the
+  card on the item page. D-3 consumed `useLiveDoorEvents` with that filter
+  rather than rewriting `workItemFilters`. A later tidy can add `50101` to
+  the item-page set if the Protocol row is updated to match the map.
+- **Adding `org-work.spec.ts` re-cuts the Playwright smoke shards** the
+  same way D-0 / D-5 did. Judge shards by which specs failed, not by
+  shard number.
 
 ---
 
@@ -566,7 +580,7 @@ chromium --with-deps` once per host:
 cd desktop && pnpm check && pnpm typecheck && pnpm test         # biome, tsc, ~6.5k node tests
 just desktop-tauri-fmt-check && just desktop-tauri-clippy
 just desktop-tauri-test                                         # cargo test --workspace in desktop/src-tauri
-cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-agent-defaults
+cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-work
 cd desktop && pnpm test:e2e:smoke                               # whole smoke project, ~90 min on 4 cores
 ```
 
