@@ -54,6 +54,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
+| A-1   | in progress |    |           | `crates/buzz-org-agent` skeleton and ruler: `OrgState` + `apply` + the § 5.2 table; Protocol §4 tag checks live in `inbound` (the E-1 decoder calls through); fixture loader is `#[cfg(any(test, feature = "fixtures"))]`; `RelayLink` / outbox / `ModelClient` (`BuzzAgentModel` via `Llm::complete_with`, `Recorded`); `judge` (15 gates incl. `sequence`); `route`; `publish` `Permitted` chokepoint (`50009` only from `jobs_impl::done_from_talk`); `FakeRelay`; harness loader over E-1; `run` / `dry-run` / `replay` / `doctor`. Nothing drafts. |
 
 ### Waves 5–8
 
@@ -223,15 +224,11 @@ absorb an item into an unrelated slice.
   `space.members` therefore under-describes the fixture. Either the
   prototype should list them or the map should say holders are added — the
   doc owner's call.
-- **`buzz-org-agent` is a stub.** E-1 created the crate to own
-  `tests/eval/` (Development plan § Agent) and its `fixtures` module is a
-  public loader/decoder so `tests/eval_fixtures.rs` can use it. A-0 should
-  keep the loader but move it behind a `fixtures` cargo feature or
-  `#[cfg(test)]`-plus-dev-dependency once `OrgState` exists, so the shipped
-  agent does not link `serde_json` fixture parsing it never runs. The
-  decoder's Protocol §4 tag checks (`fixtures/decode.rs`) are the seed of
-  the agent's inbound validation and should move into `OrgState::apply`
-  rather than be duplicated.
+- ~~**`buzz-org-agent` is a stub.**~~ A-1: loader is
+  `#[cfg(any(test, feature = "fixtures"))]`; Protocol §4 tag checks live in
+  `inbound` and run from `OrgState::apply`; `fixtures/decode.rs` wraps
+  that path. `tests/eval_fixtures.rs` is compiled as a lib unit test via
+  `#[path]` so `cargo test -p buzz-org-agent` stays one command.
 - **The fixture generator takes ~25 s.** It signs ~3 000 events with a
   pure-JS BigInt secp256k1 (no dependencies, so `prototypes/org-preview`
   stays outside pnpm). Fine for the `Intelligent-Org Fixtures` CI job
@@ -370,19 +367,17 @@ absorb an item into an unrelated slice.
   relay behavior, but it bit a Postgres-lane test that re-sent an identical
   open expecting `invalid: already a Shaper`. Test authors: vary the
   content (`why`) between otherwise identical commands.
-- **`tool_choice: Some(s)` is written as a JSON string.** OpenAI keywords
-  (`auto` / `none` / `required`) are valid as strings; a pinned
-  `emit_<move>` name is also a string, not the provider's forced-tool
-  object (`{"type":"function","function":{"name":…}}` / Anthropic
-  `{"type":"tool","name":…}`). A-1's `BuzzAgentModel` should treat the
-  string as the raw wire value, or a later delta can widen the type to
-  `Option<Value>` / encode per family. A-0 did not invent that encoding
-  so buzz-agent's own `None` path stays bit-identical.
-- **`Llm::summarize` does not take the new fields.** It is the handoff
-  path (no tools). A-1 must use `Llm::complete` for structured output.
-- **The E-1 follow-up that asked A-0 to move the fixture loader** behind
-  a `fixtures` feature is deferred to A-1. OrgState does not exist yet;
-  moving the loader now is out of scope.
+- ~~**`tool_choice: Some(s)` is written as a JSON string.**~~ A-1's
+  `BuzzAgentModel` writes `CompleteOverrides { tool_choice: Some(req.tool_name) }`
+  as the raw wire string (not the provider forced-tool object). Widening
+  to `Option<Value>` / per-family encoding is still open if a provider
+  rejects a bare name.
+- ~~**`Llm::summarize` does not take the new fields.**~~ A-1 uses
+  `Llm::complete_with` for structured output. `summarize` stays the
+  handoff path.
+- ~~**The E-1 follow-up that asked A-0 to move the fixture loader**
+  behind a `fixtures` feature is deferred to A-1.~~ Done in A-1 (see
+  the stub entry above).
 - **`org direction history` is `{kinds:[50002], "#d":[slug]}`.** The CLI
   surface table maps history to `50002`; Protocol §6.5's direction-page
   filter is `{kinds:[39102], "#t":["direction"], "#s":["passed"]}`. C-3
@@ -449,6 +444,18 @@ absorb an item into an unrelated slice.
   `schema.sql`) exclude `io_shapers.agent` from the fence's canonical
   set when `channels.channel_type = 'dm'`. A missing human still fails
   closed. Non-DM rooms are unchanged.
+- **A-1 `run` / `replay` do not open a socket or load fixtures.** The
+  CLI is the flag surface (`run`, `dry-run`, `replay`, `doctor`); the
+  harness proof is `cargo test -p buzz-org-agent`. A live
+  `buzz-ws-client` `RelayIo` impl and snapshot (`state.bin` every five
+  minutes) wait on a relay (O-1 / A-2).
+- **`ChildDoneBriefUnmet` reads STATE's last ticket-draft `coverage`.**
+  There is no separate J2 store yet. A-2's J2 should keep writing that
+  coverage onto the draft the table already reads, or this row will miss
+  a brief that never produced a `50100`.
+- **`50009` from talk is the chokepoint only.** `jobs_impl::done_from_talk`
+  signs when `IO_DONE_FROM_TALK_ENABLED` is set; the Protocol §5.5
+  check-list is A-2+.
 
 ---
 

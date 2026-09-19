@@ -5,11 +5,49 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The intelligent-organization org agent (Development plan A-*); E-1 lands the evaluation fixtures and their loader"
+description = "The intelligent-organization org agent (Development plan A-*); skeleton, ruler, and E-1 fixtures"
+autotests = false
+
+[[bin]]
+name = "buzz-org-agent"
+path = "src/main.rs"
+
+[features]
+default = []
+# File-loader + fixture types. The shipped binary is built without this so it
+# does not link seed parsing. Lib unit tests compile it via `cfg(test)`.
+fixtures = []
+# Protocol §5.5 `io_done` from talk — constructible only from
+# `jobs_impl::done_from_talk` when `IO_DONE_FROM_TALK_ENABLED` is set.
+done-from-talk = []
+
+[[test]]
+name = "allow_list"
+path = "tests/allow_list.rs"
+
+[[test]]
+name = "pipeline"
+path = "tests/pipeline.rs"
 
 [dependencies]
-buzz-core  = { workspace = true }
-nostr      = { workspace = true }
-serde      = { workspace = true }
+buzz-core = { workspace = true }
+buzz-ws-client = { workspace = true }
+buzz-agent = { path = "../buzz-agent" }
+nostr = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror  = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs", "io-util", "time", "sync"] }
+tracing = { workspace = true }
+schemars = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = "0.10"
+clap = { version = "4", features = ["derive", "env"] }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+nostr = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
