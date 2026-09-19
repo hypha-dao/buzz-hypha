@@ -307,10 +307,12 @@ mod tests {
         let alice = [1u8; 32];
         let bob = [2u8; 32];
         let agent = [3u8; 32];
-        let humans = without_agent(&[&alice, &bob, &agent], Some(&agent));
+        let with_agent = [&alice[..], &bob[..], &agent[..]];
+        let humans = without_agent(&with_agent, Some(&agent));
         assert_eq!(humans, vec![&alice[..], &bob[..]]);
+        let no_agent = [&alice[..], &bob[..]];
         assert_eq!(
-            without_agent(&[&alice, &bob], None),
+            without_agent(&no_agent, None),
             vec![&alice[..], &bob[..]],
             "no agent means the set is unchanged"
         );
