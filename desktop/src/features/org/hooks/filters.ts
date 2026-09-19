@@ -35,7 +35,9 @@ export const IO_COMMAND_KINDS: number[] = Array.from(
   (_, index) => 50001 + index,
 );
 
-function history(filter: Omit<RelaySubscriptionFilter, "limit">): RelaySubscriptionFilter {
+function history(
+  filter: Omit<RelaySubscriptionFilter, "limit">,
+): RelaySubscriptionFilter {
   return { ...filter, limit: ORG_HISTORY_LIMIT };
 }
 
@@ -52,7 +54,9 @@ export function overviewFilters(): RelaySubscriptionFilter[] {
  * Work: `{kinds:[39101]}`, and `{kinds:[50101], "#i":[…]}` once the tree
  * has item ids. An empty `#i` is omitted — there is nothing to fetch.
  */
-export function workFilters(itemIds: readonly string[] = []): RelaySubscriptionFilter[] {
+export function workFilters(
+  itemIds: readonly string[] = [],
+): RelaySubscriptionFilter[] {
   const filters = [history({ kinds: [KIND_IO_WORK_ITEM] })];
   if (itemIds.length > 0) {
     filters.push(

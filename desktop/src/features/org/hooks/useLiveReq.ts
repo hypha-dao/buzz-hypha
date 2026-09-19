@@ -24,8 +24,10 @@ export type LiveReqClient = {
 
 const defaultClient: LiveReqClient = {
   fetchEvents: (filter) => relayClient.fetchEvents(filter),
-  subscribeLive: (filter, onEvent) => relayClient.subscribeLive(filter, onEvent),
-  subscribeToReconnects: (listener) => relayClient.subscribeToReconnects(listener),
+  subscribeLive: (filter, onEvent) =>
+    relayClient.subscribeLive(filter, onEvent),
+  subscribeToReconnects: (listener) =>
+    relayClient.subscribeToReconnects(listener),
 };
 
 export type OverlappingLoad = {
@@ -163,7 +165,10 @@ export function useLiveDoorEvents(
           setEvents(mergeById(pages, live));
         })
         .catch((error) => {
-          console.error("Failed to refresh org door events after reconnect", error);
+          console.error(
+            "Failed to refresh org door events after reconnect",
+            error,
+          );
         });
     });
 

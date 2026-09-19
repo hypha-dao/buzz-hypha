@@ -86,9 +86,10 @@ export class OrgCommandError extends Error {
 }
 
 function requireHex64(value: string, field: string): string {
-  const normalized = field === "p" || field.endsWith("pubkey") || field === "payee"
-    ? normalizePubkey(value)
-    : value.toLowerCase();
+  const normalized =
+    field === "p" || field.endsWith("pubkey") || field === "payee"
+      ? normalizePubkey(value)
+      : value.toLowerCase();
   if (!HEX_64.test(normalized)) {
     throw new OrgCommandError(`${field} must be a 64-char hex string`);
   }
@@ -182,7 +183,11 @@ export function buildIoDirectionPropose(input: {
   };
   if (input.lines !== undefined) content.lines = input.lines;
   if (input.why !== undefined) content.why = input.why;
-  return { kind: KIND_IO_DIRECTION_PROPOSE, tags, content: JSON.stringify(content) };
+  return {
+    kind: KIND_IO_DIRECTION_PROPOSE,
+    tags,
+    content: JSON.stringify(content),
+  };
 }
 
 export function buildIoVote(input: {
@@ -196,7 +201,10 @@ export function buildIoVote(input: {
       ["e", requireUuid(input.proposal, "e")],
       [TAG_VOTE, input.vote],
     ],
-    content: input.reason === undefined ? "{}" : JSON.stringify({ reason: input.reason }),
+    content:
+      input.reason === undefined
+        ? "{}"
+        : JSON.stringify({ reason: input.reason }),
   };
 }
 
@@ -230,11 +238,16 @@ export function buildIoProjectPropose(input: {
     brief: input.brief,
     due_at: input.dueAt,
   };
-  if (input.objectiveRef !== undefined) content.objective_ref = input.objectiveRef;
+  if (input.objectiveRef !== undefined)
+    content.objective_ref = input.objectiveRef;
   if (input.suggestedDri !== undefined) {
     content.suggested_dri = requireHex64(input.suggestedDri, "suggested_dri");
   }
-  return { kind: KIND_IO_PROJECT_PROPOSE, tags, content: JSON.stringify(content) };
+  return {
+    kind: KIND_IO_PROJECT_PROPOSE,
+    tags,
+    content: JSON.stringify(content),
+  };
 }
 
 export function buildIoTicketCreate(input: {
@@ -260,7 +273,11 @@ export function buildIoTicketCreate(input: {
   if (input.after && input.after.length > 0) {
     content.after = input.after.map((id) => requireUuid(id, "after[]"));
   }
-  return { kind: KIND_IO_TICKET_CREATE, tags, content: JSON.stringify(content) };
+  return {
+    kind: KIND_IO_TICKET_CREATE,
+    tags,
+    content: JSON.stringify(content),
+  };
 }
 
 export function buildIoOffer(input: {
@@ -369,7 +386,11 @@ export function buildIoMoneyPropose(input: {
   };
   if (input.note !== undefined) content.note = input.note;
   if (input.agreed !== undefined) content.agreed = input.agreed;
-  return { kind: KIND_IO_MONEY_PROPOSE, tags, content: JSON.stringify(content) };
+  return {
+    kind: KIND_IO_MONEY_PROPOSE,
+    tags,
+    content: JSON.stringify(content),
+  };
 }
 
 export function buildIoMoneyReleased(input: {

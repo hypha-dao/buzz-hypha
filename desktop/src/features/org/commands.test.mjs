@@ -52,7 +52,8 @@ const DRAFT = "ab".repeat(32);
 const ITEM = "11111111-1111-4111-8111-111111111111";
 const PARENT = "22222222-2222-4222-8222-222222222222";
 const PROPOSAL = "33333333-3333-4333-8333-333333333333";
-const PUBKEY = "e5ebc6cdb579be112e336cc319b5989b4bb6af11786ea90dbe52b5f08d741b34";
+const PUBKEY =
+  "e5ebc6cdb579be112e336cc319b5989b4bb6af11786ea90dbe52b5f08d741b34";
 const RECEIPT = "cd".repeat(32);
 
 test("shapers propose add keeps op, p, optional vote — Protocol §4.8 50001", () => {
@@ -106,7 +107,10 @@ test("shaper accept and step down tag sets", () => {
   assert.equal(buildIoShaperAccept(PROPOSAL).kind, KIND_IO_SHAPER_ACCEPT);
   assert.deepEqual(buildIoShaperStepDown("tired").tags, []);
   assert.equal(buildIoShaperStepDown("tired").kind, KIND_IO_SHAPER_STEP_DOWN);
-  assert.equal(buildIoShaperStepDown("tired").content, JSON.stringify({ why: "tired" }));
+  assert.equal(
+    buildIoShaperStepDown("tired").content,
+    JSON.stringify({ why: "tired" }),
+  );
 });
 
 test("project propose draft tag is the settle marker", () => {
@@ -142,21 +146,30 @@ test("ticket create is u, optional p, optional draft", () => {
 });
 
 test("offer, accept, decline, done, release, set-due, reopen", () => {
-  assert.equal(buildIoOffer({ item: ITEM, pubkey: PUBKEY, draftId: DRAFT }).kind, KIND_IO_OFFER);
-  assert.deepEqual(buildIoOffer({ item: ITEM, pubkey: PUBKEY, draftId: DRAFT }).tags, [
-    ["i", ITEM],
-    ["p", PUBKEY],
-    ["e", DRAFT, "", "draft"],
-  ]);
+  assert.equal(
+    buildIoOffer({ item: ITEM, pubkey: PUBKEY, draftId: DRAFT }).kind,
+    KIND_IO_OFFER,
+  );
+  assert.deepEqual(
+    buildIoOffer({ item: ITEM, pubkey: PUBKEY, draftId: DRAFT }).tags,
+    [
+      ["i", ITEM],
+      ["p", PUBKEY],
+      ["e", DRAFT, "", "draft"],
+    ],
+  );
   assert.deepEqual(buildIoAccept(ITEM).tags, [["i", ITEM]]);
   assert.equal(buildIoAccept(ITEM).kind, KIND_IO_ACCEPT);
   assert.deepEqual(buildIoDecline(ITEM).tags, [["i", ITEM]]);
   assert.equal(buildIoDecline(ITEM).kind, KIND_IO_DECLINE);
-  assert.deepEqual(buildIoDone({ item: ITEM, receiptId: RECEIPT, draftId: DRAFT }).tags, [
-    ["i", ITEM],
-    ["e", RECEIPT, "", "receipt"],
-    ["e", DRAFT, "", "draft"],
-  ]);
+  assert.deepEqual(
+    buildIoDone({ item: ITEM, receiptId: RECEIPT, draftId: DRAFT }).tags,
+    [
+      ["i", ITEM],
+      ["e", RECEIPT, "", "receipt"],
+      ["e", DRAFT, "", "draft"],
+    ],
+  );
   assert.equal(buildIoDone({ item: ITEM }).kind, KIND_IO_DONE);
   assert.deepEqual(buildIoRelease(ITEM, "handing back").tags, [["i", ITEM]]);
   assert.equal(buildIoRelease(ITEM).kind, KIND_IO_RELEASE);
@@ -185,7 +198,12 @@ test("draft decide e has no draft marker — the command is the decision", () =>
 
 test("dri propose and reserved money/join keep the C-1 tag order", () => {
   assert.deepEqual(
-    buildIoDriPropose({ item: ITEM, pubkey: PUBKEY, draftId: DRAFT, voteAgree: true }).tags,
+    buildIoDriPropose({
+      item: ITEM,
+      pubkey: PUBKEY,
+      draftId: DRAFT,
+      voteAgree: true,
+    }).tags,
     [
       ["i", ITEM],
       ["p", PUBKEY],

@@ -21,10 +21,7 @@ function shapers(list, createdAt = 10) {
 
 test("viewerIsShaper reads the newest 39103 shapers list", () => {
   assert.equal(
-    viewerIsShaper(
-      [shapers([OTHER], 1), shapers([ME, OTHER], 9)],
-      ME,
-    ),
+    viewerIsShaper([shapers([OTHER], 1), shapers([ME, OTHER], 9)], ME),
     true,
   );
   assert.equal(viewerIsShaper([shapers([OTHER])], ME), false);

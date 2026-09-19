@@ -27,7 +27,9 @@ import {
 } from "./commands";
 
 export type OrgCommands = {
-  publish: (command: UnsignedOrgCommand) => ReturnType<typeof publishOrgCommand>;
+  publish: (
+    command: UnsignedOrgCommand,
+  ) => ReturnType<typeof publishOrgCommand>;
   buildIoShapersPropose: typeof buildIoShapersPropose;
   buildIoDirectionPropose: typeof buildIoDirectionPropose;
   buildIoVote: typeof buildIoVote;

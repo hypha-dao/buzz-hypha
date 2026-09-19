@@ -10,7 +10,10 @@ import { myWorkFilters } from "./filters";
 import { useLiveDoorEvents } from "./useLiveReq";
 
 export function viewerIsShaper(
-  events: readonly Pick<RelayEvent, "kind" | "tags" | "content" | "created_at">[],
+  events: readonly Pick<
+    RelayEvent,
+    "kind" | "tags" | "content" | "created_at"
+  >[],
   pubkey: string,
 ): boolean {
   const newest = events
