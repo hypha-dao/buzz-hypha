@@ -425,14 +425,13 @@ pub(super) async fn ingest_draft(cmd: &Command<'_>) -> Result<IngestResult, Inge
     if let Some(holder) = suggested_holder(cmd.event, &payload) {
         holder_rules(&mut tx, cmd, &holder, &receipts, &skill_slugs(cmd.event)).await?;
     }
-    if !shadow {
-        if store::find_open_draft_for_gap(&mut tx, cmd.tenant.community(), &gap)
+    if !shadow
+        && store::find_open_draft_for_gap(&mut tx, cmd.tenant.community(), &gap)
             .await
             .map_err(|e| internal("read io_drafts", e))?
             .is_some()
-        {
-            return Err(invalid("an open draft already exists for this gap"));
-        }
+    {
+        return Err(invalid("an open draft already exists for this gap"));
     }
 
     let status = if shadow {

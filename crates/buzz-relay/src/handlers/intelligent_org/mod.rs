@@ -261,8 +261,27 @@ pub(crate) async fn commit(tx: Transaction<'static, Postgres>) -> Result<(), Ing
 
 /// Attach draft settlement (when tagged), write projections and ledger,
 /// commit, and fan out. Every command and read that mutates org state ends
-/// here so a draft tag and the command share one transaction.
-pub(crate) async fn persist_write(
+/// here so a draft tag and the command share one transaction. Boxed so the
+/// caller's future stays small (debug `settle` overflowed the default stack).
+pub(crate) fn persist_write<'a>(
+    cmd: &'a Command<'_>,
+    tx: Transaction<'static, Postgres>,
+    projections: Vec<apply::Projection>,
+    rows: Vec<LedgerEntry>,
+    message: String,
+    room_created: Option<Uuid>,
+) -> impl std::future::Future<Output = Result<IngestResult, IngestError>> + 'a {
+    Box::pin(persist_write_inner(
+        cmd,
+        tx,
+        projections,
+        rows,
+        message,
+        room_created,
+    ))
+}
+
+async fn persist_write_inner(
     cmd: &Command<'_>,
     mut tx: Transaction<'static, Postgres>,
     mut projections: Vec<apply::Projection>,

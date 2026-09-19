@@ -411,7 +411,7 @@ async fn holder_receipt_skill_and_open_limit_and_profile_needs() {
             slug: "grant-writing".into(),
             label: "grant writing".into(),
         }],
-        open_limit: Some(1),
+        open_limit: None,
         updated_at: 1,
         receipt: receipt.clone(),
     };
@@ -422,7 +422,7 @@ async fn holder_receipt_skill_and_open_limit_and_profile_needs() {
         &ProfileRow {
             content: profile.clone(),
             active: true,
-            event_id: vec![0x11; 32],
+            event_id: vec![0x11u8; 32],
             updated_at: chrono::Utc::now(),
         },
     )
@@ -433,7 +433,7 @@ async fn holder_receipt_skill_and_open_limit_and_profile_needs() {
          VALUES ($1, $2, $3, now(), $4, '[]'::jsonb, $5, $6, $7)",
     )
     .bind(h.community().as_uuid())
-    .bind(vec![0x11; 32])
+    .bind(vec![0x11u8; 32])
     .bind(h.state.relay_keypair.public_key().to_bytes().to_vec())
     .bind(KIND_IO_PROFILE as i32)
     .bind(serde_json::to_string(&profile).expect("profile json"))
@@ -490,6 +490,24 @@ async fn holder_receipt_skill_and_open_limit_and_profile_needs() {
         rejected(h.ingest(&h.agent, bad_skill).await),
         "invalid: skill not on the holder's profile"
     );
+
+    {
+        let mut limited = profile.clone();
+        limited.open_limit = Some(1);
+        let mut conn = h.pool.acquire().await.expect("acquire");
+        store::upsert_profile(
+            &mut conn,
+            h.community(),
+            &ProfileRow {
+                content: limited,
+                active: true,
+                event_id: vec![0x11u8; 32],
+                updated_at: chrono::Utc::now(),
+            },
+        )
+        .await
+        .expect("set open_limit");
+    }
 
     let at_limit = signed(
         &h.agent,
