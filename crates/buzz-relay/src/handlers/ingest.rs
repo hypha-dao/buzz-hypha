@@ -542,11 +542,20 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
-        // Intelligent organization commands (50001–50021): person-signed,
-        // community-global. Scope proves the transport may submit writes;
-        // the §3.2 role checks live in `handlers/intelligent_org`. The
-        // agent-facing reads (50100–50103) stay unknown until R-7 ingests them.
-        k if buzz_core::kind::is_intelligent_org_command_kind(k) => Ok(Scope::MessagesWrite),
+        // Intelligent organization commands (50001–50021) and the agent-facing
+        // reads R-7 ingests (50100 / 50101 / 50103): community-global writes.
+        // Scope proves the transport may submit; §3.2 / §3.3 role checks live
+        // in `handlers/intelligent_org`. `50102` stays unknown until Work sync.
+        k if buzz_core::kind::is_intelligent_org_command_kind(k)
+            || matches!(
+                k,
+                buzz_core::kind::KIND_IO_DRAFT
+                    | buzz_core::kind::KIND_IO_HEALTH
+                    | buzz_core::kind::KIND_IO_AGENT_NOTE
+            ) =>
+        {
+            Ok(Scope::MessagesWrite)
+        }
         _ => Err("restricted: unknown event kind"),
     }
 }
@@ -2297,6 +2306,14 @@ async fn ingest_event_inner(
     // pubkey/auth match, and scope validation — never before.
     if buzz_core::kind::is_command_kind(kind_u32) {
         return super::command_executor::handle_command(tenant, state, event, auth).await;
+    }
+    if matches!(
+        kind_u32,
+        buzz_core::kind::KIND_IO_DRAFT
+            | buzz_core::kind::KIND_IO_HEALTH
+            | buzz_core::kind::KIND_IO_AGENT_NOTE
+    ) {
+        return super::intelligent_org::handle_read(tenant, state, &event, &auth).await;
     }
 
     // Product feedback is sidecarred directly into its private deployment table.

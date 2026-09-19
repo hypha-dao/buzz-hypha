@@ -25,11 +25,11 @@ use serde::Deserialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use super::apply::{apply, ApplyContext, CastVote, Projection};
+use super::apply::{CastVote, Projection};
 use super::proposals::{self, Execution, Opening};
 use super::{
-    authorize, begin, commit, content_value, current_shapers, internal, object, parse_content,
-    pubkey_tag, tag_value, uuid_tag, wall_clock, Command, Persisted,
+    authorize, begin, content_value, current_shapers, internal, object, parse_content,
+    persist_write, pubkey_tag, tag_value, uuid_tag, Command, Persisted,
 };
 use crate::handlers::ingest::{IngestError, IngestResult};
 
@@ -299,13 +299,7 @@ async fn bootstrap(
         )?);
     }
 
-    let ctx = ApplyContext {
-        community,
-        relay: &cmd.state.relay_keypair,
-        actor: &cmd.actor_bytes,
-        now: wall_clock(),
-    };
-    let projections = [
+    let projections = vec![
         Projection::Proposal {
             proposal: Box::new(proposal),
             subject: Some(cmd.actor_hex.clone()),
@@ -318,10 +312,15 @@ async fn bootstrap(
         },
         Projection::Shapers(shapers),
     ];
-    let applied = apply(&cmd.state.db, &mut tx, &ctx, &projections, &rows).await?;
-    commit(tx).await?;
-    super::finish(cmd, applied, Some(room)).await;
-    Ok(cmd.accepted(serde_json::json!({ "proposal": proposal_id, "room": room }).to_string()))
+    persist_write(
+        cmd,
+        tx,
+        projections,
+        rows,
+        serde_json::json!({ "proposal": proposal_id, "room": room }).to_string(),
+        Some(room),
+    )
+    .await
 }
 
 /// The §5.3 execution rows for a passed `shapers` proposal, against the
@@ -533,29 +532,21 @@ pub(super) async fn accept(cmd: &Command<'_>) -> Result<IngestResult, IngestErro
     next.updated_at = cmd.at;
     next.receipt = cmd.receipt_hex();
 
-    let rows = [cmd.ledger(
+    let rows = vec![cmd.ledger(
         "shaper_added",
         object::SHAPERS,
         &cmd.actor_hex,
         serde_json::json!({ "proposal": proposal }),
     )?];
-    let ctx = ApplyContext {
-        community: cmd.tenant.community(),
-        relay: &cmd.state.relay_keypair,
-        actor: &cmd.actor_bytes,
-        now: wall_clock(),
-    };
-    let applied = apply(
-        &cmd.state.db,
-        &mut tx,
-        &ctx,
-        &[Projection::Shapers(next)],
-        &rows,
+    persist_write(
+        cmd,
+        tx,
+        vec![Projection::Shapers(next)],
+        rows,
+        "{}".into(),
+        None,
     )
-    .await?;
-    commit(tx).await?;
-    super::finish(cmd, applied, None).await;
-    Ok(cmd.accepted("{}".into()))
+    .await
 }
 
 /// `io_shaper_step_down`: leave the Shaper set, unless last.
@@ -576,29 +567,21 @@ pub(super) async fn step_down(cmd: &Command<'_>) -> Result<IngestResult, IngestE
     next.updated_at = cmd.at;
     next.receipt = cmd.receipt_hex();
 
-    let rows = [cmd.ledger(
+    let rows = vec![cmd.ledger(
         "shaper_stepped_down",
         object::SHAPERS,
         &cmd.actor_hex,
         serde_json::json!({ "why": content.why }),
     )?];
-    let ctx = ApplyContext {
-        community: cmd.tenant.community(),
-        relay: &cmd.state.relay_keypair,
-        actor: &cmd.actor_bytes,
-        now: wall_clock(),
-    };
-    let applied = apply(
-        &cmd.state.db,
-        &mut tx,
-        &ctx,
-        &[Projection::Shapers(next)],
-        &rows,
+    persist_write(
+        cmd,
+        tx,
+        vec![Projection::Shapers(next)],
+        rows,
+        "{}".into(),
+        None,
     )
-    .await?;
-    commit(tx).await?;
-    super::finish(cmd, applied, None).await;
-    Ok(cmd.accepted("{}".into()))
+    .await
 }
 
 #[cfg(test)]
