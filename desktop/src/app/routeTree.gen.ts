@@ -125,8 +125,8 @@ export interface FileRoutesByFullPath {
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
-  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
 export interface FileRoutesByTo {
@@ -144,8 +144,8 @@ export interface FileRoutesByTo {
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
-  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
 export interface FileRoutesById {
@@ -164,8 +164,8 @@ export interface FileRoutesById {
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
-  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
 export interface FileRouteTypes {
@@ -185,8 +185,8 @@ export interface FileRouteTypes {
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
-    | "/org/work/$itemId"
     | "/org/direction/$slug"
+    | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -204,8 +204,8 @@ export interface FileRouteTypes {
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
-    | "/org/work/$itemId"
     | "/org/direction/$slug"
+    | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   id:
     | "__root__"
@@ -223,8 +223,8 @@ export interface FileRouteTypes {
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
-    | "/org/work/$itemId"
     | "/org/direction/$slug"
+    | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   fileRoutesById: FileRoutesById;
 }
@@ -243,8 +243,8 @@ export interface RootRouteChildren {
   orgDotworkRoute: typeof orgDotworkRoute;
   projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   workflowsDotworkflowIdRoute: typeof workflowsDotworkflowIdRoute;
-  orgDotworkDotitemIdRoute: typeof orgDotworkDotitemIdRoute;
   orgDotdirectionDotslugRoute: typeof orgDotdirectionDotslugRoute;
+  orgDotworkDotitemIdRoute: typeof orgDotworkDotitemIdRoute;
   channelsDotchannelIdDotpostsDotpostIdRoute: typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
 
@@ -387,8 +387,8 @@ const rootRouteChildren: RootRouteChildren = {
   orgDotworkRoute: orgDotworkRoute,
   projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   workflowsDotworkflowIdRoute: workflowsDotworkflowIdRoute,
-  orgDotworkDotitemIdRoute: orgDotworkDotitemIdRoute,
   orgDotdirectionDotslugRoute: orgDotdirectionDotslugRoute,
+  orgDotworkDotitemIdRoute: orgDotworkDotitemIdRoute,
   channelsDotchannelIdDotpostsDotpostIdRoute:
     channelsDotchannelIdDotpostsDotpostIdRoute,
 };
