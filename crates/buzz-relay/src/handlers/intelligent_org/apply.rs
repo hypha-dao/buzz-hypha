@@ -23,7 +23,7 @@
 
 use buzz_core::channel::MemberRole;
 use buzz_core::event::StoredEvent;
-use buzz_core::intelligent_org::{DirectionArtifact, Proposal, Shapers, WorkItem};
+use buzz_core::intelligent_org::{DirectionArtifact, Proposal, Shapers, WorkItem, WorkItemState};
 use buzz_core::CommunityId;
 use buzz_db::intelligent_org::{
     self as store, DirectionRow, LedgerEntry, ProposalRow, ShapersRow, VoteRow, WorkItemRow,
@@ -284,11 +284,21 @@ async fn write_work_item(
         .await
         .map_err(|e| internal("read io_work_items", e))?;
     let updated_at = store::ts(created_at).map_err(|e| internal("state created_at", e))?;
+    // `done_at` is the reopen clock (§3.2): set on the first write into
+    // `done`, kept across later rewrites of a closed item, cleared the
+    // moment the item leaves `done`.
+    let done_at = match item.state {
+        WorkItemState::Done => existing
+            .as_ref()
+            .and_then(|row| row.done_at)
+            .or(Some(updated_at)),
+        _ => None,
+    };
     let row = WorkItemRow {
         content: item.clone(),
         event_id: event_id.to_vec(),
         last_progress_at: existing.as_ref().and_then(|row| row.last_progress_at),
-        done_at: existing.as_ref().and_then(|row| row.done_at),
+        done_at,
         created_at: existing
             .as_ref()
             .map(|row| row.created_at)

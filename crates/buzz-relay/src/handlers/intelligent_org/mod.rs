@@ -13,7 +13,7 @@
 //! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
 //!   `shapers` execution rows, `proposals` for `50002`/`50004`/`50015`/`50003`
 //!   and the `direction` / `dri` execution rows, `work` for `project`
-//!   execution and `50005`–`50008` (`50009`–`50011` / `50018` are R-5b).
+//!   execution and `50005`–`50011` / `50018`.
 //!
 //! Client `EVENT`s of `39100–39105` never reach here: ingest rejects them as
 //! `restricted: relay-only kind` before verification.
@@ -32,8 +32,9 @@ use std::sync::Arc;
 use buzz_core::intelligent_org::{tag, Shapers};
 use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION_PROPOSE,
-    KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
-    KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
+    KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
+    KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE,
+    KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
     KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
@@ -78,6 +79,10 @@ pub async fn handle_command(
         KIND_IO_OFFER => work::offer(&cmd).await,
         KIND_IO_ACCEPT => work::accept(&cmd).await,
         KIND_IO_DECLINE => work::decline(&cmd).await,
+        KIND_IO_DONE => work::done(&cmd).await,
+        KIND_IO_RELEASE => work::release(&cmd).await,
+        KIND_IO_SET_DUE => work::set_due(&cmd).await,
+        KIND_IO_REOPEN => work::reopen(&cmd).await,
         KIND_IO_VOTE => proposals::vote(&cmd).await,
         KIND_IO_SHAPER_ACCEPT => shapers::accept(&cmd).await,
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,
@@ -259,6 +264,17 @@ pub(crate) fn pubkey_tag(event: &Event, name: &str) -> Result<Option<String>, In
         )));
     }
     Ok(Some(value.to_owned()))
+}
+
+/// The first `name` tag as a unix-seconds timestamp (`due` on `50011`).
+pub(crate) fn timestamp_tag(event: &Event, name: &str) -> Result<Option<u64>, IngestError> {
+    tag_value(event, name)
+        .map(|v| {
+            v.parse::<u64>().map_err(|_| {
+                IngestError::Rejected(format!("invalid: {name} tag must be a timestamp"))
+            })
+        })
+        .transpose()
 }
 
 /// The first `name` tag as a `u32` version (`base` on `50002`).

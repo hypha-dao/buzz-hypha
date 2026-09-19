@@ -29,7 +29,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-4a  | merged | [#13](https://github.com/hypha-dao/buzz-hypha/pull/13) | `2b33bd6af` | `handlers/intelligent_org/proposals.rs` (open with frozen `eligible`/`needed`, D1 opener vote, `50003`, tally, execution dispatch, one `apply` per settle); `shapers.rs` opens add / remove / rules / agent and executes them against the live `39103` (`shaper_offered`, `shaper_removed`, `rules_changed`, `agent_changed`); `authorize::{open_shapers, agent_candidate, rules_content, vote}`; `apply` writes `io_votes` from the `39102` projection; `store::get_proposal_opening_receipt`. Money and join kinds refused with the fixed reasons. Seven Postgres-lane proofs through `ingest_event`, five E2E through `POST /events`; the R-3 offered-seat SQL seed now goes through a real passed add. `direction`/`dri`/`project` votes that would pass are refused `invalid: execution of … not implemented yet` until R-4b/R-5a. |
 | R-4b  | merged | [#23](https://github.com/hypha-dao/buzz-hypha/pull/23) | `761f01393` | `50002` / `50004`-opening / `50015` and `50003` on those kinds; `direction` / `dri` execution through `apply` (`39100` v`base+1` + `prev`, `39101` accepted + offer withdrawn). Project execution still refused until R-5a. Three Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-5a  | merged | [#28](https://github.com/hypha-dao/buzz-hypha/pull/28) | `db1019300` | `project` execution + `50005`–`50008` (create / offer / accept / decline). Root opens `open` or `offered` to `suggested_dri`; `approved_at` set; no home (R-9a). §5.1 create/offer/accept/decline invariants: holder-only children, only `offered_to` accepts/declines, money fields refused, `after` as live-or-done siblings, `objective_ref` against the live `39100` line, children counters (parent `39101` rewritten). `50009`–`50011` / `50018` still refused. R-4b DRI proofs now open roots through a passed `project`. |
-| R-5b  |        |    |           | |
+| R-5b  | in progress |    |           | `50009`–`50011` / `50018` (done / release / set-due / reopen). Holder-only done; done refused with open children; release clears the holder and offers live children to the parent holder (or `open` for a root); set-due is a Shaper on a root / the parent holder on a child; `io_reopen` within 7 days of `io_work_items.done_at`. Parent `39101` rewritten so `children` stays on the live event. One command + one ledger row; live `39101` count does not grow (replace, not add). |
 | R-6   |        |    |           | |
 | R-7   |        |    |           | |
 | R-8   | open | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) |           | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
@@ -458,14 +458,25 @@ absorb an item into an unrelated slice.
   a brief that never produced a `50100`.
 - **`50009` from talk is the chokepoint only.** `jobs_impl::done_from_talk`
   signs when `IO_DONE_FROM_TALK_ENABLED` is set; the Protocol §5.5
-  check-list is A-2+.
+  check-list is A-2+. R-5b accepts `50009` only from the item's `dri`
+  (`restricted: not the holder` for anyone else, including `39103.agent`).
+- **Protocol §6.2 does not list a ledger verb for `io_reopen`.** R-5b
+  writes `item_reopened` (one row, `object_type=work_item`). Add it to
+  the verb catalog when the Protocol is next edited; do not invent a
+  second name.
+- **`io_work_items.done_at` is the reopen clock.** R-2a created the
+  column; `apply` now sets it on the first write into `done` and clears
+  it on every path that leaves `done` (reopen, and any later rewrite of
+  a live item). The 7-day window reads that column, not the command's
+  `created_at`.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
-  grows by one item (the parent is replaced, not added). R-5b's done /
-  release should keep the same parent rewrite.
-- **`50009`–`50011` / `50018` stay refused**
-  (`invalid: kind {k} is not implemented yet`) until R-5b.
+  grows by one item (the parent is replaced, not added). ~~R-5b's done /
+  release should keep the same parent rewrite.~~ Done in R-5b: child done /
+  release / reopen rewrite the parent the same way.
+- ~~**`50009`–`50011` / `50018` stay refused**
+  (`invalid: kind {k} is not implemented yet`) until R-5b.~~ Struck in R-5b.
 - **Project home is still R-9a.** A passed `project` writes no room and
   leaves `39101.home` absent.
 
