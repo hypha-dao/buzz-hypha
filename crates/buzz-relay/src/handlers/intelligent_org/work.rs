@@ -143,10 +143,14 @@ async fn load_item(
 
 /// §5.3 `project`: create the root in `open`, or `offered` to
 /// `suggested_dri`. `approved_at` is the passing vote; `home` waits for R-9a.
+/// `opening_receipt` is the `50004` that opened the proposal — `created_from`
+/// on the root — supplied by `settle` because a D1 opener-pass has not
+/// written the `39102` yet.
 pub(super) async fn execute_project(
     cmd: &Command<'_>,
     tx: &mut Transaction<'static, Postgres>,
     proposal: &Proposal,
+    opening_receipt: &str,
 ) -> Result<Execution, IngestError> {
     authorize::money_fields(&proposal.payload)?;
     let payload: ProjectProposeContent = serde_json::from_value(proposal.payload.clone())
@@ -158,17 +162,10 @@ pub(super) async fn execute_project(
             .map_err(|e| internal("read io_direction", e))?;
         authorize::objective_ref(reference, head.as_ref().map(|row| &row.content))?;
     }
-    let proposal_id =
-        Uuid::parse_str(&proposal.id).map_err(|e| internal("project proposal id", e))?;
-    let created_from = store::get_proposal_opening_receipt(tx, cmd.tenant.community(), proposal_id)
-        .await
-        .map_err(|e| internal("read 39102 head", e))?
-        .ok_or_else(|| {
-            IngestError::Internal(format!(
-                "error: proposal {} has no live 39102; restore it before executing",
-                proposal.id
-            ))
-        })?;
+    // `settle` already holds the opening receipt. On a D1 opener-pass the
+    // 39102 is not written until after execute, so looking it up here
+    // would miss the head.
+    let created_from = opening_receipt.to_owned();
     let id = Uuid::new_v4();
     let offered_to = payload.suggested_dri.clone();
     let state = if offered_to.is_some() {

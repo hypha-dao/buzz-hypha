@@ -469,7 +469,7 @@ async fn settle(
         Some(ProposalStatus::Passed) => {
             proposal.status = ProposalStatus::Passed;
             proposal.decided_at = Some(cmd.at);
-            let execution = execute(cmd, &mut tx, &shapers, &proposal).await?;
+            let execution = execute(cmd, &mut tx, &shapers, &proposal, &receipt).await?;
             proposal.executed = Some(execution.executed.clone());
             rows.push(cmd.ledger(
                 "proposal_passed",
@@ -533,12 +533,15 @@ async fn execute(
     tx: &mut Transaction<'static, Postgres>,
     shapers: &Shapers,
     proposal: &Proposal,
+    opening_receipt: &str,
 ) -> Result<Execution, IngestError> {
     match proposal.kind {
         ProposalKind::Shapers => shapers::execute(cmd, tx, shapers, proposal).await,
         ProposalKind::Direction => execute_direction(cmd, tx, proposal).await,
         ProposalKind::Dri => execute_dri(cmd, tx, proposal).await,
-        ProposalKind::Project => super::work::execute_project(cmd, tx, proposal).await,
+        ProposalKind::Project => {
+            super::work::execute_project(cmd, tx, proposal, opening_receipt).await
+        }
         ProposalKind::Money => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),

@@ -30,6 +30,8 @@
 //! the dev Postgres) point at the relay under test. `*.localhost` hosts are
 //! sent in the `Host` header, so no DNS is needed.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use buzz_core::kind::{
@@ -98,11 +100,19 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
 
 /// Sign as a client would. `allow_self_tagging` matters: the bootstrap names
 /// the sender in its own `p` tag, which nostr's builder drops by default.
+/// `created_at` ticks so two identical commands in the same second (a
+/// re-offer after decline) are not a NIP-01 replay.
 fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+    static TICK: AtomicU64 = AtomicU64::new(0);
+    let created_at = Timestamp::from(
+        Timestamp::now()
+            .as_secs()
+            .saturating_add(TICK.fetch_add(1, Ordering::Relaxed)),
+    );
     EventBuilder::new(Kind::Custom(kind as u16), content)
         .tags(tags)
         .allow_self_tagging()
-        .custom_created_at(Timestamp::now())
+        .custom_created_at(created_at)
         .sign_with_keys(keys)
         .expect("sign")
 }
@@ -1766,10 +1776,11 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     let second = Keys::generate();
     c.seed_member(&second, "member").await;
     let second_hex = second.public_key().to_hex();
-    c.add_shaper(&c.owner, &[], &second).await;
     let member = Keys::generate();
     c.seed_member(&member, "member").await;
     let member_hex = member.public_key().to_hex();
+    // Roots open under D1 (one Shaper). Seat the second Shaper after, so
+    // `pass_project`'s opener-vote still passes.
     let (_, open_id) = c
         .pass_project(
             &c.owner,
@@ -1800,6 +1811,7 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
         &Community::accept_event(&member, &held_id.to_string()),
     )
     .await;
+    c.add_shaper(&c.owner, &[], &second).await;
 
     c.submit_rejected(
         &c.owner,

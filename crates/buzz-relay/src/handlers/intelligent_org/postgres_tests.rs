@@ -5,6 +5,7 @@
 //! best-effort and must not affect what commits.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use buzz_auth::Scope;
@@ -513,7 +514,8 @@ impl Harness {
                 "{}",
             )
             .await?;
-        Ok(serde_json::from_str(&message).expect("offer reply is json"))
+        Ok(serde_json::from_str(&message)
+            .unwrap_or_else(|e| panic!("offer reply is json: {e}: {message:?}")))
     }
 
     async fn accept_item(&self, keys: &Keys, item: &str) -> Result<serde_json::Value, IngestError> {
@@ -598,11 +600,19 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
 
 /// Sign as a client would. `allow_self_tagging` matters: the bootstrap names
 /// the sender in its own `p` tag, and nostr's builder drops that by default.
+/// `created_at` ticks so two identical commands in the same second (a
+/// re-offer after decline) are not a NIP-01 replay.
 fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+    static TICK: AtomicU64 = AtomicU64::new(0);
+    let created_at = Timestamp::from(
+        Timestamp::now()
+            .as_secs()
+            .saturating_add(TICK.fetch_add(1, Ordering::Relaxed)),
+    );
     EventBuilder::new(Kind::Custom(kind as u16), content)
         .tags(tags)
         .allow_self_tagging()
-        .custom_created_at(Timestamp::now())
+        .custom_created_at(created_at)
         .sign_with_keys(keys)
         .expect("sign")
 }
@@ -2017,11 +2027,12 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     let owner_hex = h.owner.public_key().to_hex();
     let second = Keys::generate();
     let second_hex = second.public_key().to_hex();
-    h.add_shaper(&h.owner, &[], &second).await;
     let member = Keys::generate();
     let member_hex = member.public_key().to_hex();
     h.member(&member).await;
     let stranger = Keys::generate();
+    // Roots open under D1 (one Shaper). Seat the second Shaper after, so
+    // `pass_project`'s opener-vote still passes.
     let (_, open_item) = h
         .pass_project(
             &h.owner,
@@ -2052,6 +2063,7 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
         .await
         .expect("accept held root");
     let held_id = held_root.id.clone();
+    h.add_shaper(&h.owner, &[], &second).await;
 
     assert_eq!(
         rejected(
