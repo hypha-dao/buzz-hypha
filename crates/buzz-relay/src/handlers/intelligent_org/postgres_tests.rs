@@ -1,26 +1,29 @@
-//! R-3, R-4a, R-4b, and R-8 proofs at the production seam: every command enters
-//! through [`crate::handlers::ingest::ingest_event`] exactly as a WebSocket
-//! or HTTP client's would, and every assertion reads the tables the relay
-//! serves from. Redis is deliberately unreachable — fan-out is best-effort
-//! and must not affect what commits.
+//! R-3, R-4a, R-4b, R-5a, and R-8 proofs at the production seam: every command
+//! enters through [`crate::handlers::ingest::ingest_event`] exactly as a
+//! WebSocket or HTTP client's would, and every assertion reads the tables
+//! the relay serves from. Redis is deliberately unreachable — fan-out is
+//! best-effort and must not affect what commits.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use buzz_auth::Scope;
 use buzz_core::intelligent_org::{
-    ChildrenCounts, DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers,
-    VoteChoice, WorkItem, WorkItemState,
+    DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers, VoteChoice, WorkItem,
+    WorkItemState,
 };
 use buzz_core::kind::{
-    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE,
-    KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
-    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
-    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE, KIND_IO_WORK_ITEM,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION,
+    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
+    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS,
+    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::CommunityId;
-use buzz_db::intelligent_org::{self as store, HostedAgentRow, VoteRow, WorkItemRow};
+use buzz_db::intelligent_org::{self as store, HostedAgentRow, VoteRow};
 use buzz_db::relay_rooms;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use sqlx::{PgPool, Row};
@@ -447,25 +450,88 @@ impl Harness {
         id
     }
 
-    /// Seed a work item the way R-5a will write it — R-4b cannot create one
-    /// through a command, so DRI proofs start from a projection row.
-    async fn seed_item(&self, item: &WorkItem) {
-        let mut conn = self.pool.acquire().await.expect("acquire");
-        let now = chrono::Utc::now();
-        store::upsert_work_item(
-            &mut conn,
-            self.community(),
-            &WorkItemRow {
-                content: item.clone(),
-                event_id: vec![0x11; 32],
-                last_progress_at: None,
-                done_at: None,
-                created_at: now,
-                updated_at: now,
-            },
+    async fn work_items(&self) -> Vec<WorkItem> {
+        let rows = sqlx::query(
+            "SELECT content FROM io_work_items \
+             WHERE community_id = $1 ORDER BY created_at, id",
         )
+        .bind(self.community().as_uuid())
+        .fetch_all(&self.pool)
         .await
-        .expect("seed work item");
+        .expect("list io_work_items");
+        rows.into_iter()
+            .map(|row| serde_json::from_value(row.get("content")).expect("work item content"))
+            .collect()
+    }
+
+    /// Pass a `project` as `keys` (D1 opener-vote) and return the new root.
+    async fn pass_project(&self, keys: &Keys, content: &str) -> (String, WorkItem) {
+        let before: HashSet<String> = self.work_items().await.into_iter().map(|i| i.id).collect();
+        let reply = self
+            .project(keys, content, true)
+            .await
+            .expect("pass project");
+        assert_eq!(reply["status"], "passed", "project must pass: {reply}");
+        let proposal = reply["proposal"].as_str().expect("id").to_owned();
+        let item = self
+            .work_items()
+            .await
+            .into_iter()
+            .find(|item| !before.contains(&item.id))
+            .expect("passed project opens a root");
+        (proposal, item)
+    }
+
+    async fn ticket(
+        &self,
+        keys: &Keys,
+        parent: &str,
+        offer_to: Option<&str>,
+        content: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let mut tags = vec![tag(["u", parent])];
+        if let Some(p) = offer_to {
+            tags.push(tag(["p", p]));
+        }
+        let message = self
+            .send(keys, KIND_IO_TICKET_CREATE, tags, content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("ticket reply is json"))
+    }
+
+    async fn offer_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+        p: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(
+                keys,
+                KIND_IO_OFFER,
+                vec![tag(["i", item]), tag(["p", p])],
+                "{}",
+            )
+            .await?;
+        Ok(serde_json::from_str(&message).expect("offer reply is json"))
+    }
+
+    async fn accept_item(&self, keys: &Keys, item: &str) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(keys, KIND_IO_ACCEPT, vec![tag(["i", item])], "{}")
+            .await?;
+        Ok(serde_json::from_str(&message).expect("accept reply is json"))
+    }
+
+    async fn decline_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(keys, KIND_IO_DECLINE, vec![tag(["i", item])], "{}")
+            .await?;
+        Ok(serde_json::from_str(&message).expect("decline reply is json"))
     }
 
     async fn work_item(&self, id: &str) -> Option<WorkItem> {
@@ -1707,40 +1773,6 @@ async fn money_and_join_commands_are_rejected_with_the_fixed_reasons() {
     );
 }
 
-fn seed_work_item(
-    id: &str,
-    state: WorkItemState,
-    dri: Option<String>,
-    offered_to: Option<String>,
-) -> WorkItem {
-    WorkItem {
-        id: id.to_owned(),
-        parent: None,
-        root: id.to_owned(),
-        depth: 0,
-        path: vec![id.to_owned()],
-        title: "Weekday hall".into(),
-        brief: "Book the hall".into(),
-        state,
-        dri,
-        offered_to: offered_to.clone(),
-        offered_by: offered_to.as_ref().map(|_| "agent".to_owned()),
-        offered_at: offered_to.as_ref().map(|_| 1_700_000_000),
-        due_at: 1_800_000_000,
-        approved_at: None,
-        objective_ref: None,
-        created_from: hex::encode([0x22; 32]),
-        draft: None,
-        done_receipt: None,
-        closed_by: None,
-        children: ChildrenCounts::default(),
-        home: None,
-        branch: None,
-        after: vec![],
-        last_progress: None,
-    }
-}
-
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
@@ -1990,25 +2022,36 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     let member_hex = member.public_key().to_hex();
     h.member(&member).await;
     let stranger = Keys::generate();
-    let open_id = Uuid::new_v4().to_string();
-    let offered_id = Uuid::new_v4().to_string();
-    let held_id = Uuid::new_v4().to_string();
-    h.seed_item(&seed_work_item(&open_id, WorkItemState::Open, None, None))
+    let (_, open_item) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
         .await;
-    h.seed_item(&seed_work_item(
-        &offered_id,
-        WorkItemState::Offered,
-        None,
-        Some(member_hex.clone()),
-    ))
-    .await;
-    h.seed_item(&seed_work_item(
-        &held_id,
-        WorkItemState::Accepted,
-        Some(member_hex.clone()),
-        None,
-    ))
-    .await;
+    let open_id = open_item.id.clone();
+    let (_, offered_item) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Offered hall","brief":"Offer it","due_at":1800000000,"suggested_dri":"{member_hex}"}}"#
+            ),
+        )
+        .await;
+    let offered_id = offered_item.id.clone();
+    assert_eq!(offered_item.state, WorkItemState::Offered);
+    let (_, held_root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Held hall","brief":"Hold it","due_at":1800000000}"#,
+        )
+        .await;
+    h.offer_item(&h.owner, &held_root.id, &member_hex)
+        .await
+        .expect("offer held root");
+    h.accept_item(&member, &held_root.id)
+        .await
+        .expect("accept held root");
+    let held_id = held_root.id.clone();
 
     assert_eq!(
         rejected(
@@ -2092,9 +2135,12 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     assert_eq!(item.dri.as_deref(), Some(second_hex.as_str()));
     assert!(item.offered_to.is_none());
     let live = h.live_state(KIND_IO_WORK_ITEM).await;
-    assert_eq!(live.len(), 1);
-    assert_eq!(live[0].1["state"], "accepted");
-    assert_eq!(live[0].1["dri"], second_hex);
+    let accepted = live
+        .iter()
+        .find(|(_, content, _)| content["id"] == open_id)
+        .expect("live 39101 for the named root");
+    assert_eq!(accepted.1["state"], "accepted");
+    assert_eq!(accepted.1["dri"], second_hex);
     assert_eq!(
         h.ledger_verbs().await[ledger_before..],
         ["vote_cast", "proposal_passed", "item_accepted"]
@@ -2141,10 +2187,12 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn a_passing_project_vote_is_refused_until_r5a() {
+async fn a_passed_project_opens_a_root_in_open_or_offered() {
     let h = harness().await;
     h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
     let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
     h.member(&member).await;
     let stranger = Keys::generate();
     let content = r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#;
@@ -2157,9 +2205,40 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
         rejected(h.project(&h.owner, r#"{"title":"no"}"#, true).await),
         "invalid: command content: missing field `brief`"
     );
+    assert_eq!(
+        rejected(
+            h.project(
+                &h.owner,
+                r#"{"title":"t","brief":"b","due_at":1,"amount":"10"}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: money fields are not allowed"
+    );
+    assert_eq!(
+        rejected(
+            h.project(
+                &h.owner,
+                r#"{"title":"t","brief":"b","due_at":1,"objective_ref":"objectives@1#l_7f3a"}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: objective_ref not a live line"
+    );
 
-    // A plain member can open; a one-Shaper opener-vote would pass, but
-    // project execution is R-5a.
+    h.direction(
+        &h.owner,
+        "objectives",
+        0,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        true,
+    )
+    .await
+    .expect("confirm objectives");
+
+    let ledger_before = h.ledger_verbs().await.len();
     let opened = h
         .project(&member, content, false)
         .await
@@ -2169,25 +2248,272 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
     let p = h.proposal(&waiting).await;
     assert_eq!(p.kind, buzz_core::intelligent_org::ProposalKind::Project);
     assert_eq!(p.needed, 1);
-    assert_eq!(p.eligible, vec![h.owner.public_key().to_hex()]);
+    assert_eq!(p.eligible, vec![owner_hex.clone()]);
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("pass")["status"],
+        "passed"
+    );
+    let roots: Vec<_> = h
+        .work_items()
+        .await
+        .into_iter()
+        .filter(|item| item.parent.is_none())
+        .collect();
+    assert_eq!(roots.len(), 1);
+    let root = &roots[0];
+    assert_eq!(root.state, WorkItemState::Open);
+    assert_eq!(root.title, "Weekday hall");
+    assert!(root.approved_at.is_some());
+    assert!(root.home.is_none(), "project home is R-9a");
+    assert!(root.dri.is_none());
+    assert_eq!(root.path, Vec::<String>::new());
+    let live = h.live_state(KIND_IO_WORK_ITEM).await;
+    assert_eq!(live.len(), 1, "one live 39101 for the new root");
+    assert_eq!(live[0].1["state"], "open");
+    assert_eq!(
+        h.ledger_verbs().await[ledger_before..],
+        [
+            "proposal_opened",
+            "vote_cast",
+            "proposal_passed",
+            "item_created"
+        ]
+    );
+
+    let (_, offered) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Offered hall","brief":"Offer it","due_at":1800000000,"suggested_dri":"{member_hex}","objective_ref":"objectives@1#l_7f3a"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(offered.state, WorkItemState::Offered);
+    assert_eq!(offered.offered_to.as_deref(), Some(member_hex.as_str()));
+    assert_eq!(offered.offered_by.as_deref(), Some(owner_hex.as_str()));
+    assert_eq!(
+        offered.objective_ref.as_deref(),
+        Some("objectives@1#l_7f3a")
+    );
+    assert!(offered.home.is_none());
+    assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn only_the_holder_creates_children_and_after_must_be_a_sibling() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
     assert_eq!(
         rejected(
-            h.project(
+            h.ticket(
                 &h.owner,
-                r#"{"title":"Weekday hall","brief":"Book it now","due_at":1800000000}"#,
-                true
+                &root.id,
+                None,
+                r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
             )
             .await
         ),
-        "invalid: execution of project proposals is not implemented yet"
+        "restricted: not the holder",
+        "an open root has no holder"
+    );
+
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("offer root");
+    h.accept_item(&member, &root.id)
+        .await
+        .expect("member holds the root");
+
+    assert_eq!(
+        rejected(
+            h.ticket(
+                &h.owner,
+                &root.id,
+                None,
+                r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+            )
+            .await
+        ),
+        "restricted: not the holder"
     );
     assert_eq!(
-        rejected(h.vote(&h.owner, &waiting, "agree", "{}").await),
-        "invalid: execution of project proposals is not implemented yet"
+        rejected(
+            h.ticket(
+                &member,
+                &root.id,
+                None,
+                r#"{"title":"x","brief":"y","due_at":1,"amount":"1"}"#,
+            )
+            .await
+        ),
+        "invalid: money fields are not allowed"
     );
-    assert_eq!(h.proposal(&waiting).await.status, ProposalStatus::Open);
-    assert!(h.proposal(&waiting).await.votes.is_empty());
-    assert!(h.live_state(KIND_IO_WORK_ITEM).await.is_empty());
+    assert_eq!(
+        rejected(
+            h.ticket(
+                &member,
+                &root.id,
+                None,
+                r#"{"title":"Permit","brief":"Get it","due_at":1800000001,"after":["00000000-0000-4000-8000-000000000001"]}"#,
+            )
+            .await
+        ),
+        "invalid: after not a sibling"
+    );
+
+    let live_before = h.live_state(KIND_IO_WORK_ITEM).await.len();
+    let ledger_before = h.ledger_verbs().await.len();
+    let created = h
+        .ticket(
+            &member,
+            &root.id,
+            None,
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+        )
+        .await
+        .expect("holder creates");
+    let permit = created["item"].as_str().expect("item").to_owned();
+    let child = h.work_item(&permit).await.expect("child");
+    assert_eq!(child.state, WorkItemState::Open);
+    assert_eq!(child.parent.as_deref(), Some(root.id.as_str()));
+    assert_eq!(child.root, root.id);
+    assert_eq!(child.depth, 1);
+    assert_eq!(child.path, vec![root.id.clone()]);
+    assert!(child.branch.as_deref().unwrap_or("").starts_with("io/"));
+    assert!(child.after.is_empty());
+    let parent = h.work_item(&root.id).await.expect("parent");
+    assert_eq!(parent.children.open, 1);
+    assert_eq!(parent.children.offered, 0);
+    assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), live_before + 1);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_created"]);
+
+    let blocked = h
+        .ticket(
+            &member,
+            &root.id,
+            Some(&h.owner.public_key().to_hex()),
+            &format!(
+                r#"{{"title":"Build","brief":"After the permit","due_at":1800000002,"after":["{permit}"]}}"#
+            ),
+        )
+        .await
+        .expect("after a live sibling");
+    let build = blocked["item"].as_str().expect("item").to_owned();
+    let child = h.work_item(&build).await.expect("build");
+    assert_eq!(child.state, WorkItemState::Offered);
+    assert_eq!(child.after, vec![permit.clone()]);
+    let parent = h.work_item(&root.id).await.expect("parent");
+    assert_eq!(parent.children.open, 1);
+    assert_eq!(parent.children.offered, 1);
+
+    // after is order, not a lock: accept succeeds while the earlier sibling is open.
+    h.accept_item(&h.owner, &build)
+        .await
+        .expect("accept with open after");
+    let child = h.work_item(&build).await.expect("accepted build");
+    assert_eq!(child.state, WorkItemState::Accepted);
+    assert_eq!(
+        child.dri.as_deref(),
+        Some(h.owner.public_key().to_hex().as_str())
+    );
+    let parent = h.work_item(&root.id).await.expect("parent");
+    assert_eq!(parent.children.open, 1);
+    assert_eq!(parent.children.offered, 0);
+    assert_eq!(parent.children.accepted, 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn only_offered_to_accepts_or_declines_and_later_work_kinds_stay_refused() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let other = Keys::generate();
+    h.member(&other).await;
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+
+    assert_eq!(
+        rejected(h.offer_item(&member, &root.id, &member_hex).await),
+        "restricted: not a Shaper"
+    );
+    let live_before = h.live_state(KIND_IO_WORK_ITEM).await.len();
+    let ledger_before = h.ledger_verbs().await.len();
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("shaper offers a root");
+    let offered = h.work_item(&root.id).await.expect("offered");
+    assert_eq!(offered.state, WorkItemState::Offered);
+    assert_eq!(offered.offered_to.as_deref(), Some(member_hex.as_str()));
+    assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), live_before);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_offered"]);
+
+    assert_eq!(
+        rejected(h.accept_item(&other, &root.id).await),
+        "restricted: not the offered person"
+    );
+    assert_eq!(
+        rejected(h.decline_item(&other, &root.id).await),
+        "restricted: not the offered person"
+    );
+
+    let ledger_before = h.ledger_verbs().await.len();
+    h.decline_item(&member, &root.id)
+        .await
+        .expect("offered_to declines");
+    let open = h.work_item(&root.id).await.expect("open again");
+    assert_eq!(open.state, WorkItemState::Open);
+    assert!(open.offered_to.is_none());
+    assert!(open.dri.is_none());
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_declined"]);
+
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("offer again");
+    let ledger_before = h.ledger_verbs().await.len();
+    h.accept_item(&member, &root.id)
+        .await
+        .expect("offered_to accepts");
+    let held = h.work_item(&root.id).await.expect("accepted");
+    assert_eq!(held.state, WorkItemState::Accepted);
+    assert_eq!(held.dri.as_deref(), Some(member_hex.as_str()));
+    assert!(held.offered_to.is_none());
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_accepted"]);
+    assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 1);
+
+    for kind in [
+        KIND_IO_DONE,
+        KIND_IO_RELEASE,
+        KIND_IO_SET_DUE,
+        KIND_IO_REOPEN,
+    ] {
+        let command = signed(&member, kind, vec![tag(["i", &root.id])], "{}");
+        let id = command.id;
+        assert_eq!(
+            rejected(h.ingest(&member, command).await),
+            format!("invalid: kind {kind} is not implemented yet"),
+            "kind {kind}"
+        );
+        assert!(!h.event_stored(&id).await, "kind {kind} is not stored");
+    }
 }
 
 // ── R-8: the agent everywhere ────────────────────────────────────────────────

@@ -9,8 +9,8 @@
 //! a later Shaper change never moves the bar. [`settle`] tallies after every
 //! vote — including the opener's own `["vote", "agree"]` (Readiness D1) —
 //! and, on `passed`, executes in the same transaction through the kind's
-//! executor (`shapers::execute`, [`execute_direction`], [`execute_dri`];
-//! `project` stays refused until R-5a), then hands the `39102` and whatever
+//! executor (`shapers::execute`, [`execute_direction`], [`execute_dri`],
+//! [`super::work::execute_project`]), then hands the `39102` and whatever
 //! executing produced to [`super::apply::apply`] as one write.
 
 use std::collections::HashSet;
@@ -254,17 +254,27 @@ pub(super) async fn direction_propose(cmd: &Command<'_>) -> Result<IngestResult,
 }
 
 /// `io_project_propose` (`50004`): any member opens a `project` proposal.
-/// Execution is R-5a — a vote that would pass is still refused.
+/// Money fields and a stale `objective_ref` are refused at opening; a
+/// passing vote executes through [`super::work::execute_project`].
 pub(super) async fn project_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
-    let _: ProjectProposeContent = serde_json::from_value(content_value(cmd.event)?)
-        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
     let payload = content_value(cmd.event)?;
+    authorize::money_fields(&payload)?;
+    let content: ProjectProposeContent = serde_json::from_value(payload.clone())
+        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+    authorize::work_copy(&content.title, &content.brief)?;
     authorize::require_member(cmd.is_member(&cmd.actor_hex).await?)?;
 
     let mut tx = match begin(cmd).await? {
         Persisted::Replay(result) => return Ok(result),
         Persisted::Open(tx) => tx,
     };
+    if let Some(reference) = &content.objective_ref {
+        let head =
+            store::get_direction_head(&mut tx, cmd.tenant.community(), DirectionSlug::Objectives)
+                .await
+                .map_err(|e| internal("read io_direction", e))?;
+        authorize::objective_ref(reference, head.as_ref().map(|row| &row.content))?;
+    }
     let shapers = current_shapers(&mut tx, cmd)
         .await?
         .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
@@ -528,9 +538,7 @@ async fn execute(
         ProposalKind::Shapers => shapers::execute(cmd, tx, shapers, proposal).await,
         ProposalKind::Direction => execute_direction(cmd, tx, proposal).await,
         ProposalKind::Dri => execute_dri(cmd, tx, proposal).await,
-        ProposalKind::Project => Err(IngestError::Rejected(
-            "invalid: execution of project proposals is not implemented yet".into(),
-        )),
+        ProposalKind::Project => super::work::execute_project(cmd, tx, proposal).await,
         ProposalKind::Money => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
