@@ -70,9 +70,12 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_DRAFT,
   KIND_IO_PROFILE_SET,
+  KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
+  KIND_IO_WORK_ITEM,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
   KIND_PERSONA,
@@ -145,6 +148,8 @@ export type MockOrgSeed = {
   agentHosted?: boolean;
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
+  /** Community-global org events served on REQ (`50100` / `39101` / `39102`). */
+  events?: RelayEvent[];
 };
 
 type MockManagedAgentRuntimeSeed = {
@@ -1121,7 +1126,10 @@ type MockFilter = {
   "#d"?: string[];
   "#e"?: string[];
   "#h"?: string[];
+  "#n"?: string[];
   "#p"?: string[];
+  "#s"?: string[];
+  "#t"?: string[];
   authors?: string[];
   ids?: string[];
   kinds?: number[];
@@ -3881,8 +3889,73 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
  * DM's `p` tags are `[member, agent]` and the agent's `kind:0` names it "Org
  * agent". Without `mock.org` nothing is seeded.
  */
+function mockOrgEventMatchesFilter(
+  event: RelayEvent,
+  filter: MockFilter,
+): boolean {
+  if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  for (const [key, values] of Object.entries(filter)) {
+    if (!key.startsWith("#") || !Array.isArray(values) || values.length === 0) {
+      continue;
+    }
+    const tagName = key.slice(1);
+    const wanted = values.filter(
+      (value): value is string => typeof value === "string",
+    );
+    if (wanted.length === 0) continue;
+    const eventValues = event.tags
+      .filter((tag) => tag[0] === tagName)
+      .map((tag) => tag[1]);
+    if (wanted.some((value) => eventValues.includes(value))) continue;
+    // `offered_by` lives in 39101 content (Protocol §4.2); there is no p
+    // marker for it, so `#p` would otherwise drop "You offered".
+    if (key === "#p" && event.kind === KIND_IO_WORK_ITEM) {
+      try {
+        const content = JSON.parse(event.content) as { offered_by?: unknown };
+        if (
+          typeof content.offered_by === "string" &&
+          wanted.includes(content.offered_by)
+        ) {
+          continue;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+  return true;
+}
+
+function seedMockOrgFeedItems(events: readonly RelayEvent[]) {
+  for (const event of events) {
+    if (
+      event.kind !== KIND_IO_DRAFT &&
+      event.kind !== KIND_IO_WORK_ITEM &&
+      event.kind !== KIND_IO_PROPOSAL
+    ) {
+      continue;
+    }
+    mockFeedOverrides.needs_action.unshift({
+      id: event.id,
+      kind: event.kind,
+      pubkey: event.pubkey,
+      content: event.content,
+      created_at: event.created_at,
+      channel_id: null,
+      channel_name: "",
+      channel_type: null,
+      tags: event.tags,
+      category: "needs_action",
+    });
+  }
+}
+
 function initializeMockOrg(org: MockOrgSeed | undefined) {
   if (!org) return;
+  if (org.events && org.events.length > 0) {
+    seedMockOrgFeedItems(org.events);
+  }
   const agent = mockOrgAgentPubkey(org);
   applyMockDisplayName(agent, ORG_AGENT_DISPLAY_NAME);
   mockAgentPubkeys.add(agent);
@@ -11040,6 +11113,24 @@ function sendToMockSocket(args: {
           subId,
           createMockShapersStateEvent(org),
         ]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
+    if (
+      filter.kinds?.some(
+        (kind) =>
+          kind === KIND_IO_DRAFT ||
+          kind === KIND_IO_WORK_ITEM ||
+          kind === KIND_IO_PROPOSAL,
+      )
+    ) {
+      const orgEvents = getConfig()?.mock?.org?.events ?? [];
+      for (const event of orgEvents) {
+        if (mockOrgEventMatchesFilter(event, filter)) {
+          sendWsText(socket.handler, ["EVENT", subId, event]);
+        }
       }
       sendWsText(socket.handler, ["EOSE", subId]);
       return;

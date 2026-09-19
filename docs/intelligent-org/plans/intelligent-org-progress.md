@@ -51,6 +51,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | Slice | Status | PR | Merged as | Notes |
 | ----- | ------ | -- | --------- | ----- |
 | D-0   | merged | [#27](https://github.com/hypha-dao/buzz-hypha/pull/27) | `f010ffc32` | Desktop only. `org` preview feature (V14); routes `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render empty states; sidebar group; live REQ hooks per Protocol §6.5 with backfill/live overlap; `commands.ts` + `useOrgCommands` (C-1 tags, `sign_event` → EVENT). Reuses D-5 `orgAgent` / `useOrgAgent`. Bodies are D-1 / D-2 / D-3. |
+| D-2   | open | [#40](https://github.com/hypha-dao/buzz-hypha/pull/40) | | Desktop only. My Work three columns and the card set (`features/org/cards/`: draft, offer, decision, done, review). Kickers, receipts, _n of needed_, decline chips → `50012`. Agree / Decline assert on the D-0 `sign_event` capture. Inbox `needs_action` renders the same cards from the existing home feed (no new query; R-13 is still the relay source). Reuses D-0 `useMyWorkEvents` / `useOrgCommands`; no second `39103` REQ. |
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
@@ -468,6 +469,18 @@ absorb an item into an unrelated slice.
   (`invalid: kind {k} is not implemented yet`) until R-5b.
 - **Project home is still R-9a.** A passed `project` writes no room and
   leaves `39101.home` absent.
+- **`39101.offered_by` has no `p` tag**, so Protocol §6.5 `{kinds:[39101],
+  "#p":[me]}` cannot return items the viewer offered to someone else. D-2
+  still has a You offered column and will render those events when they
+  arrive; the mock matcher also accepts `content.offered_by` so the column
+  can be proved. A later slice should either add a specified marker (and
+  update Protocol §4.2) or drop the column until the query can see them.
+- **Card primitives live in `desktop/src/features/org/cards/`.** D-1
+  should import from there rather than add a second set. Inbox reuses
+  `OrgEventCard` the same way.
+- **Adding `org-my-work.spec.ts` re-cuts the Playwright smoke shards**
+  the same way D-0's `org-skeleton.spec.ts` did. Judge shards by which
+  specs failed, not by shard number.
 
 ---
 
