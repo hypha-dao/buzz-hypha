@@ -2540,7 +2540,7 @@ async fn only_the_holder_creates_children_and_after_must_be_a_sibling() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn only_offered_to_accepts_or_declines_and_later_work_kinds_stay_refused() {
+async fn only_offered_to_accepts_or_declines() {
     let h = harness().await;
     h.bootstrap().await;
     let member = Keys::generate();
