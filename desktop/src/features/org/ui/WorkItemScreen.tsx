@@ -63,7 +63,7 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
   }
 
   return (
-    <OrgDoorScreen testId="org-work-item" title={item?.title ?? "Work"}>
+    <OrgDoorScreen testId="org-work-item" title="Work">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {item ? (
           <WorkItemView

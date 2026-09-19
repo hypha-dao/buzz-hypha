@@ -232,8 +232,8 @@ test.describe("Org Work door and item page (D-3)", () => {
     );
     await expect(page.getByRole("button", { name: "Release" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: "Set due" })).toHaveCount(1);
-    await expect(
-      page.getByRole("heading", { name: "Weekday hall" }),
-    ).toBeVisible();
+    await expect(page.getByTestId("org-item-title")).toHaveAccessibleName(
+      "Weekday hall",
+    );
   });
 });
