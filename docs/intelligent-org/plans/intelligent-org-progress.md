@@ -55,6 +55,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
 | A-1   | merged | [#30](https://github.com/hypha-dao/buzz-hypha/pull/30) | `6251d748f` | `crates/buzz-org-agent` skeleton and ruler: `OrgState` + `apply` + the § 5.2 table; Protocol §4 tag checks live in `inbound` (the E-1 decoder calls through); fixture loader is `#[cfg(any(test, feature = "fixtures"))]`; `RelayLink` / outbox / `ModelClient` (`BuzzAgentModel` via `Llm::complete_with`, `Recorded`); `judge` (15 gates incl. `sequence`); `route`; `publish` `Permitted` chokepoint (`50009` only from `jobs_impl::done_from_talk`); `FakeRelay`; harness loader over E-1; `run` / `dry-run` / `replay` / `doctor`. Nothing drafts. |
+| E-2   | open | | | Gold cases for the four move suites and Eval § 5 (J1b, J3d, J6, J7, J8/J8b, J9, J10, J11) over River, Energy, cold; each with `why_gold`; sequence (gate first, next wave, outcome changes the plan, no invented order) and who-is-needed (`requires`, `unfilled`, skill over availability) in the first cut; vacuous-title list; model-judge prompt v1; κ procedure in `tests/eval/README.md`. Human-authored under `tests/eval/cases/` — `generate.mjs` does not emit them. |
 
 ### Waves 5–8
 
@@ -469,6 +470,18 @@ absorb an item into an unrelated slice.
   it on every path that leaves `done` (reopen, and any later rewrite of
   a live item). The 7-day window reads that column, not the command's
   `created_at`.
+- **E-2 gold uses `imagine` overlays** for lines and profile skills the
+  E-1 seeds do not hold (the hall-roof grant, a brand-money rejection,
+  Rafi's `grant-writing`, a new second-island line with no shortlist).
+  A-2 should turn the ones it runs into sequence-style deltas rather than
+  re-describing them in prompts. The first-cut sequence and who-is-needed
+  cases already bind the E-1 snapshots (`weekday-hall`, `iberia-pilot`,
+  `hall-electrics`, `who-is-needed/{river,energy}.json`).
+- **`DriDraft.suggested` is required** on the wire (Protocol §4.3) while
+  Eval J1b gold allows `suggested_holder: null` with `unfilled`. E-2
+  records the nobody-fits case at intent level and does not invent a
+  payload that the schema cannot parse. A later schema/Protocol sentence
+  — not this slice — should name that shape.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
