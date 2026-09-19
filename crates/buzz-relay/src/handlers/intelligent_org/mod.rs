@@ -12,7 +12,8 @@
 //!   execution dispatch (§5.3);
 //! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
 //!   `shapers` execution rows, `proposals` for `50002`/`50004`/`50015`/`50003`
-//!   and the `direction` / `dri` execution rows (`project` execution is R-5a).
+//!   and the `direction` / `dri` execution rows, `work` for `project`
+//!   execution and `50005`–`50008` (`50009`–`50011` / `50018` are R-5b).
 //!
 //! Client `EVENT`s of `39100–39105` never reach here: ingest rejects them as
 //! `restricted: relay-only kind` before verification.
@@ -24,14 +25,16 @@ mod postgres_tests;
 mod proposals;
 mod shapers;
 pub mod state;
+mod work;
 
 use std::sync::Arc;
 
 use buzz_core::intelligent_org::{tag, Shapers};
 use buzz_core::kind::{
-    is_intelligent_org_command_kind, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE,
-    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE,
-    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE,
+    is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION_PROPOSE,
+    KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
+    KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
+    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -71,6 +74,10 @@ pub async fn handle_command(
         KIND_IO_DIRECTION_PROPOSE => proposals::direction_propose(&cmd).await,
         KIND_IO_PROJECT_PROPOSE => proposals::project_propose(&cmd).await,
         KIND_IO_DRI_PROPOSE => proposals::dri_propose(&cmd).await,
+        KIND_IO_TICKET_CREATE => work::create(&cmd).await,
+        KIND_IO_OFFER => work::offer(&cmd).await,
+        KIND_IO_ACCEPT => work::accept(&cmd).await,
+        KIND_IO_DECLINE => work::decline(&cmd).await,
         KIND_IO_VOTE => proposals::vote(&cmd).await,
         KIND_IO_SHAPER_ACCEPT => shapers::accept(&cmd).await,
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,

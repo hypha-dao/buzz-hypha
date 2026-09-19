@@ -1,17 +1,18 @@
-//! Who may send which Shapers and proposal command (Protocol §3.2, §4.5,
-//! §5.2, §5.3, §6.4).
+//! Who may send which Shapers, proposal, and work-tree command (Protocol
+//! §3.2, §4.5, §5.1, §5.2, §5.3, §6.4).
 //!
-//! Pure decisions over the live `39103` and `39102` content: no database, no
-//! clock other than the `now` the caller passes. Facts that need a table —
-//! is the actor the owner, is a pubkey a member — arrive as booleans. A
-//! refusal carries the exact wire text §3.2 fixes — `restricted: <reason>`
-//! when the author lacks the role, `invalid: <reason>` when the target is
-//! in the wrong state — so the handlers in [`super::shapers`] and
-//! [`super::proposals`] only route and write.
+//! Pure decisions over the live `39103`, `39102`, `39101`, and `39100`
+//! content: no database, no clock other than the `now` the caller passes.
+//! Facts that need a table — is the actor the owner, is a pubkey a member,
+//! which siblings exist — arrive as values. A refusal carries the exact
+//! wire text §3.2 fixes — `restricted: <reason>` when the author lacks the
+//! role, `invalid: <reason>` when the target is in the wrong state — so the
+//! handlers in [`super::shapers`], [`super::proposals`], and [`super::work`]
+//! only route and write.
 
 use buzz_core::intelligent_org::{
-    DecisionRule, DirectionProposeContent, DirectionSlug, OfferedSeat, Proposal, ProposalStatus,
-    RulesContent, Shapers, ShapersOp, WorkItem,
+    DecisionRule, DirectionArtifact, DirectionProposeContent, DirectionSlug, OfferedSeat, Proposal,
+    ProposalStatus, RulesContent, Shapers, ShapersOp, WorkItem, WorkItemState,
 };
 
 use crate::handlers::ingest::IngestError;
@@ -204,6 +205,132 @@ pub fn open_dri(item: &WorkItem) -> Result<(), IngestError> {
         return Err(invalid("item already has a holder"));
     }
     Ok(())
+}
+
+/// Title and brief on a `project` / `ticket` command: both required.
+pub fn work_copy(title: &str, brief: &str) -> Result<(), IngestError> {
+    if title.trim().is_empty() {
+        return Err(invalid("title is required"));
+    }
+    if brief.trim().is_empty() {
+        return Err(invalid("brief is required"));
+    }
+    Ok(())
+}
+
+/// §5.1 rule 6: item content may not carry a money field.
+pub fn money_fields(content: &serde_json::Value) -> Result<(), IngestError> {
+    let Some(object) = content.as_object() else {
+        return Ok(());
+    };
+    for key in ["amount", "budget", "pot", "currency"] {
+        if object.contains_key(key) {
+            return Err(invalid("money fields are not allowed"));
+        }
+    }
+    Ok(())
+}
+
+/// An `objective_ref` must name a line on the live `39100` objectives head
+/// (`objectives@<version>#<line-id>`).
+pub fn objective_ref(value: &str, head: Option<&DirectionArtifact>) -> Result<(), IngestError> {
+    let Some((version, line_id)) = parse_objective_ref(value) else {
+        return Err(invalid("objective_ref not a live line"));
+    };
+    let Some(head) = head else {
+        return Err(invalid("objective_ref not a live line"));
+    };
+    if head.slug != DirectionSlug::Objectives || head.version != version {
+        return Err(invalid("objective_ref not a live line"));
+    }
+    if head.lines.iter().any(|line| line.id == line_id) {
+        Ok(())
+    } else {
+        Err(invalid("objective_ref not a live line"))
+    }
+}
+
+fn parse_objective_ref(value: &str) -> Option<(u32, &str)> {
+    let rest = value.strip_prefix("objectives@")?;
+    let (version, line) = rest.split_once('#')?;
+    let version = version.parse().ok()?;
+    if line.is_empty() {
+        return None;
+    }
+    Some((version, line))
+}
+
+/// Whether `actor` holds `item` (`accepted` / `in_review` and `dri = actor`).
+pub fn is_holder(item: &WorkItem, actor: &str) -> bool {
+    matches!(
+        item.state,
+        WorkItemState::Accepted | WorkItemState::InReview
+    ) && item.dri.as_deref() == Some(actor)
+}
+
+/// `io_ticket_create` (§5.1 rule 1): only the holder of the parent.
+pub fn create_child(parent: &WorkItem, actor: &str) -> Result<(), IngestError> {
+    if is_holder(parent, actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the holder"))
+    }
+}
+
+/// `after` on `50005`: every id is a live or done sibling under `parent`.
+pub fn after_siblings(
+    after: &[String],
+    parent: &str,
+    siblings: &[WorkItem],
+) -> Result<(), IngestError> {
+    for id in after {
+        let sibling = siblings.iter().find(|item| item.id == *id);
+        let Some(sibling) = sibling else {
+            return Err(invalid("after not a sibling"));
+        };
+        if sibling.parent.as_deref() != Some(parent) {
+            return Err(invalid("after not a sibling"));
+        }
+        // Every §5.1 state is live or done; existence as a sibling is the check.
+        let _ = sibling.state;
+    }
+    Ok(())
+}
+
+/// `io_offer` (§3.2): a Shaper for a root; the parent holder for a child.
+/// The item must be `open`.
+pub fn offer(
+    item: &WorkItem,
+    parent: Option<&WorkItem>,
+    shapers: &Shapers,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if item.state != WorkItemState::Open {
+        return Err(invalid("item is not open"));
+    }
+    if item.parent.is_none() {
+        require_shaper(shapers, actor)
+    } else {
+        let parent = parent.ok_or_else(|| invalid("unknown parent"))?;
+        if is_holder(parent, actor) {
+            Ok(())
+        } else {
+            Err(restricted("not the holder"))
+        }
+    }
+}
+
+/// `io_accept` / `io_decline` (§5.1 rule 2): only `offered_to`, and only
+/// while the item is `offered`.
+pub fn accept_or_decline(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
+    if item.state != WorkItemState::Offered {
+        return Err(invalid("item is not offered"));
+    }
+    if item.offered_to.as_deref() == Some(actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the offered person"))
+    }
 }
 
 /// `io_vote` (§5.3): from a pubkey in the proposal's frozen `eligible` that
@@ -634,5 +761,161 @@ mod tests {
         );
         assert_eq!(message(require_member(false)), "restricted: not a member");
         assert!(require_member(true).is_ok());
+    }
+
+    fn item(state: WorkItemState, dri: Option<String>, parent: Option<&str>) -> WorkItem {
+        WorkItem {
+            id: "child".into(),
+            parent: parent.map(str::to_owned),
+            root: "root".into(),
+            depth: if parent.is_some() { 1 } else { 0 },
+            path: if parent.is_some() {
+                vec!["root".into()]
+            } else {
+                vec![]
+            },
+            title: "t".into(),
+            brief: "b".into(),
+            state,
+            dri,
+            offered_to: None,
+            offered_by: None,
+            offered_at: None,
+            due_at: 1,
+            approved_at: None,
+            objective_ref: None,
+            created_from: pk(8),
+            draft: None,
+            done_receipt: None,
+            closed_by: None,
+            children: buzz_core::intelligent_org::ChildrenCounts::default(),
+            home: None,
+            branch: None,
+            after: vec![],
+            last_progress: None,
+        }
+    }
+
+    #[test]
+    fn money_fields_and_work_copy_and_objective_ref() {
+        assert!(work_copy("t", "b").is_ok());
+        assert_eq!(message(work_copy("  ", "b")), "invalid: title is required");
+        assert_eq!(message(work_copy("t", "")), "invalid: brief is required");
+        assert!(money_fields(&serde_json::json!({"title": "t"})).is_ok());
+        for key in ["amount", "budget", "pot", "currency"] {
+            assert_eq!(
+                message(money_fields(&serde_json::json!({ key: "1" }))),
+                "invalid: money fields are not allowed",
+                "{key}"
+            );
+        }
+        let head = DirectionArtifact {
+            slug: DirectionSlug::Objectives,
+            version: 3,
+            body: "b".into(),
+            lines: vec![buzz_core::intelligent_org::DirectionLine {
+                n: 1,
+                id: "l_7f3a".into(),
+                text: "Weekday hall".into(),
+                date: None,
+            }],
+            confirmed_by: pk(1),
+            confirmed_at: 1,
+            proposed_by: pk(1),
+            proposal: "prop".into(),
+            prev: None,
+        };
+        assert!(objective_ref("objectives@3#l_7f3a", Some(&head)).is_ok());
+        assert_eq!(
+            message(objective_ref("objectives@3#l_nope", Some(&head))),
+            "invalid: objective_ref not a live line"
+        );
+        assert_eq!(
+            message(objective_ref("objectives@2#l_7f3a", Some(&head))),
+            "invalid: objective_ref not a live line"
+        );
+        assert_eq!(
+            message(objective_ref("objectives@3#l_7f3a", None)),
+            "invalid: objective_ref not a live line"
+        );
+        assert_eq!(
+            message(objective_ref("not-a-ref", Some(&head))),
+            "invalid: objective_ref not a live line"
+        );
+    }
+
+    #[test]
+    fn only_the_holder_creates_children_and_after_must_be_a_sibling() {
+        let held = item(WorkItemState::Accepted, Some(pk(1)), None);
+        assert!(create_child(&held, &pk(1)).is_ok());
+        assert_eq!(
+            message(create_child(&held, &pk(2))),
+            "restricted: not the holder"
+        );
+        let open = item(WorkItemState::Open, None, None);
+        assert_eq!(
+            message(create_child(&open, &pk(1))),
+            "restricted: not the holder"
+        );
+
+        let sibling = item(WorkItemState::Done, Some(pk(1)), Some("root"));
+        let mut sibling = sibling;
+        sibling.id = "sib".into();
+        assert!(after_siblings(&["sib".into()], "root", &[sibling.clone()]).is_ok());
+        assert_eq!(
+            message(after_siblings(
+                &["missing".into()],
+                "root",
+                &[sibling.clone()]
+            )),
+            "invalid: after not a sibling"
+        );
+        let mut other_parent = sibling;
+        other_parent.parent = Some("other".into());
+        assert_eq!(
+            message(after_siblings(&["sib".into()], "root", &[other_parent])),
+            "invalid: after not a sibling"
+        );
+    }
+
+    #[test]
+    fn offer_and_accept_follow_the_named_person_and_the_holder() {
+        let two = shapers(&[1, 2], &[]);
+        let mut root = item(WorkItemState::Open, None, None);
+        root.id = "root".into();
+        root.root = "root".into();
+        assert!(offer(&root, None, &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(offer(&root, None, &two, &pk(9))),
+            "restricted: not a Shaper"
+        );
+        root.state = WorkItemState::Accepted;
+        root.dri = Some(pk(1));
+        assert_eq!(
+            message(offer(&root, None, &two, &pk(1))),
+            "invalid: item is not open"
+        );
+
+        let parent = item(WorkItemState::Accepted, Some(pk(1)), None);
+        let child = item(WorkItemState::Open, None, Some("root"));
+        assert!(offer(&child, Some(&parent), &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(offer(&child, Some(&parent), &two, &pk(2))),
+            "restricted: not the holder"
+        );
+
+        let mut offered = child;
+        offered.state = WorkItemState::Offered;
+        offered.offered_to = Some(pk(3));
+        assert!(accept_or_decline(&offered, &pk(3)).is_ok());
+        assert_eq!(
+            message(accept_or_decline(&offered, &pk(1))),
+            "restricted: not the offered person"
+        );
+        offered.state = WorkItemState::Open;
+        assert_eq!(
+            message(accept_or_decline(&offered, &pk(3))),
+            "invalid: item is not offered"
+        );
     }
 }

@@ -2,8 +2,9 @@
 //! slice at a time. This file holds the R-3 lines — the executor spine and
 //! the Shapers — the R-4a lines — `shapers` proposals, votes, and their
 //! execution — the R-4b lines — `50002` / `50004`-opening / `50015`,
-//! `50003` on those kinds, and `direction` / `dri` execution — the R-8
-//! lines — bootstrap backfill of `39103.agent` and the `shapers/agent`
+//! `50003` on those kinds, and `direction` / `dri` execution — the R-5a
+//! lines — `project` execution and `50005`–`50008` — the R-8 lines —
+//! bootstrap backfill of `39103.agent` and the `shapers/agent`
 //! membership move — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through
 //! the relay's real HTTP door (`POST /events`, `POST /query`,
@@ -15,7 +16,8 @@
 //! process is shared with the other e2e suites. The only rows a test seeds
 //! directly are the ones an operator would: the community, its relay
 //! members, and the hosted org-agent key in `io_hosted_agents`. Everything
-//! else — including an offered seat — is reached by real commands.
+//! else — including an offered seat and a work-tree root — is reached by
+//! real commands.
 //!
 //! # Running
 //!
@@ -28,13 +30,17 @@
 //! the dev Postgres) point at the relay under test. `*.localhost` hosts are
 //! sent in the `Host` header, so no DNS is needed.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use buzz_core::kind::{
-    KIND_DM_OPEN, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE,
-    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE,
-    KIND_IO_PROPOSAL, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
-    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
+    KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE,
+    KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
+    KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
+    KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use reqwest::StatusCode;
@@ -94,11 +100,19 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
 
 /// Sign as a client would. `allow_self_tagging` matters: the bootstrap names
 /// the sender in its own `p` tag, which nostr's builder drops by default.
+/// `created_at` ticks so two identical commands in the same second (a
+/// re-offer after decline) are not a NIP-01 replay.
 fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+    static TICK: AtomicU64 = AtomicU64::new(0);
+    let created_at = Timestamp::from(
+        Timestamp::now()
+            .as_secs()
+            .saturating_add(TICK.fetch_add(1, Ordering::Relaxed)),
+    );
     EventBuilder::new(Kind::Custom(kind as u16), content)
         .tags(tags)
         .allow_self_tagging()
-        .custom_created_at(Timestamp::now())
+        .custom_created_at(created_at)
         .sign_with_keys(keys)
         .expect("sign")
 }
@@ -467,55 +481,55 @@ impl Community {
         serde_json::from_str(&message).expect("project reply json")
     }
 
-    /// Seed a work item by SQL — R-5a is the command path; DRI proofs need
-    /// an unheld item before that lands.
-    async fn seed_item(
-        &self,
-        id: Uuid,
-        state: &str,
-        dri: Option<&Keys>,
-        offered_to: Option<&Keys>,
-    ) {
-        let dri_bytes = dri.map(|k| k.public_key().to_bytes().to_vec());
-        let offered_bytes = offered_to.map(|k| k.public_key().to_bytes().to_vec());
-        let content = json!({
-            "id": id,
-            "parent": null,
-            "root": id,
-            "depth": 0,
-            "path": [id],
-            "title": "Weekday hall",
-            "brief": "Book the hall",
-            "state": state,
-            "dri": dri.map(|k| k.public_key().to_hex()),
-            "offered_to": offered_to.map(|k| k.public_key().to_hex()),
-            "offered_by": offered_to.map(|_| "agent"),
-            "offered_at": offered_to.map(|_| 1_700_000_000u64),
-            "due_at": 1_800_000_000u64,
-            "created_from": hex::encode([0x22; 32]),
-            "draft": null,
-            "done_receipt": null,
-            "closed_by": null,
-            "children": { "open": 0, "offered": 0, "accepted": 0, "done": 0 },
-        });
-        sqlx::query(
-            "INSERT INTO io_work_items \
-                (community_id, id, root_id, parent_id, depth, kind, state, dri, offered_to, \
-                 offered_at, due_at, content, event_id) \
-             VALUES ($1, $2, $2, NULL, 0, 'project', $3, $4, $5, $6, to_timestamp(1800000000), \
-                     $7, $8)",
+    fn ticket_event(keys: &Keys, parent: &str, offer_to: Option<&str>, content: &str) -> Event {
+        let mut tags = vec![tag(["u", parent])];
+        if let Some(p) = offer_to {
+            tags.push(tag(["p", p]));
+        }
+        signed(keys, KIND_IO_TICKET_CREATE, tags, content)
+    }
+
+    fn offer_event(keys: &Keys, item: &str, p: &str) -> Event {
+        signed(
+            keys,
+            KIND_IO_OFFER,
+            vec![tag(["i", item]), tag(["p", p])],
+            "{}",
         )
-        .bind(self.id)
-        .bind(id)
-        .bind(state)
-        .bind(dri_bytes)
-        .bind(offered_bytes)
-        .bind(offered_to.and_then(|_| chrono::DateTime::from_timestamp(1_700_000_000, 0)))
-        .bind(content)
-        .bind(vec![0x11u8; 32])
-        .execute(&self.pool)
-        .await
-        .expect("seed work item");
+    }
+
+    fn accept_event(keys: &Keys, item: &str) -> Event {
+        signed(keys, KIND_IO_ACCEPT, vec![tag(["i", item])], "{}")
+    }
+
+    fn decline_event(keys: &Keys, item: &str) -> Event {
+        signed(keys, KIND_IO_DECLINE, vec![tag(["i", item])], "{}")
+    }
+
+    async fn pass_project(&self, keys: &Keys, content: &str) -> (String, Uuid) {
+        let before = self
+            .query(keys, json!({ "kinds": [KIND_IO_WORK_ITEM] }))
+            .await;
+        let before_ids: Vec<String> = before
+            .iter()
+            .filter_map(|e| e["content"].as_str())
+            .filter_map(|c| serde_json::from_str::<Value>(c).ok())
+            .filter_map(|c| c["id"].as_str().map(str::to_owned))
+            .collect();
+        let reply = self.project_ok(keys, content, true).await;
+        assert_eq!(reply["status"], "passed", "project must pass: {reply}");
+        let proposal = reply["proposal"].as_str().expect("id").to_owned();
+        let after = self
+            .query(keys, json!({ "kinds": [KIND_IO_WORK_ITEM] }))
+            .await;
+        let id = after
+            .iter()
+            .filter_map(|e| e["content"].as_str())
+            .filter_map(|c| serde_json::from_str::<Value>(c).ok())
+            .filter_map(|c| c["id"].as_str().map(str::to_owned))
+            .find(|id| !before_ids.contains(id))
+            .expect("passed project opens a root");
+        (proposal, Uuid::parse_str(&id).expect("item uuid"))
     }
 
     async fn item_row(&self, id: Uuid) -> Option<(String, Option<String>, Option<String>)> {
@@ -1762,17 +1776,42 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     let second = Keys::generate();
     c.seed_member(&second, "member").await;
     let second_hex = second.public_key().to_hex();
-    c.add_shaper(&c.owner, &[], &second).await;
     let member = Keys::generate();
     c.seed_member(&member, "member").await;
     let member_hex = member.public_key().to_hex();
-    let open_id = Uuid::new_v4();
-    let offered_id = Uuid::new_v4();
-    let held_id = Uuid::new_v4();
-    c.seed_item(open_id, "open", None, None).await;
-    c.seed_item(offered_id, "offered", None, Some(&member))
+    // Roots open under D1 (one Shaper). Seat the second Shaper after, so
+    // `pass_project`'s opener-vote still passes.
+    let (_, open_id) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
         .await;
-    c.seed_item(held_id, "accepted", Some(&member), None).await;
+    let (_, offered_id) = c
+        .pass_project(
+            &c.owner,
+            &format!(
+                r#"{{"title":"Offered hall","brief":"Offer it","due_at":1800000000,"suggested_dri":"{member_hex}"}}"#
+            ),
+        )
+        .await;
+    let (_, held_id) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Held hall","brief":"Hold it","due_at":1800000000}"#,
+        )
+        .await;
+    c.submit_ok(
+        &c.owner,
+        &Community::offer_event(&c.owner, &held_id.to_string(), &member_hex),
+    )
+    .await;
+    c.submit_ok(
+        &member,
+        &Community::accept_event(&member, &held_id.to_string()),
+    )
+    .await;
+    c.add_shaper(&c.owner, &[], &second).await;
 
     c.submit_rejected(
         &c.owner,
@@ -1857,11 +1896,12 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
 
 #[tokio::test]
 #[ignore]
-async fn a_passing_project_vote_is_refused_until_r5a() {
+async fn a_passed_project_opens_a_root_in_open_or_offered() {
     let c = Community::fresh().await;
     c.bootstrap().await;
     let member = Keys::generate();
     c.seed_member(&member, "member").await;
+    let member_hex = member.public_key().to_hex();
     let stranger = Keys::generate();
     let payload = r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#;
 
@@ -1871,6 +1911,36 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
         "restricted: not a member",
     )
     .await;
+    c.submit_rejected(
+        &c.owner,
+        &Community::project_event(
+            &c.owner,
+            r#"{"title":"t","brief":"b","due_at":1,"budget":"10"}"#,
+            true,
+        ),
+        "invalid: money fields are not allowed",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &Community::project_event(
+            &c.owner,
+            r#"{"title":"t","brief":"b","due_at":1,"objective_ref":"objectives@1#l_7f3a"}"#,
+            true,
+        ),
+        "invalid: objective_ref not a live line",
+    )
+    .await;
+
+    c.direction_ok(
+        &c.owner,
+        "objectives",
+        0,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        true,
+    )
+    .await;
+
     let opened = c.project_ok(&member, payload, false).await;
     assert_eq!(opened["status"], "open");
     let waiting = opened["proposal"].as_str().expect("id").to_owned();
@@ -1878,27 +1948,189 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
         content(&c.proposal_state(&waiting).await)["kind"],
         "project"
     );
-    c.submit_rejected(
-        &c.owner,
-        &Community::project_event(
-            &c.owner,
-            r#"{"title":"Weekday hall","brief":"Book it now","due_at":1800000000}"#,
-            true,
-        ),
-        "invalid: execution of project proposals is not implemented yet",
-    )
-    .await;
-    c.submit_rejected(
-        &c.owner,
-        &Community::vote_event(&c.owner, &waiting, "agree", "{}"),
-        "invalid: execution of project proposals is not implemented yet",
-    )
-    .await;
-    assert_eq!(content(&c.proposal_state(&waiting).await)["status"], "open");
-    assert!(c
+    assert_eq!(
+        c.vote_ok(&c.owner, &waiting, "agree", "{}").await["status"],
+        "passed"
+    );
+    let work = c
         .query(&c.owner, json!({ "kinds": [KIND_IO_WORK_ITEM] }))
-        .await
-        .is_empty());
+        .await;
+    assert_eq!(work.len(), 1);
+    let root = content(&work[0]);
+    assert_eq!(root["state"], "open");
+    assert_eq!(root["title"], "Weekday hall");
+    assert!(root.get("home").is_none(), "project home is R-9a");
+    assert!(root.get("approved_at").is_some());
+    let root_id = Uuid::parse_str(root["id"].as_str().expect("id")).expect("uuid");
+    assert_eq!(c.item_row(root_id).await, Some(("open".into(), None, None)));
+
+    let (_, offered_id) = c
+        .pass_project(
+            &c.owner,
+            &format!(
+                r#"{{"title":"Offered hall","brief":"Offer it","due_at":1800000000,"suggested_dri":"{member_hex}","objective_ref":"objectives@1#l_7f3a"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(
+        c.item_row(offered_id).await,
+        Some(("offered".into(), None, Some(member_hex)))
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn only_the_holder_creates_children_and_only_offered_to_accepts() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let member = Keys::generate();
+    c.seed_member(&member, "member").await;
+    let member_hex = member.public_key().to_hex();
+    let other = Keys::generate();
+    c.seed_member(&other, "member").await;
+    let (_, root) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+
+    c.submit_rejected(
+        &c.owner,
+        &Community::ticket_event(
+            &c.owner,
+            &root.to_string(),
+            None,
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+        ),
+        "restricted: not the holder",
+    )
+    .await;
+
+    c.submit_ok(
+        &c.owner,
+        &Community::offer_event(&c.owner, &root.to_string(), &member_hex),
+    )
+    .await;
+    c.submit_rejected(
+        &other,
+        &Community::accept_event(&other, &root.to_string()),
+        "restricted: not the offered person",
+    )
+    .await;
+    c.submit_ok(
+        &member,
+        &Community::accept_event(&member, &root.to_string()),
+    )
+    .await;
+    assert_eq!(
+        c.item_row(root).await,
+        Some(("accepted".into(), Some(member_hex.clone()), None))
+    );
+
+    c.submit_rejected(
+        &c.owner,
+        &Community::ticket_event(
+            &c.owner,
+            &root.to_string(),
+            None,
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+        ),
+        "restricted: not the holder",
+    )
+    .await;
+    c.submit_rejected(
+        &member,
+        &Community::ticket_event(
+            &member,
+            &root.to_string(),
+            None,
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001,"after":["00000000-0000-4000-8000-000000000001"]}"#,
+        ),
+        "invalid: after not a sibling",
+    )
+    .await;
+
+    let created = c
+        .submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &root.to_string(),
+                None,
+                r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+            ),
+        )
+        .await;
+    let reply: Value = serde_json::from_str(&created).expect("ticket reply");
+    let permit = reply["item"].as_str().expect("item").to_owned();
+    let work = c
+        .query(
+            &c.owner,
+            json!({ "kinds": [KIND_IO_WORK_ITEM], "#d": [permit] }),
+        )
+        .await;
+    assert_eq!(work.len(), 1);
+    assert_eq!(content(&work[0])["state"], "open");
+    assert_eq!(content(&work[0])["parent"], root.to_string());
+
+    let created = c
+        .submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &root.to_string(),
+                Some(&other.public_key().to_hex()),
+                &format!(
+                    r#"{{"title":"Build","brief":"After the permit","due_at":1800000002,"after":["{permit}"]}}"#
+                ),
+            ),
+        )
+        .await;
+    let reply: Value = serde_json::from_str(&created).expect("ticket reply");
+    let build = reply["item"].as_str().expect("item").to_owned();
+    assert_eq!(
+        content(
+            &c.query(
+                &c.owner,
+                json!({ "kinds": [KIND_IO_WORK_ITEM], "#d": [build] }),
+            )
+            .await[0]
+        )["after"],
+        json!([permit])
+    );
+    c.submit_ok(&other, &Community::accept_event(&other, &build))
+        .await;
+    assert_eq!(
+        c.item_row(Uuid::parse_str(&build).expect("uuid")).await,
+        Some(("accepted".into(), Some(other.public_key().to_hex()), None))
+    );
+
+    c.submit_ok(
+        &member,
+        &Community::offer_event(&member, &permit, &other.public_key().to_hex()),
+    )
+    .await;
+    c.submit_ok(&other, &Community::decline_event(&other, &permit))
+        .await;
+    assert_eq!(
+        c.item_row(Uuid::parse_str(&permit).expect("uuid")).await,
+        Some(("open".into(), None, None))
+    );
+
+    for kind in [
+        KIND_IO_DONE,
+        KIND_IO_RELEASE,
+        KIND_IO_SET_DUE,
+        KIND_IO_REOPEN,
+    ] {
+        c.submit_rejected(
+            &member,
+            &signed(&member, kind, vec![tag(["i", &root.to_string()])], "{}"),
+            &format!("invalid: kind {kind} is not implemented yet"),
+        )
+        .await;
+    }
 }
 
 // ── R-8: bootstrap backfill and shapers/agent membership move ────────────────

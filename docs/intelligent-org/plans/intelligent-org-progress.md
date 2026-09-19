@@ -28,7 +28,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-3   | merged | [#9](https://github.com/hypha-dao/buzz-hypha/pull/9) | `1f6767a49` | `handlers/intelligent_org/{mod,apply,authorize,state,shapers}.rs`; `apply` is the one write path (projection row, relay-signed `39xxx`, ledger, `#shapers` roster) on the `persist_command_event` transaction; `50001` bootstrap, `50019`, `50020`; ingest scope + executor routing for `50001–50021`; `buzz-db/src/store/relay_rooms.rs` (transaction-scoped room + roster sync). Six Postgres-lane proofs through `ingest_event` and six E2E through `POST /events`. |
 | R-4a  | merged | [#13](https://github.com/hypha-dao/buzz-hypha/pull/13) | `2b33bd6af` | `handlers/intelligent_org/proposals.rs` (open with frozen `eligible`/`needed`, D1 opener vote, `50003`, tally, execution dispatch, one `apply` per settle); `shapers.rs` opens add / remove / rules / agent and executes them against the live `39103` (`shaper_offered`, `shaper_removed`, `rules_changed`, `agent_changed`); `authorize::{open_shapers, agent_candidate, rules_content, vote}`; `apply` writes `io_votes` from the `39102` projection; `store::get_proposal_opening_receipt`. Money and join kinds refused with the fixed reasons. Seven Postgres-lane proofs through `ingest_event`, five E2E through `POST /events`; the R-3 offered-seat SQL seed now goes through a real passed add. `direction`/`dri`/`project` votes that would pass are refused `invalid: execution of … not implemented yet` until R-4b/R-5a. |
 | R-4b  | merged | [#23](https://github.com/hypha-dao/buzz-hypha/pull/23) | `761f01393` | `50002` / `50004`-opening / `50015` and `50003` on those kinds; `direction` / `dri` execution through `apply` (`39100` v`base+1` + `prev`, `39101` accepted + offer withdrawn). Project execution still refused until R-5a. Three Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
-| R-5a  |        |    |           | |
+| R-5a  | open | [#28](https://github.com/hypha-dao/buzz-hypha/pull/28) |           | `project` execution + `50005`–`50008` (create / offer / accept / decline). Root opens `open` or `offered` to `suggested_dri`; `approved_at` set; no home (R-9a). §5.1 create/offer/accept/decline invariants: holder-only children, only `offered_to` accepts/declines, money fields refused, `after` as live-or-done siblings, `objective_ref` against the live `39100` line, children counters (parent `39101` rewritten). `50009`–`50011` / `50018` still refused. R-4b DRI proofs now open roots through a passed `project`. |
 | R-5b  |        |    |           | |
 | R-6   |        |    |           | |
 | R-7   |        |    |           | |
@@ -383,11 +383,14 @@ absorb an item into an unrelated slice.
   filter is `{kinds:[39102], "#t":["direction"], "#s":["passed"]}`. C-3
   and the desktop Direction page should not assume they are the same REQ.
   C-2 followed the verb table.
-- **DRI proofs seed `io_work_items` by SQL.** R-4b can name a holder for an
+- ~~**DRI proofs seed `io_work_items` by SQL.** R-4b can name a holder for an
   item that exists; it cannot create one. The Postgres and E2E DRI tests
   insert a projection row the way R-5a will, then drive `50015`/`50003`
   through `ingest_event` / `POST /events`. Strike this when R-5a lands and
-  those tests open a root by a passed `project` instead.
+  those tests open a root by a passed `project` instead.~~ Struck in R-5a:
+  `a_passed_dri_sets_the_holder_and_the_subject_cannot_vote` (Postgres and
+  E2E) opens its roots through a passed `project` (open / `suggested_dri` /
+  offer+accept).
 - **Two `direction` proposals on the same `base`:** the first to pass writes
   the version; the second passing vote is refused `invalid: stale base` and
   the proposal stays `open` (nothing written). Same shape as R-4a's
@@ -456,6 +459,15 @@ absorb an item into an unrelated slice.
 - **`50009` from talk is the chokepoint only.** `jobs_impl::done_from_talk`
   signs when `IO_DONE_FROM_TALK_ENABLED` is set; the Protocol §5.5
   check-list is A-2+.
+- **A child create / offer / accept / decline rewrites the parent's
+  `39101`** so `children` stays on the live event the Work door will read.
+  §5.1 rule 7 says one `39101` per command; the live head count still
+  grows by one item (the parent is replaced, not added). R-5b's done /
+  release should keep the same parent rewrite.
+- **`50009`–`50011` / `50018` stay refused**
+  (`invalid: kind {k} is not implemented yet`) until R-5b.
+- **Project home is still R-9a.** A passed `project` writes no room and
+  leaves `39101.home` absent.
 
 ---
 
