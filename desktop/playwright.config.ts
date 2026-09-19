@@ -178,6 +178,7 @@ export default defineConfig({
         "**/needs-restart-screenshots.spec.ts",
         "**/team-catalog-screenshots.spec.ts",
         "**/org-agent-defaults.spec.ts",
+        "**/org-skeleton.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -11,6 +11,10 @@ import { Route as remindersRouteImport } from "./routes/reminders";
 import { Route as pulseRouteImport } from "./routes/pulse";
 import { Route as projectsRouteImport } from "./routes/projects";
 import { Route as agentsRouteImport } from "./routes/agents";
+import { Route as orgRouteImport } from "./routes/org";
+import { Route as orgDotworkRouteImport } from "./routes/org.work";
+import { Route as orgDotmyWorkRouteImport } from "./routes/org.my-work";
+import { Route as orgDotworkDotitemIdRouteImport } from "./routes/org.work.$itemId";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
@@ -48,6 +52,26 @@ const agentsRoute = agentsRouteImport.update({
   path: "/agents",
   getParentRoute: () => rootRouteImport,
 } as any);
+const orgRoute = orgRouteImport.update({
+  id: "/org",
+  path: "/org",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgDotworkRoute = orgDotworkRouteImport.update({
+  id: "/org/work",
+  path: "/org/work",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgDotmyWorkRoute = orgDotmyWorkRouteImport.update({
+  id: "/org/my-work",
+  path: "/org/my-work",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgDotworkDotitemIdRoute = orgDotworkDotitemIdRouteImport.update({
+  id: "/org/work/$itemId",
+  path: "/org/work/$itemId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const indexRoute = indexRouteImport.update({
   id: "/",
   path: "/",
@@ -83,6 +107,10 @@ const channelsDotchannelIdDotpostsDotpostIdRoute =
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/org": typeof orgRoute;
+  "/org/work": typeof orgDotworkRoute;
+  "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -97,6 +125,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/org": typeof orgRoute;
+  "/org/work": typeof orgDotworkRoute;
+  "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -112,6 +144,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/org": typeof orgRoute;
+  "/org/work": typeof orgDotworkRoute;
+  "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
@@ -128,6 +164,10 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/agents"
+    | "/org"
+    | "/org/work"
+    | "/org/my-work"
+    | "/org/work/$itemId"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -142,6 +182,10 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/agents"
+    | "/org"
+    | "/org/work"
+    | "/org/my-work"
+    | "/org/work/$itemId"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -156,6 +200,10 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/agents"
+    | "/org"
+    | "/org/work"
+    | "/org/my-work"
+    | "/org/work/$itemId"
     | "/projects"
     | "/pulse"
     | "/reminders"
@@ -171,6 +219,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   agentsRoute: typeof agentsRoute;
+  orgRoute: typeof orgRoute;
+  orgDotworkRoute: typeof orgDotworkRoute;
+  orgDotmyWorkRoute: typeof orgDotmyWorkRoute;
+  orgDotworkDotitemIdRoute: typeof orgDotworkDotitemIdRoute;
   projectsRoute: typeof projectsRoute;
   pulseRoute: typeof pulseRoute;
   remindersRoute: typeof remindersRoute;
@@ -227,6 +279,34 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof agentsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/org": {
+      id: "/org";
+      path: "/org";
+      fullPath: "/org";
+      preLoaderRoute: typeof orgRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org/work": {
+      id: "/org/work";
+      path: "/org/work";
+      fullPath: "/org/work";
+      preLoaderRoute: typeof orgDotworkRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org/my-work": {
+      id: "/org/my-work";
+      path: "/org/my-work";
+      fullPath: "/org/my-work";
+      preLoaderRoute: typeof orgDotmyWorkRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org/work/$itemId": {
+      id: "/org/work/$itemId";
+      path: "/org/work/$itemId";
+      fullPath: "/org/work/$itemId";
+      preLoaderRoute: typeof orgDotworkDotitemIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/": {
       id: "/";
       path: "/";
@@ -275,6 +355,10 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   agentsRoute: agentsRoute,
+  orgRoute: orgRoute,
+  orgDotworkRoute: orgDotworkRoute,
+  orgDotmyWorkRoute: orgDotmyWorkRoute,
+  orgDotworkDotitemIdRoute: orgDotworkDotitemIdRoute,
   projectsRoute: projectsRoute,
   pulseRoute: pulseRoute,
   remindersRoute: remindersRoute,

@@ -31,6 +31,7 @@ import {
 } from "@/features/agents/observerRelayStore";
 import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
+import type { OrgCommands } from "@/features/org/useOrgCommands";
 import {
   ORG_AGENT_DISPLAY_NAME,
   ORG_AGENT_DM_CHANNEL_ID,
@@ -1402,6 +1403,8 @@ declare global {
       kind: number;
       tags: string[][];
     }>;
+    /** D-0 org command hook — production builders + publish, e2e builds only. */
+    __BUZZ_E2E_ORG_COMMANDS__?: OrgCommands;
     /** Omits kind 30621 seeds while retaining standalone kind 30617 repositories. */
     __BUZZ_E2E_REPOSITORY_ONLY_PROJECTS__?: boolean;
     /** Leaves broad project enumeration pending while scoped project queries remain available. */
