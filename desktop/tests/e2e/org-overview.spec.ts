@@ -111,9 +111,13 @@ test.describe("Org Overview door (D-1)", () => {
       "opened 6",
     );
 
+    await page.getByTestId("org-tally-card").scrollIntoViewIfNeeded();
     await waitForAnimations(page);
     await page.getByTestId("org-overview").screenshot({
       path: `${SHOTS}/02-seeded-overview.png`,
+    });
+    await page.getByTestId("org-tally-card").screenshot({
+      path: `${SHOTS}/02-tally-card.png`,
     });
   });
 
@@ -126,10 +130,15 @@ test.describe("Org Overview door (D-1)", () => {
     await openOverview(page);
 
     await page.getByTestId("org-direction-propose-mission").click();
-    await expect(page.getByRole("dialog", { name: /mission/i })).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: /mission/i });
+    await expect(dialog).toBeVisible();
     await page
       .getByTestId("org-direction-body-mission")
       .fill("Keep the stall open every Saturday.");
+    await waitForAnimations(page);
+    await dialog.screenshot({
+      path: `${SHOTS}/03-direction-form.png`,
+    });
     await page.getByTestId("org-direction-submit-mission").click();
 
     const signed = await signedOfKind(page, 50002);
@@ -145,11 +154,6 @@ test.describe("Org Overview door (D-1)", () => {
     expect(JSON.parse(signed[0]?.content ?? "{}")).toMatchObject({
       body: "Keep the stall open every Saturday.",
     });
-
-    await waitForAnimations(page);
-    await page.getByTestId("org-overview").screenshot({
-      path: `${SHOTS}/03-direction-form.png`,
-    });
   });
 
   test("04 — Add a Shaper emits 50001 op=add", async ({ page }) => {
@@ -159,12 +163,15 @@ test.describe("Org Overview door (D-1)", () => {
     await openOverview(page);
 
     await page.getByTestId("org-shapers-add").press("Enter");
-    await expect(
-      page.getByRole("dialog", { name: "Add a Shaper" }),
-    ).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "Add a Shaper" });
+    await expect(dialog).toBeVisible();
     await page
       .getByTestId("org-shaper-pubkey")
       .fill(OVERVIEW_ADD_SHAPER_PUBKEY);
+    await waitForAnimations(page);
+    await dialog.screenshot({
+      path: `${SHOTS}/04-add-shaper.png`,
+    });
     await page.getByTestId("org-shaper-add-submit").click();
 
     const signed = await signedOfKind(page, 50001);
@@ -177,11 +184,6 @@ test.describe("Org Overview door (D-1)", () => {
         ["vote", "agree"],
       ]),
     );
-
-    await waitForAnimations(page);
-    await page.getByTestId("org-shapers-card").screenshot({
-      path: `${SHOTS}/04-add-shaper.png`,
-    });
   });
 
   test("05 — direction page uses the §6.5 history REQ", async ({ page }) => {

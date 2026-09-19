@@ -475,6 +475,12 @@ absorb an item into an unrelated slice.
   taps exist.
 - **`Adding org-overview.spec.ts` re-cuts the Playwright smoke shards**
   the same way D-0 / D-5 did. Judge shards by which specs failed.
+- **`mock.org.events` is also on in-flight D-3 (#35).** D-1 serves
+  `39100` / `39101` / `39102` / `50103` from `getConfig()?.mock?.org?.events`
+  on the REQ path. D-3 stores the same seed field in `mockOrgEvents` for
+  `39101` / `50101` / `50102` / `50001–50021`. The second merger should
+  union the kind sets on one store, not pick one handler. D-1 does not
+  rewrite D-3's Work files; D-3 does not rewrite Overview.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
