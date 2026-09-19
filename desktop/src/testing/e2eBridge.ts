@@ -70,7 +70,9 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_PROFILE_SET,
   KIND_IO_SHAPERS,
+  KIND_IO_SHAPERS_PROPOSE,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
   KIND_PERSONA,
@@ -11342,6 +11344,15 @@ function sendToMockSocket(args: {
       }
 
       recordMockUserStatus(event);
+      emitMockGlobalEvent(event);
+      sendWsText(socket.handler, ["OK", event.id, true, ""]);
+      return;
+    }
+
+    if (
+      event.kind >= KIND_IO_SHAPERS_PROPOSE &&
+      event.kind <= KIND_IO_PROFILE_SET
+    ) {
       emitMockGlobalEvent(event);
       sendWsText(socket.handler, ["OK", event.id, true, ""]);
       return;

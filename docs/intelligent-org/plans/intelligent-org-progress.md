@@ -417,6 +417,11 @@ absorb an item into an unrelated slice.
 - **Adding `org-skeleton.spec.ts` re-cuts the Playwright smoke shards**
   the same way D-5's `org-agent-defaults.spec.ts` did. Judge shards by
   which specs failed, not by shard number.
+- **The mock bridge now accepts `50001–50021` without an `h` tag.** Org
+  commands are community-scoped (Protocol §4.8); the mock's default EVENT
+  path required a channel tag. D-0's command proof (`io_done` →
+  `__BUZZ_E2E_SIGNED_EVENTS__`) needs that exemption. The real relay
+  already routes these through the R-3 ingest path.
 
 ---
 

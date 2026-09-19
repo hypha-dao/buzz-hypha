@@ -26,7 +26,7 @@ async function openApp(page: Page) {
 
 test.describe("Org doors — feature gate and skeleton (D-0)", () => {
   test("01 — gate off hides the sidebar group", async ({ page }) => {
-    await installMockBridge(page, { seedPreviewFeatures: false });
+    await installMockBridge(page, undefined, { seedPreviewFeatures: false });
     await openApp(page);
 
     await expect(page.getByTestId("sidebar-primary-menu")).toBeVisible();
@@ -53,6 +53,9 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
     await expect(page.getByTestId("chat-title")).toHaveText("Overview");
 
     await waitForAnimations(page);
+    await page.getByTestId("sidebar-primary-menu").screenshot({
+      path: `${SHOTS}/02-gate-on-shows-group.png`,
+    });
     await page.getByTestId("org-overview").screenshot({
       path: `${SHOTS}/02-overview-empty.png`,
     });
@@ -78,7 +81,7 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
     await installMockBridge(page);
     await openApp(page);
 
-    await page.goto(`/org/work/${ITEM_ID}`);
+    await page.goto(`/#/org/work/${ITEM_ID}`);
     await expect(page.getByTestId("org-work-item-empty")).toHaveText(
       "Not set yet.",
     );
