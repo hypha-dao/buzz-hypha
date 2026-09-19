@@ -11,8 +11,9 @@
 //! only route and write.
 
 use buzz_core::intelligent_org::{
-    DecisionRule, DirectionArtifact, DirectionProposeContent, DirectionSlug, OfferedSeat, Proposal,
-    ProposalStatus, RulesContent, Shapers, ShapersOp, WorkItem, WorkItemState,
+    tag, DecisionRule, DeclineReason, DirectionArtifact, DirectionProposeContent, DirectionSlug,
+    DraftDecision, OfferedSeat, Proposal, ProposalStatus, RulesContent, Shapers, ShapersOp,
+    WorkItem, WorkItemState,
 };
 
 use crate::handlers::ingest::IngestError;
@@ -463,6 +464,83 @@ pub fn accept_seat<'a>(
         return Err(invalid("the offer has lapsed"));
     }
     Ok(seat)
+}
+
+/// `50101` / `50103` (and the §5.5 exception): only `39103.agent`.
+pub fn require_agent(agent: Option<&str>, actor: &str) -> Result<(), IngestError> {
+    if agent == Some(actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the org agent"))
+    }
+}
+
+/// `50100`: the org agent, or a NIP-43 member (§3.3).
+pub fn require_member_or_agent(
+    is_member: bool,
+    agent: Option<&str>,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if agent == Some(actor) {
+        return Ok(());
+    }
+    require_member(is_member)
+}
+
+/// The command's author is the draft's `needs` party: that pubkey, or any
+/// Shaper when `needs = shaper` (§3.2).
+pub fn draft_needs_party(
+    needs: &str,
+    actor: &str,
+    actor_is_shaper: bool,
+) -> Result<(), IngestError> {
+    let ok = if needs == tag::NEEDS_SHAPER {
+        actor_is_shaper
+    } else {
+        needs == actor
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(restricted("not the draft's needs party"))
+    }
+}
+
+/// `io_draft_decide` (§5.4): a decline must carry a reason (the `io_drafts`
+/// CHECK and the Protocol's standalone decline tap).
+pub fn draft_decide(
+    outcome: DraftDecision,
+    reason: Option<DeclineReason>,
+) -> Result<(), IngestError> {
+    if outcome == DraftDecision::Decline && reason.is_none() {
+        Err(invalid("decline needs a reason"))
+    } else {
+        Ok(())
+    }
+}
+
+/// A `profile` draft may only be addressed to the pubkey it describes (§5.4a).
+pub fn profile_draft_needs(needs: &str, subject: &str) -> Result<(), IngestError> {
+    if needs == subject {
+        Ok(())
+    } else {
+        Err(invalid("profile draft not addressed to its subject"))
+    }
+}
+
+/// ISO week on `50101` / `50017`: `YYYY-Www`, week in `1..=53`.
+pub fn iso_week(week: &str) -> Result<(), IngestError> {
+    let bytes = week.as_bytes();
+    let well_formed = bytes.len() == 8
+        && bytes[..4].iter().all(u8::is_ascii_digit)
+        && &bytes[4..6] == b"-W"
+        && bytes[6..].iter().all(u8::is_ascii_digit)
+        && matches!(week[6..].parse::<u8>(), Ok(1..=53));
+    if well_formed {
+        Ok(())
+    } else {
+        Err(invalid("week must be an ISO week like 2026-W38"))
+    }
 }
 
 #[cfg(test)]
@@ -1067,6 +1145,59 @@ mod tests {
         assert_eq!(
             message(reopen(&closed, &pk(1), None, 1_000)),
             "invalid: the reopen window has closed"
+        );
+    }
+
+    #[test]
+    fn agent_and_needs_party_and_draft_decide_and_iso_week() {
+        assert!(require_agent(Some(&pk(1)), &pk(1)).is_ok());
+        assert_eq!(
+            message(require_agent(Some(&pk(1)), &pk(2))),
+            "restricted: not the org agent"
+        );
+        assert_eq!(
+            message(require_agent(None, &pk(1))),
+            "restricted: not the org agent"
+        );
+        assert!(require_member_or_agent(true, None, &pk(1)).is_ok());
+        assert!(require_member_or_agent(false, Some(&pk(1)), &pk(1)).is_ok());
+        assert_eq!(
+            message(require_member_or_agent(false, Some(&pk(1)), &pk(2))),
+            "restricted: not a member"
+        );
+
+        assert!(draft_needs_party(&pk(1), &pk(1), false).is_ok());
+        assert_eq!(
+            message(draft_needs_party(&pk(1), &pk(2), true)),
+            "restricted: not the draft's needs party"
+        );
+        assert!(draft_needs_party(tag::NEEDS_SHAPER, &pk(1), true).is_ok());
+        assert_eq!(
+            message(draft_needs_party(tag::NEEDS_SHAPER, &pk(1), false)),
+            "restricted: not the draft's needs party"
+        );
+
+        assert!(draft_decide(DraftDecision::Accept, None).is_ok());
+        assert_eq!(
+            message(draft_decide(DraftDecision::Decline, None)),
+            "invalid: decline needs a reason"
+        );
+        assert!(draft_decide(DraftDecision::Decline, Some(DeclineReason::NotNow)).is_ok());
+        assert!(profile_draft_needs(&pk(1), &pk(1)).is_ok());
+        assert_eq!(
+            message(profile_draft_needs(&pk(2), &pk(1))),
+            "invalid: profile draft not addressed to its subject"
+        );
+
+        assert!(iso_week("2026-W38").is_ok());
+        assert!(iso_week("2026-W01").is_ok());
+        assert_eq!(
+            message(iso_week("2026-W00")),
+            "invalid: week must be an ISO week like 2026-W38"
+        );
+        assert_eq!(
+            message(iso_week("2026-38")),
+            "invalid: week must be an ISO week like 2026-W38"
         );
     }
 }

@@ -31,7 +31,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-5a  | merged | [#28](https://github.com/hypha-dao/buzz-hypha/pull/28) | `db1019300` | `project` execution + `50005`–`50008` (create / offer / accept / decline). Root opens `open` or `offered` to `suggested_dri`; `approved_at` set; no home (R-9a). §5.1 create/offer/accept/decline invariants: holder-only children, only `offered_to` accepts/declines, money fields refused, `after` as live-or-done siblings, `objective_ref` against the live `39100` line, children counters (parent `39101` rewritten). `50009`–`50011` / `50018` still refused. R-4b DRI proofs now open roots through a passed `project`. |
 | R-5b  | merged | [#37](https://github.com/hypha-dao/buzz-hypha/pull/37) | `b0259fed0` | `50009`–`50011` / `50018` (done / release / set-due / reopen). Holder-only done; done refused with open children; release clears the holder and offers live children to the parent holder (or `open` for a root); set-due is a Shaper on a root / the parent holder on a child; `io_reopen` within 7 days of `io_work_items.done_at`. Parent `39101` rewritten so `children` stays on the live event. One command + one ledger row; live `39101` count does not grow (replace, not add). Two Postgres-lane proofs through `ingest_event` and two E2E through `POST /events`: `only_the_holder_marks_done_and_open_children_are_refused`, `release_returns_children_and_set_due_follows_authority`. |
 | R-6   |        |    |           | |
-| R-7   |        |    |           | |
+| R-7   | in progress |    |           | `handlers/intelligent_org/drafts.rs`: `50100` ingest (shape, `needs`, community-wide receipt resolve, one open draft per `gap`, holder `39105`/`39101` evidence, `k` slugs, `open_limit`) → `39104` `open` (or `shadow` from birth); `50101` (item exists, `rows` resolve); `50103` (`39103.agent` only, no receipt check, ledger verb); draft settlement on any command carrying `["e", id, "", "draft"]` (`accepted` vs `amended`); `50012`; `50017`. `persist_write` is the shared write path so a draft tag and the command share one transaction. `50009`–`50011` / `50018` / `50102` / `50021` untouched. Eight Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-8   | open | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) |           | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
 | R-9a  |        |    |           | R-9b is wave 6. |
 | R-10  |        |    |           | |
@@ -479,6 +479,16 @@ absorb an item into an unrelated slice.
   (`invalid: kind {k} is not implemented yet`) until R-5b.~~ Struck in R-5b.
 - **Project home is still R-9a.** A passed `project` writes no room and
   leaves `39101.home` absent.
+- **Draft settlement compares JSON values, not typed command structs.**
+  `attach_settlement` treats the command `content` (as `serde_json::Value`)
+  and the stored `50100` payload as equal or not. Agree-as-written must
+  send the draft JSON; a `50004` that drops `why` / `gaps` is `amended`
+  even when title/brief/due match. The extra draft fields are ignored by
+  the command's typed parse (`Fields not listed are ignored`).
+- **Holder proofs seed `39105` / `io_profiles`.** R-11 still owns `50021`.
+  The R-7 ingest path reads whichever is present; the Postgres holder
+  test writes both so skill / `open_limit` bind the production check
+  without implementing profiles.
 
 ---
 

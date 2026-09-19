@@ -10,6 +10,8 @@
 //!   and the `#shapers` roster, all on the command's transaction (V3);
 //! - [`proposals`] — opening, the D1 opener vote, `50003`, the tally, and
 //!   execution dispatch (§5.3);
+//! - [`drafts`] — `50100` / `50101` / `50103` ingest, draft settlement on
+//!   any command carrying `["e", id, "", "draft"]`, `50012`, `50017`;
 //! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
 //!   `shapers` execution rows, `proposals` for `50002`/`50004`/`50015`/`50003`
 //!   and the `direction` / `dri` execution rows, `work` for `project`
@@ -20,6 +22,10 @@
 
 pub mod apply;
 pub mod authorize;
+mod drafts;
+#[cfg(test)]
+#[path = "drafts_postgres_tests.rs"]
+mod drafts_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
 mod proposals;
@@ -29,13 +35,14 @@ mod work;
 
 use std::sync::Arc;
 
-use buzz_core::intelligent_org::{tag, Shapers};
+use buzz_core::intelligent_org::Shapers;
 use buzz_core::kind::{
-    is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION_PROPOSE,
-    KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
-    KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE,
-    KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT,
-    KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE,
+    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
+    KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE, KIND_IO_JOIN_PROPOSE,
+    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -57,11 +64,6 @@ pub async fn handle_command(
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
     let kind = event.kind.as_u16() as u32;
-    if has_draft_tag(event) {
-        return Err(IngestError::Rejected(
-            "invalid: draft settlement is not implemented yet".into(),
-        ));
-    }
     let cmd = Command {
         tenant,
         state,
@@ -86,6 +88,8 @@ pub async fn handle_command(
         KIND_IO_VOTE => proposals::vote(&cmd).await,
         KIND_IO_SHAPER_ACCEPT => shapers::accept(&cmd).await,
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,
+        KIND_IO_DRAFT_DECIDE => drafts::decide(&cmd).await,
+        KIND_IO_HEALTH_RATE => drafts::health_rate(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
@@ -96,6 +100,39 @@ pub async fn handle_command(
         _ => Err(IngestError::Rejected(format!(
             "unknown command kind: {kind}"
         ))),
+    }
+}
+
+/// Route an agent-facing read (`50100` / `50101` / `50103`). `50102` stays
+/// unknown until Work sync.
+pub async fn handle_read(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    auth: &IngestAuth,
+) -> Result<IngestResult, IngestError> {
+    let pubkey_bytes = auth.pubkey().to_bytes().to_vec();
+    if let Err(e) = state
+        .db
+        .ensure_user(tenant.community(), &pubkey_bytes)
+        .await
+    {
+        warn!("intelligent-org: ensure_user failed: {e}");
+    }
+    let kind = event.kind.as_u16() as u32;
+    let cmd = Command {
+        tenant,
+        state,
+        event,
+        actor_hex: auth.pubkey().to_hex(),
+        actor_bytes: auth.pubkey().to_bytes().to_vec(),
+        at: event.created_at.as_secs(),
+    };
+    match kind {
+        KIND_IO_DRAFT => drafts::ingest_draft(&cmd).await,
+        KIND_IO_HEALTH => drafts::ingest_health(&cmd).await,
+        KIND_IO_AGENT_NOTE => drafts::ingest_note(&cmd).await,
+        _ => Err(IngestError::Rejected(format!("unknown read kind: {kind}"))),
     }
 }
 
@@ -179,6 +216,8 @@ pub(crate) mod object {
     pub const DIRECTION: &str = "direction";
     /// A work item; `object_id` is its uuid.
     pub const WORK_ITEM: &str = "work_item";
+    /// A draft; `object_id` is the `50100` hex.
+    pub const DRAFT: &str = "draft";
 }
 
 pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
@@ -220,6 +259,30 @@ pub(crate) async fn commit(tx: Transaction<'static, Postgres>) -> Result<(), Ing
         .map_err(|e| internal("commit transaction", e))
 }
 
+/// Attach draft settlement (when tagged), write projections and ledger,
+/// commit, and fan out. Every command and read that mutates org state ends
+/// here so a draft tag and the command share one transaction.
+pub(crate) async fn persist_write(
+    cmd: &Command<'_>,
+    mut tx: Transaction<'static, Postgres>,
+    mut projections: Vec<apply::Projection>,
+    mut rows: Vec<LedgerEntry>,
+    message: String,
+    room_created: Option<Uuid>,
+) -> Result<IngestResult, IngestError> {
+    drafts::attach_settlement(cmd, &mut tx, &mut projections, &mut rows).await?;
+    let ctx = apply::ApplyContext {
+        community: cmd.tenant.community(),
+        relay: &cmd.state.relay_keypair,
+        actor: &cmd.actor_bytes,
+        now: wall_clock(),
+    };
+    let applied = apply::apply(&cmd.state.db, &mut tx, &ctx, &projections, &rows).await?;
+    commit(tx).await?;
+    finish(cmd, applied, room_created).await;
+    Ok(cmd.accepted(message))
+}
+
 /// The live `39103` content on `tx`, if the community has one.
 pub(crate) async fn current_shapers(
     tx: &mut Transaction<'static, Postgres>,
@@ -231,11 +294,26 @@ pub(crate) async fn current_shapers(
         .map(|row| row.content))
 }
 
-/// `["e", <id>, "", "draft"]` on any command (§3.2 draft settlement).
-fn has_draft_tag(event: &Event) -> bool {
-    event.tags.iter().any(|t| {
-        let parts = t.as_slice();
-        parts.len() >= 4 && parts[0] == "e" && parts[3] == tag::MARKER_DRAFT
+/// The first `name` tag as 32 raw bytes from a 64-char lowercase hex value.
+/// Used for draft event ids (`50012` `e`, the settlement marker) — never
+/// through nostr `EventId` helpers (C-2 leftover).
+pub(crate) fn hex32_tag(event: &Event, name: &str) -> Result<Option<Vec<u8>>, IngestError> {
+    let Some(value) = tag_value(event, name) else {
+        return Ok(None);
+    };
+    let is_hex = value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_hex {
+        return Err(IngestError::Rejected(format!(
+            "invalid: {name} tag must be a 64-char lowercase hex id"
+        )));
+    }
+    hex::decode(value).map(Some).map_err(|_| {
+        IngestError::Rejected(format!(
+            "invalid: {name} tag must be a 64-char lowercase hex id"
+        ))
     })
 }
 

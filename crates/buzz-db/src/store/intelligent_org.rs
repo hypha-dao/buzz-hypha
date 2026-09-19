@@ -402,6 +402,24 @@ pub async fn get_work_item(
     row.map(work_item_row).transpose()
 }
 
+/// How many items `dri` currently holds (`accepted` / `in_review`) — the
+/// §5.4a `open_limit` check at draft ingest.
+pub async fn count_held_items(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    dri: &[u8],
+) -> Result<i64> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM io_work_items \
+         WHERE community_id = $1 AND dri = $2 AND state IN ('accepted', 'in_review')",
+    )
+    .bind(community_id.as_uuid())
+    .bind(dri)
+    .fetch_one(conn)
+    .await?;
+    Ok(count)
+}
+
 /// Direct children of an item, oldest first.
 pub async fn list_children(
     conn: &mut PgConnection,
