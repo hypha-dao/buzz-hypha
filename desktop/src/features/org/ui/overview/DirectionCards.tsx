@@ -37,7 +37,7 @@ export function DirectionCards({
       <div className="mt-2 grid gap-3 md:grid-cols-2">
         {slots.map((slot) => {
           const label = DIRECTION_LABEL[slot.slug];
-          const empty = slot.head === null;
+          const head = slot.head;
           return (
             <Card
               className="flex flex-col gap-3 p-4"
@@ -52,7 +52,7 @@ export function DirectionCards({
                     — {label.question}
                   </span>
                 </h3>
-                {empty ? (
+                {head === null ? (
                   <p
                     className="mt-2 text-sm text-muted-foreground"
                     data-testid={`org-direction-empty-${slot.slug}`}
@@ -65,22 +65,22 @@ export function DirectionCards({
                       className="mt-1 text-2xs text-muted-foreground"
                       data-testid={`org-direction-meta-${slot.slug}`}
                     >
-                      v{slot.head.version}
-                      {slot.head.confirmedBy ? (
+                      v{head.version}
+                      {head.confirmedBy ? (
                         <>
                           {" "}
                           · confirmed by{" "}
                           <OrgPersonName
                             profiles={profiles}
-                            pubkey={slot.head.confirmedBy}
+                            pubkey={head.confirmedBy}
                           />
                         </>
                       ) : null}
                     </p>
                     <p className="mt-2 text-message leading-relaxed">
-                      {slot.head.lines.length > 0
-                        ? slot.head.lines.map((line) => line.text).join(" · ")
-                        : slot.head.body}
+                      {head.lines.length > 0
+                        ? head.lines.map((line) => line.text).join(" · ")
+                        : head.body}
                     </p>
                   </>
                 )}

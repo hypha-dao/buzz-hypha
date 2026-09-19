@@ -1174,10 +1174,14 @@ function mockOrgEventMatchesFilter(
       continue;
     }
     const tagName = key.slice(1);
+    const wanted = values.filter(
+      (value): value is string => typeof value === "string",
+    );
+    if (wanted.length === 0) continue;
     const eventValues = event.tags
       .filter((tag) => tag[0] === tagName)
       .map((tag) => tag[1]);
-    if (!values.some((value) => eventValues.includes(value))) return false;
+    if (!wanted.some((value) => eventValues.includes(value))) return false;
   }
   return true;
 }
