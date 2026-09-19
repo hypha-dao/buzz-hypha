@@ -70,9 +70,13 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_AGENT_NOTE,
+  KIND_IO_DIRECTION,
   KIND_IO_PROFILE_SET,
+  KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
+  KIND_IO_WORK_ITEM,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
   KIND_PERSONA,
@@ -145,6 +149,11 @@ export type MockOrgSeed = {
   agentHosted?: boolean;
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
+  /**
+   * Extra org events served on history REQs (D-1: `39100`, root `39101`,
+   * passed `39102`, `50103` tally). `39103` is still generated from this seed.
+   */
+  events?: RelayEvent[];
 };
 
 type MockManagedAgentRuntimeSeed = {
@@ -1122,6 +1131,8 @@ type MockFilter = {
   "#e"?: string[];
   "#h"?: string[];
   "#p"?: string[];
+  "#s"?: string[];
+  "#t"?: string[];
   authors?: string[];
   ids?: string[];
   kinds?: number[];
@@ -1153,6 +1164,24 @@ function mockOrgAgentPubkey(org: MockOrgSeed): string {
  * a community whose `mock.org` is configured. The viewer is founder and sole
  * Shaper; `agent` / `agent_hosted` come from the seed.
  */
+function mockOrgEventMatchesFilter(
+  event: RelayEvent,
+  filter: MockFilter,
+): boolean {
+  if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  for (const [key, values] of Object.entries(filter)) {
+    if (!key.startsWith("#") || !Array.isArray(values) || values.length === 0) {
+      continue;
+    }
+    const tagName = key.slice(1);
+    const eventValues = event.tags
+      .filter((tag) => tag[0] === tagName)
+      .map((tag) => tag[1]);
+    if (!values.some((value) => eventValues.includes(value))) return false;
+  }
+  return true;
+}
+
 function createMockShapersStateEvent(org: MockOrgSeed): RelayEvent {
   const agent = mockOrgAgentPubkey(org);
   return createMockEvent(
@@ -11040,6 +11069,25 @@ function sendToMockSocket(args: {
           subId,
           createMockShapersStateEvent(org),
         ]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
+    if (
+      filter.kinds?.some(
+        (kind) =>
+          kind === KIND_IO_DIRECTION ||
+          kind === KIND_IO_WORK_ITEM ||
+          kind === KIND_IO_PROPOSAL ||
+          kind === KIND_IO_AGENT_NOTE,
+      )
+    ) {
+      const orgEvents = getConfig()?.mock?.org?.events ?? [];
+      for (const orgEvent of orgEvents) {
+        if (mockOrgEventMatchesFilter(orgEvent, filter)) {
+          sendWsText(socket.handler, ["EVENT", subId, orgEvent]);
+        }
       }
       sendWsText(socket.handler, ["EOSE", subId]);
       return;
