@@ -7,6 +7,7 @@ export const routes = rootRoute("root.tsx", [
   route("/org/work", "org.work.tsx"),
   route("/org/work/$itemId", "org.work.$itemId.tsx"),
   route("/org/my-work", "org.my-work.tsx"),
+  route("/org/direction/$slug", "org.direction.$slug.tsx"),
   route("/pulse", "pulse.tsx"),
   route("/reminders", "reminders.tsx"),
   route("/settings", "settings.tsx"),

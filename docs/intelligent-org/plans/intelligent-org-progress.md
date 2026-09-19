@@ -51,6 +51,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | Slice | Status | PR | Merged as | Notes |
 | ----- | ------ | -- | --------- | ----- |
 | D-0   | merged | [#27](https://github.com/hypha-dao/buzz-hypha/pull/27) | `f010ffc32` | Desktop only. `org` preview feature (V14); routes `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render empty states; sidebar group; live REQ hooks per Protocol §6.5 with backfill/live overlap; `commands.ts` + `useOrgCommands` (C-1 tags, `sign_event` → EVENT). Reuses D-5 `orgAgent` / `useOrgAgent`. Bodies are D-1 / D-2 / D-3. |
+| D-1   | open | [#34](https://github.com/hypha-dao/buzz-hypha/pull/34) | | Overview door. Four direction cards from `39100` (version + confirmer) and empty slots; direction form → `50002` with `base` = current version; Shapers card from `39103` (members, rules, agent host) with **Add a Shaper** / **Step down** / **Change the rules**; Add a Shaper → `50001 op=add`; who-holds-what from root `39101`s; tally card (Shapers only) from `{kinds:[50103], "#t":["tally"]}`. Direction page `/org/direction/$slug` is the Protocol §6.5 read. `hooks/filters.ts` and `commands.ts` untouched. |
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
@@ -459,6 +460,27 @@ absorb an item into an unrelated slice.
 - **`50009` from talk is the chokepoint only.** `jobs_impl::done_from_talk`
   signs when `IO_DONE_FROM_TALK_ENABLED` is set; the Protocol §5.5
   check-list is A-2+.
+- **Overview's tally REQ is page-local.** Protocol §6.5 Overview is
+  `{kinds:[39100]}` / `{kinds:[39103]}` / `{kinds:[39101], "#t":["project"]}`
+  — that is D-0's `overviewFilters`, and D-1 left it alone. The plan-row
+  tally card reads `{kinds:[50103], "#t":["tally"]}` through
+  `overviewExtraFilters.tallyFilters` + `useLiveDoorEvents` on Overview
+  when the viewer is a Shaper. Fold it into `overviewFilters` only if the
+  §6.5 table grows; do not assume C-2's `org direction history`
+  (`{kinds:[50002], "#d":[slug]}`) is the Direction-page REQ.
+- **D-1 keeps `window.__BUZZ_E2E_ORG_COMMANDS__` for commands that still
+  have no tap** (`io_done` in `org-skeleton.spec.ts`). The direction form
+  and **Add a Shaper** assert on the same `sign_event` capture from the
+  real buttons. D-2 / D-3 should do the same and drop the hook when their
+  taps exist.
+- **`Adding org-overview.spec.ts` re-cuts the Playwright smoke shards**
+  the same way D-0 / D-5 did. Judge shards by which specs failed.
+- **`mock.org.events` is also on in-flight D-3 (#35).** D-1 serves
+  `39100` / `39101` / `39102` / `50103` from `getConfig()?.mock?.org?.events`
+  on the REQ path. D-3 stores the same seed field in `mockOrgEvents` for
+  `39101` / `50101` / `50102` / `50001–50021`. The second merger should
+  union the kind sets on one store, not pick one handler. D-1 does not
+  rewrite D-3's Work files; D-3 does not rewrite Overview.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
@@ -566,7 +588,7 @@ chromium --with-deps` once per host:
 cd desktop && pnpm check && pnpm typecheck && pnpm test         # biome, tsc, ~6.5k node tests
 just desktop-tauri-fmt-check && just desktop-tauri-clippy
 just desktop-tauri-test                                         # cargo test --workspace in desktop/src-tauri
-cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-agent-defaults
+cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-overview
 cd desktop && pnpm test:e2e:smoke                               # whole smoke project, ~90 min on 4 cores
 ```
 

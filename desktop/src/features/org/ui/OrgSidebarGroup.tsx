@@ -9,7 +9,8 @@ const ITEMS = [
   {
     icon: LayoutDashboard,
     label: "Overview",
-    match: (pathname: string) => pathname === "/org",
+    match: (pathname: string) =>
+      pathname === "/org" || pathname.startsWith("/org/direction"),
     onSelect: "goOrg" as const,
     testId: "sidebar-org-overview",
   },
