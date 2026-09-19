@@ -27,7 +27,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-2b  | merged | [#7](https://github.com/hypha-dao/buzz-hypha/pull/7) | `1e935fab0` | `EventQuery.custom_tags`: every single-letter tag filter without a dedicated column is pushed as JSONB containment before `LIMIT` (V2). 600-draft `#n` proof through the production seam. |
 | R-3   | merged | [#9](https://github.com/hypha-dao/buzz-hypha/pull/9) | `1f6767a49` | `handlers/intelligent_org/{mod,apply,authorize,state,shapers}.rs`; `apply` is the one write path (projection row, relay-signed `39xxx`, ledger, `#shapers` roster) on the `persist_command_event` transaction; `50001` bootstrap, `50019`, `50020`; ingest scope + executor routing for `50001–50021`; `buzz-db/src/store/relay_rooms.rs` (transaction-scoped room + roster sync). Six Postgres-lane proofs through `ingest_event` and six E2E through `POST /events`. |
 | R-4a  | merged | [#13](https://github.com/hypha-dao/buzz-hypha/pull/13) | `2b33bd6af` | `handlers/intelligent_org/proposals.rs` (open with frozen `eligible`/`needed`, D1 opener vote, `50003`, tally, execution dispatch, one `apply` per settle); `shapers.rs` opens add / remove / rules / agent and executes them against the live `39103` (`shaper_offered`, `shaper_removed`, `rules_changed`, `agent_changed`); `authorize::{open_shapers, agent_candidate, rules_content, vote}`; `apply` writes `io_votes` from the `39102` projection; `store::get_proposal_opening_receipt`. Money and join kinds refused with the fixed reasons. Seven Postgres-lane proofs through `ingest_event`, five E2E through `POST /events`; the R-3 offered-seat SQL seed now goes through a real passed add. `direction`/`dri`/`project` votes that would pass are refused `invalid: execution of … not implemented yet` until R-4b/R-5a. |
-| R-4b  |        |    |           | |
+| R-4b  | open | [#23](https://github.com/hypha-dao/buzz-hypha/pull/23) |           | `50002` / `50004`-opening / `50015` and `50003` on those kinds; `direction` / `dri` execution through `apply` (`39100` v`base+1` + `prev`, `39101` accepted + offer withdrawn). Project execution still refused until R-5a. Three Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-5a  |        |    |           | |
 | R-5b  |        |    |           | |
 | R-6   |        |    |           | |
@@ -387,6 +387,23 @@ absorb an item into an unrelated slice.
   filter is `{kinds:[39102], "#t":["direction"], "#s":["passed"]}`. C-3
   and the desktop Direction page should not assume they are the same REQ.
   C-2 followed the verb table.
+- **DRI proofs seed `io_work_items` by SQL.** R-4b can name a holder for an
+  item that exists; it cannot create one. The Postgres and E2E DRI tests
+  insert a projection row the way R-5a will, then drive `50015`/`50003`
+  through `ingest_event` / `POST /events`. Strike this when R-5a lands and
+  those tests open a root by a passed `project` instead.
+- **Two `direction` proposals on the same `base`:** the first to pass writes
+  the version; the second passing vote is refused `invalid: stale base` and
+  the proposal stays `open` (nothing written). Same shape as R-4a's
+  execution-time refusal. R-6 expires it.
+- **A `dri` that names the only Shaper as subject has `eligible = []` and
+  `needed = 0`,** so it passes with no vote. Protocol-correct (`needed_for(0)
+  = 0`, `agrees ≥ needed`), and the opener's `vote=agree` is ignored
+  (not eligible). Worth a sentence in §5.3 so the empty-eligible case is
+  not read as a bug.
+- **Home roster / `maintainers` sync on a passed `dri` is R-9a.** R-4b
+  rewrites the `39101` (`dri`, `accepted`, offer cleared) and writes
+  `item_accepted`; it does not touch the project room.
 
 ---
 
