@@ -8,6 +8,7 @@ import {
   KIND_IO_DIRECTION,
   KIND_IO_DRAFT,
   KIND_IO_HEALTH,
+  KIND_IO_PROFILE,
   KIND_IO_PROGRESS,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
@@ -118,4 +119,12 @@ export function myWorkFilters(
     );
   }
   return filters;
+}
+
+/**
+ * Profile — About & skills only (D-4): `{kinds:[39105], "#d":[pubkey]}`.
+ * What you hold / Recent decisions (`39101` / `39102` `#p`) wait on D-3.
+ */
+export function profileFilters(pubkey: string): RelaySubscriptionFilter[] {
+  return [history({ kinds: [KIND_IO_PROFILE], "#d": [pubkey] })];
 }
