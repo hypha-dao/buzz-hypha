@@ -528,6 +528,7 @@ export function ProfileSummaryView({
                 onExportAgent={onExportAgent}
                 onOpenActivity={onOpenActivity}
                 pubkey={pubkey}
+                isSelf={isSelf}
                 showActivityIngress={showActivityIngress}
                 showInstructionBlock={showInstructionBlock}
               />
