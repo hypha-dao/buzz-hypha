@@ -1,10 +1,43 @@
 //! The intelligent-organization **org agent** — Development plan slices A-*.
 //!
-//! This crate is the home of `OrgState`, the transition table, the jobs,
-//! and the evaluation harness described in
-//! `docs/intelligent-org/architecture/intelligent-org-agent.md`. Slice E-1
-//! lands it with only the evaluation fixtures under `tests/eval/` and the
-//! [`fixtures`] loader the harness and A-1's `OrgState::apply` tests read;
-//! A-1 (skeleton and ruler) fills in the agent itself.
+//! A-1 lands the skeleton and ruler: [`OrgState`] and [`apply`](OrgState::apply)
+//! with the § 5.2 table, [`RelayLink`], the outbox, [`ModelClient`],
+//! [`judge`](judge::judge), [`route`], [`publish`](relay::publish),
+//! [`FakeRelay`], the harness loader over E-1, and `run` / `dry-run` /
+//! `replay` / `doctor`. Nothing drafts.
 
+#![forbid(unsafe_code)]
+
+pub mod config;
+pub mod error;
+pub mod inbound;
+pub mod jobs_impl;
+pub mod judge;
+pub mod pipeline;
+pub mod relay;
+pub mod route;
+pub mod state;
+pub mod think;
+
+#[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
+
+pub use config::Config;
+pub use error::AgentError;
+pub use inbound::{decode, ApplyError, Decoded};
+pub use judge::{judge, Draft, JudgeReason};
+pub use pipeline::{HandleOutcome, OrgAgent};
+pub use relay::{FakeRelay, Outbox, Permitted, RelayLink};
+pub use state::{OrgState, Transition};
+pub use think::{BuzzAgentModel, ModelClient, Recorded};
+
+#[cfg(test)]
+mod judge_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod transition_tests;
+
+#[cfg(test)]
+#[path = "../tests/eval_fixtures.rs"]
+mod eval_fixtures;

@@ -5,11 +5,17 @@
 //! AI evaluation § Test data asks of them.
 //!
 //! Development plan E-1 "Proves": *the loader applies each seed without
-//! error; counts match the map's tables.* A-1's `OrgState::apply` is not
-//! here yet, so "applies" is the loader's `roundtrip` over every event.
+//! error; counts match the map's tables.* A-1 routes apply through
+//! [`OrgState::apply`]; `every_org_seed_applies_through_org_state` is the
+//! harness proof.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::fixtures::{
+    self, apply_events, load_org, load_sequence, load_who_is_needed, org_names, roundtrip,
+    sequence_names, Decoded, OrgFixture, SequenceFixture,
+};
+use crate::state::OrgState;
 use buzz_core::intelligent_org::{
     DraftKind, DraftOutcomeStatus, DraftPayload, ProposalKind, ProposalStatus, WorkItem,
     WorkItemState,
@@ -19,10 +25,6 @@ use buzz_core::kind::{
     KIND_IO_SHAPERS, KIND_IO_WORK_ITEM, KIND_NIP43_MEMBERSHIP_LIST,
 };
 use buzz_core::{verify_event, Event};
-use buzz_org_agent::fixtures::{
-    self, load_org, load_sequence, load_who_is_needed, org_names, roundtrip, sequence_names,
-    Decoded, OrgFixture, SequenceFixture,
-};
 use serde_json::Value;
 
 const KIND_CHAT: u32 = 9;
@@ -87,6 +89,22 @@ fn items(state: &BTreeMap<(u32, String), (Event, Decoded)>) -> BTreeMap<String, 
 }
 
 // ── every event ──────────────────────────────────────────────────────────────
+
+#[test]
+fn every_org_seed_applies_through_org_state() {
+    for org in org_names().expect("orgs/") {
+        let fixture = load_org(&org).expect(&org);
+        for (locale, events) in &fixture.seeds {
+            let mut state = OrgState::new();
+            apply_events(&mut state, events).unwrap_or_else(|e| panic!("{org}/{locale}: {e}"));
+            assert!(
+                !state.items.is_empty() || org == "cold",
+                "{org}/{locale}: items"
+            );
+            assert!(state.shapers.is_some(), "{org}/{locale}: 39103");
+        }
+    }
+}
 
 #[test]
 fn every_fixture_event_verifies_decodes_and_round_trips() {

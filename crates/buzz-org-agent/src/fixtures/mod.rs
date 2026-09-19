@@ -15,9 +15,9 @@
 //!   the seed meets it and the answer the holder suggestion must give.
 //!
 //! [`decode`] turns any fixture event into the `buzz_core::intelligent_org`
-//! type for its kind and checks the Protocol §4 tag set on the way. A-1's
-//! `OrgState::apply` reads the same events; this module is what its harness
-//! loads them with.
+//! type for its kind. Protocol §4 tag checks live in [`crate::inbound`]
+//! and run from [`crate::state::OrgState::apply`]; this module loads files
+//! and calls through.
 
 mod decode;
 
@@ -28,6 +28,9 @@ use std::path::{Path, PathBuf};
 use buzz_core::Event;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::inbound::ApplyError;
+use crate::state::OrgState;
 
 pub use decode::{decode, roundtrip, CommandContent, Decoded};
 
@@ -74,6 +77,22 @@ pub enum FixtureError {
     /// A name (org, sequence, snapshot stage) the fixtures do not have.
     #[error("no fixture named {0}")]
     Missing(String),
+}
+
+impl From<ApplyError> for FixtureError {
+    fn from(err: ApplyError) -> Self {
+        match err {
+            ApplyError::Event { id, kind, reason } => Self::Event { id, kind, reason },
+        }
+    }
+}
+
+/// Apply every event through [`OrgState::apply`] (the harness loader).
+pub fn apply_events(state: &mut OrgState, events: &[Event]) -> Result<(), FixtureError> {
+    for event in events {
+        state.apply(event).map_err(FixtureError::from)?;
+    }
+    Ok(())
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, FixtureError> {
