@@ -441,6 +441,12 @@ absorb an item into an unrelated slice.
   actually runs the same cases via `e2e_nostr_interop` (unfiltered) and
   the Postgres ingest lane. Adding `--test e2e_intelligent_org` remains
   the C-3 follow-up above.
+- **The 0032 roster fence had to learn the V5 exception.** A DM `39002`
+  that omits `39103.agent` is rejected by `guard_channel_roster_snapshot`
+  unless the canonical set also drops that key. Migration `0046` (and
+  `schema.sql`) exclude `io_shapers.agent` from the fence's canonical
+  set when `channels.channel_type = 'dm'`. A missing human still fails
+  closed. Non-DM rooms are unchanged.
 
 ---
 
