@@ -59,7 +59,10 @@ function WorkTreeRow({
           {item.dueAt !== null ? (
             <>
               {" · "}
-              <time data-testid={`org-work-row-due-${item.id}`} dateTime={iso(item.dueAt)}>
+              <time
+                data-testid={`org-work-row-due-${item.id}`}
+                dateTime={iso(item.dueAt)}
+              >
                 due {formatWorkDate(item.dueAt)}
               </time>
             </>

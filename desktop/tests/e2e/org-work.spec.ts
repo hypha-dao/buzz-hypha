@@ -52,12 +52,12 @@ test.describe("Org Work door and item page (D-3)", () => {
       "Electrics",
     );
     await expect(page.getByTestId(`org-work-row-${GRAND_ID}`)).toHaveCount(0);
-    await expect(page.getByTestId(`org-work-row-${OPEN_ROOT_ID}`)).toContainText(
-      "Cold storage",
-    );
     await expect(
-      page.getByTestId(`org-children-counts-${ROOT_ID}`),
-    ).toHaveText("0 open · 1 offered · 1 accepted · 3 done");
+      page.getByTestId(`org-work-row-${OPEN_ROOT_ID}`),
+    ).toContainText("Cold storage");
+    await expect(page.getByTestId(`org-children-counts-${ROOT_ID}`)).toHaveText(
+      "0 open · 1 offered · 1 accepted · 3 done",
+    );
     await expect(
       page.getByTestId(`org-work-row-${ROOT_ID}`).getByTestId("org-state-chip"),
     ).toHaveText("in progress");
@@ -91,7 +91,9 @@ test.describe("Org Work door and item page (D-3)", () => {
       "Electrics",
     );
     await expect(
-      page.getByTestId(`org-item-child-${CHILD_ID}`).getByTestId("org-state-chip"),
+      page
+        .getByTestId(`org-item-child-${CHILD_ID}`)
+        .getByTestId("org-state-chip"),
     ).toHaveText("in progress");
     await expect(page.getByTestId("org-item-children-counts")).toHaveText(
       "0 open · 1 offered · 1 accepted · 3 done",
@@ -117,7 +119,9 @@ test.describe("Org Work door and item page (D-3)", () => {
       "Rota",
     );
     await expect(
-      page.getByTestId(`org-item-child-${GRAND_ID}`).getByTestId("org-state-chip"),
+      page
+        .getByTestId(`org-item-child-${GRAND_ID}`)
+        .getByTestId("org-state-chip"),
     ).toHaveText("waiting on a yes");
   });
 
@@ -217,11 +221,19 @@ test.describe("Org Work door and item page (D-3)", () => {
     await openWork(page);
     await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
 
-    await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Mark done" })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "Open room" })).toHaveCount(1);
+    await expect(
+      page.getByRole("navigation", { name: "Breadcrumb" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark done" })).toHaveCount(
+      1,
+    );
+    await expect(page.getByRole("button", { name: "Open room" })).toHaveCount(
+      1,
+    );
     await expect(page.getByRole("button", { name: "Release" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: "Set due" })).toHaveCount(1);
-    await expect(page.getByRole("heading", { name: "Weekday hall" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Weekday hall" }),
+    ).toBeVisible();
   });
 });

@@ -31,7 +31,9 @@ export function OrgDoorScreen({
         <ChatHeader mode="org" title={title} />
       </TopChromeInsetHeader>
       {children ??
-        (empty ? <OrgEmptyState message={empty} testId={`${testId}-empty`} /> : null)}
+        (empty ? (
+          <OrgEmptyState message={empty} testId={`${testId}-empty`} />
+        ) : null)}
     </div>
   );
 }

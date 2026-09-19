@@ -22,7 +22,13 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
   const parentFilters = React.useMemo(
     () =>
       parentId
-        ? [{ kinds: [KIND_IO_WORK_ITEM], "#d": [parentId], limit: ORG_HISTORY_LIMIT }]
+        ? [
+            {
+              kinds: [KIND_IO_WORK_ITEM],
+              "#d": [parentId],
+              limit: ORG_HISTORY_LIMIT,
+            },
+          ]
         : [],
     [parentId],
   );

@@ -196,7 +196,9 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
 
   const rawChildren = content.children;
   const children: WorkChildrenCounts =
-    rawChildren && typeof rawChildren === "object" && !Array.isArray(rawChildren)
+    rawChildren &&
+    typeof rawChildren === "object" &&
+    !Array.isArray(rawChildren)
       ? {
           open: asCount((rawChildren as Record<string, unknown>).open),
           offered: asCount((rawChildren as Record<string, unknown>).offered),
@@ -217,8 +219,7 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
 
   const parent =
     asString(content.parent) ?? tagValue(event.tags, TAG_PARENT) ?? null;
-  const root =
-    asString(content.root) ?? tagValue(event.tags, "root") ?? id;
+  const root = asString(content.root) ?? tagValue(event.tags, "root") ?? id;
   const stateTag = tagValue(event.tags, TAG_STATUS);
   const state = isWorkItemState(content.state)
     ? content.state
@@ -246,7 +247,9 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
     root,
     depth: asCount(content.depth),
     path: Array.isArray(content.path)
-      ? content.path.filter((entry): entry is string => typeof entry === "string")
+      ? content.path.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : [],
     title: asString(content.title) ?? id,
     brief: typeof content.brief === "string" ? content.brief : "",
@@ -264,11 +267,15 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
 }
 
 export function isRootItem(item: WorkItem): boolean {
-  return item.parent === null || item.root === item.id || item.type === "project";
+  return (
+    item.parent === null || item.root === item.id || item.type === "project"
+  );
 }
 
 /** Roots + one level — the Work door. Deeper rows stay for the item page. */
-export function assembleWorkDoor(events: readonly RelayEvent[]): WorkTreeNode[] {
+export function assembleWorkDoor(
+  events: readonly RelayEvent[],
+): WorkTreeNode[] {
   const items = [...latestWorkItems(events).values()]
     .map(parseWorkItem)
     .filter((item): item is WorkItem => item !== null);

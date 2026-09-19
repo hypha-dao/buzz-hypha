@@ -1,10 +1,6 @@
 import { cn } from "@/shared/lib/cn";
 
-import {
-  stateChipLabel,
-  stateChipTone,
-  type WorkItem,
-} from "../../work/model";
+import { stateChipLabel, stateChipTone, type WorkItem } from "../../work/model";
 
 type StateChipProps = {
   item: Pick<WorkItem, "state" | "type">;
@@ -35,7 +31,10 @@ export function StateChip({ item, who }: StateChipProps) {
     >
       {label}
       {whoLabel ? (
-        <span className="font-normal opacity-80" data-testid="org-state-chip-who">
+        <span
+          className="font-normal opacity-80"
+          data-testid="org-state-chip-who"
+        >
           {whoLabel}
         </span>
       ) : null}

@@ -99,13 +99,13 @@ export function WorkItemView({
           {item.type === "project" ? "Project" : "Ticket"}
         </p>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h1 className="text-xl font-semibold tracking-tight" data-testid="org-item-title">
+          <h1
+            className="text-xl font-semibold tracking-tight"
+            data-testid="org-item-title"
+          >
             {item.title}
           </h1>
-          <StateChip
-            item={item}
-            who={undefined}
-          />
+          <StateChip item={item} who={undefined} />
         </div>
       </header>
 
@@ -132,7 +132,11 @@ export function WorkItemView({
         </Fact>
         {item.dueAt !== null ? (
           <Fact label={dueLabel}>
-            <time data-testid="org-item-due" data-ts={item.dueAt} dateTime={iso(item.dueAt)}>
+            <time
+              data-testid="org-item-due"
+              data-ts={item.dueAt}
+              dateTime={iso(item.dueAt)}
+            >
               {formatWorkDate(item.dueAt)}
             </time>
           </Fact>
@@ -150,7 +154,10 @@ export function WorkItemView({
         ) : null}
       </dl>
 
-      <div className="flex flex-wrap items-center gap-2" data-testid="org-item-actions">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="org-item-actions"
+      >
         {room ? (
           <Button
             data-testid="org-open-room"
@@ -223,12 +230,18 @@ export function WorkItemView({
         </div>
       </div>
       {error ? (
-        <p className="text-sm text-destructive" data-testid="org-item-error" role="alert">
+        <p
+          className="text-sm text-destructive"
+          data-testid="org-item-error"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      {item.type === "project" && health ? <HealthCard health={health} /> : null}
+      {item.type === "project" && health ? (
+        <HealthCard health={health} />
+      ) : null}
 
       <section aria-labelledby="org-item-children-heading">
         <div className="mb-2 flex items-center justify-between gap-3">
@@ -238,14 +251,20 @@ export function WorkItemView({
           >
             Under this {item.type === "project" ? "project" : "ticket"}
           </h2>
-          <p className="text-2xs text-muted-foreground" data-testid="org-item-children-counts">
+          <p
+            className="text-2xs text-muted-foreground"
+            data-testid="org-item-children-counts"
+          >
             {formatChildrenCounts(item.children)}
           </p>
         </div>
         {childItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing here.</p>
         ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border" data-testid="org-item-children">
+          <ul
+            className="divide-y divide-border rounded-xl border border-border"
+            data-testid="org-item-children"
+          >
             {childItems.map((child) => (
               <li key={child.id}>
                 <Link
@@ -254,11 +273,10 @@ export function WorkItemView({
                   params={{ itemId: child.id }}
                   to="/org/work/$itemId"
                 >
-                  <span className="min-w-0 truncate text-sm">{child.title}</span>
-                  <StateChip
-                    item={child}
-                    who={undefined}
-                  />
+                  <span className="min-w-0 truncate text-sm">
+                    {child.title}
+                  </span>
+                  <StateChip item={child} who={undefined} />
                 </Link>
               </li>
             ))}
