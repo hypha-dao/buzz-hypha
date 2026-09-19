@@ -3,7 +3,8 @@
 //! the Shapers — the R-4a lines — `shapers` proposals, votes, and their
 //! execution — the R-4b lines — `50002` / `50004`-opening / `50015`,
 //! `50003` on those kinds, and `direction` / `dri` execution — the R-5a
-//! lines — `project` execution and `50005`–`50008` — the R-8 lines —
+//! lines — `project` execution and `50005`–`50008` — the R-5b lines —
+//! `50009`–`50011` / `50018` (done / release / set-due / reopen) — the R-8 lines —
 //! bootstrap backfill of `39103.agent` and the `shapers/agent`
 //! membership move — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through
@@ -504,6 +505,53 @@ impl Community {
 
     fn decline_event(keys: &Keys, item: &str) -> Event {
         signed(keys, KIND_IO_DECLINE, vec![tag(["i", item])], "{}")
+    }
+
+    fn done_event(keys: &Keys, item: &str, content: &str) -> Event {
+        signed(keys, KIND_IO_DONE, vec![tag(["i", item])], content)
+    }
+
+    fn release_event(keys: &Keys, item: &str, content: &str) -> Event {
+        signed(keys, KIND_IO_RELEASE, vec![tag(["i", item])], content)
+    }
+
+    fn set_due_event(keys: &Keys, item: &str, due_at: u64, content: &str) -> Event {
+        signed(
+            keys,
+            KIND_IO_SET_DUE,
+            vec![tag(["i", item]), tag(["due", &due_at.to_string()])],
+            content,
+        )
+    }
+
+    fn reopen_event(keys: &Keys, item: &str, content: &str) -> Event {
+        signed(keys, KIND_IO_REOPEN, vec![tag(["i", item])], content)
+    }
+
+    async fn live_work(&self, keys: &Keys) -> Vec<Value> {
+        self.query(keys, json!({ "kinds": [KIND_IO_WORK_ITEM] }))
+            .await
+    }
+
+    async fn work_content(&self, keys: &Keys, id: &str) -> Value {
+        let events = self
+            .query(keys, json!({ "kinds": [KIND_IO_WORK_ITEM], "#d": [id] }))
+            .await;
+        assert_eq!(events.len(), 1, "one live 39101 for {id}");
+        content(&events[0])
+    }
+
+    async fn backdate_done_at(&self, id: Uuid, days: i64) {
+        sqlx::query(
+            "UPDATE io_work_items SET done_at = now() - ($3 * interval '1 day') \
+             WHERE community_id = $1 AND id = $2",
+        )
+        .bind(self.id)
+        .bind(id)
+        .bind(days)
+        .execute(&self.pool)
+        .await
+        .expect("backdate done_at");
     }
 
     async fn pass_project(&self, keys: &Keys, content: &str) -> (String, Uuid) {
@@ -2117,20 +2165,259 @@ async fn only_the_holder_creates_children_and_only_offered_to_accepts() {
         c.item_row(Uuid::parse_str(&permit).expect("uuid")).await,
         Some(("open".into(), None, None))
     );
+}
 
-    for kind in [
-        KIND_IO_DONE,
-        KIND_IO_RELEASE,
-        KIND_IO_SET_DUE,
-        KIND_IO_REOPEN,
-    ] {
-        c.submit_rejected(
-            &member,
-            &signed(&member, kind, vec![tag(["i", &root.to_string()])], "{}"),
-            &format!("invalid: kind {kind} is not implemented yet"),
+#[tokio::test]
+#[ignore]
+async fn only_the_holder_marks_done_and_open_children_are_refused() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let member = Keys::generate();
+    c.seed_member(&member, "member").await;
+    let member_hex = member.public_key().to_hex();
+    let other = Keys::generate();
+    c.seed_member(&other, "member").await;
+    let (_, root) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
         )
         .await;
-    }
+    let root_s = root.to_string();
+    c.submit_ok(
+        &c.owner,
+        &Community::offer_event(&c.owner, &root_s, &member_hex),
+    )
+    .await;
+    c.submit_ok(&member, &Community::accept_event(&member, &root_s))
+        .await;
+
+    c.submit_rejected(
+        &other,
+        &Community::done_event(&other, &root_s, "{}"),
+        "restricted: not the holder",
+    )
+    .await;
+    c.submit_rejected(
+        &member,
+        &Community::done_event(&member, &root_s, r#"{"amount":"1"}"#),
+        "invalid: money fields are not allowed",
+    )
+    .await;
+
+    let created = c
+        .submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &root_s,
+                Some(&member_hex),
+                r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+            ),
+        )
+        .await;
+    let permit: Value = serde_json::from_str(&created).expect("ticket");
+    let permit = permit["item"].as_str().expect("item").to_owned();
+    c.submit_rejected(
+        &member,
+        &Community::done_event(&member, &root_s, "{}"),
+        "invalid: open children",
+    )
+    .await;
+    c.submit_ok(&member, &Community::accept_event(&member, &permit))
+        .await;
+    c.submit_rejected(
+        &member,
+        &Community::done_event(&member, &root_s, "{}"),
+        "invalid: open children",
+    )
+    .await;
+
+    let live_before = c.live_work(&c.owner).await.len();
+    let ledger_before = c.ledger_verbs().await.len();
+    c.submit_ok(&member, &Community::done_event(&member, &permit, "{}"))
+        .await;
+    let child = c.work_content(&c.owner, &permit).await;
+    assert_eq!(child["state"], "done");
+    assert_eq!(child["closed_by"], "dri");
+    assert_eq!(child["dri"], member_hex);
+    let parent = c.work_content(&c.owner, &root_s).await;
+    assert_eq!(parent["children"]["open"], 0);
+    assert_eq!(parent["children"]["done"], 1);
+    assert_eq!(c.live_work(&c.owner).await.len(), live_before);
+    assert_eq!(c.ledger_verbs().await[ledger_before..], ["item_done"]);
+
+    c.submit_ok(&member, &Community::done_event(&member, &root_s, "{}"))
+        .await;
+    assert_eq!(c.work_content(&c.owner, &root_s).await["state"], "done");
+
+    c.submit_rejected(
+        &other,
+        &Community::reopen_event(&other, &root_s, "{}"),
+        "restricted: not the holder",
+    )
+    .await;
+    c.backdate_done_at(root, 8).await;
+    c.submit_rejected(
+        &member,
+        &Community::reopen_event(&member, &root_s, "{}"),
+        "invalid: the reopen window has closed",
+    )
+    .await;
+    c.backdate_done_at(root, 1).await;
+    let live_before = c.live_work(&c.owner).await.len();
+    let ledger_before = c.ledger_verbs().await.len();
+    c.submit_ok(
+        &member,
+        &Community::reopen_event(&member, &root_s, r#"{"why":"too soon"}"#),
+    )
+    .await;
+    let reopened = c.work_content(&c.owner, &root_s).await;
+    assert_eq!(reopened["state"], "accepted");
+    assert_eq!(reopened["dri"], member_hex);
+    assert!(reopened["closed_by"].is_null());
+    assert_eq!(c.live_work(&c.owner).await.len(), live_before);
+    assert_eq!(c.ledger_verbs().await[ledger_before..], ["item_reopened"]);
+}
+
+#[tokio::test]
+#[ignore]
+async fn release_returns_children_and_set_due_follows_authority() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let member = Keys::generate();
+    c.seed_member(&member, "member").await;
+    let member_hex = member.public_key().to_hex();
+    let other = Keys::generate();
+    c.seed_member(&other, "member").await;
+    let other_hex = other.public_key().to_hex();
+    let (_, root) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+    let root_s = root.to_string();
+    c.submit_ok(
+        &c.owner,
+        &Community::offer_event(&c.owner, &root_s, &member_hex),
+    )
+    .await;
+    c.submit_ok(&member, &Community::accept_event(&member, &root_s))
+        .await;
+
+    let mid: Value = serde_json::from_str(
+        &c.submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &root_s,
+                Some(&member_hex),
+                r#"{"title":"Covers","brief":"Split it","due_at":1800000001}"#,
+            ),
+        )
+        .await,
+    )
+    .expect("mid");
+    let mid = mid["item"].as_str().expect("item").to_owned();
+    c.submit_ok(&member, &Community::accept_event(&member, &mid))
+        .await;
+    let print: Value = serde_json::from_str(
+        &c.submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &mid,
+                None,
+                r#"{"title":"Print","brief":"Open piece","due_at":1800000002}"#,
+            ),
+        )
+        .await,
+    )
+    .expect("print");
+    let print = print["item"].as_str().expect("item").to_owned();
+    let rota: Value = serde_json::from_str(
+        &c.submit_ok(
+            &member,
+            &Community::ticket_event(
+                &member,
+                &mid,
+                Some(&other_hex),
+                r#"{"title":"Rota","brief":"Held piece","due_at":1800000003}"#,
+            ),
+        )
+        .await,
+    )
+    .expect("rota");
+    let rota = rota["item"].as_str().expect("item").to_owned();
+    c.submit_ok(&other, &Community::accept_event(&other, &rota))
+        .await;
+
+    c.submit_rejected(
+        &other,
+        &Community::release_event(&other, &mid, "{}"),
+        "restricted: not the holder",
+    )
+    .await;
+    c.submit_rejected(
+        &member,
+        &Community::release_event(&member, &mid, r#"{"budget":"1"}"#),
+        "invalid: money fields are not allowed",
+    )
+    .await;
+
+    let live_before = c.live_work(&c.owner).await.len();
+    let ledger_before = c.ledger_verbs().await.len();
+    c.submit_ok(
+        &member,
+        &Community::release_event(&member, &mid, r#"{"why":"handing back"}"#),
+    )
+    .await;
+    let released = c.work_content(&c.owner, &mid).await;
+    assert_eq!(released["state"], "open");
+    assert!(released["dri"].is_null());
+    assert_eq!(released["children"]["offered"], 2);
+    assert_eq!(released["children"]["accepted"], 0);
+    let print_c = c.work_content(&c.owner, &print).await;
+    assert_eq!(print_c["state"], "offered");
+    assert_eq!(print_c["offered_to"], member_hex);
+    let rota_c = c.work_content(&c.owner, &rota).await;
+    assert_eq!(rota_c["state"], "offered");
+    assert_eq!(rota_c["offered_to"], member_hex);
+    let root_c = c.work_content(&c.owner, &root_s).await;
+    assert_eq!(root_c["children"]["open"], 1);
+    assert_eq!(root_c["children"]["accepted"], 0);
+    assert_eq!(c.live_work(&c.owner).await.len(), live_before);
+    assert_eq!(c.ledger_verbs().await[ledger_before..], ["item_released"]);
+
+    c.submit_rejected(
+        &other,
+        &Community::set_due_event(&other, &root_s, 1_900_000_000, "{}"),
+        "restricted: not a Shaper",
+    )
+    .await;
+    c.submit_rejected(
+        &other,
+        &Community::set_due_event(&other, &mid, 1_900_000_000, "{}"),
+        "restricted: not the holder",
+    )
+    .await;
+    let live_before = c.live_work(&c.owner).await.len();
+    let ledger_before = c.ledger_verbs().await.len();
+    c.submit_ok(
+        &c.owner,
+        &Community::set_due_event(
+            &c.owner,
+            &root_s,
+            1_900_000_000,
+            r#"{"why":"keep it open"}"#,
+        ),
+    )
+    .await;
+    let root_due = c.work_content(&c.owner, &root_s).await;
+    assert_eq!(root_due["due_at"], 1_900_000_000);
+    assert_eq!(c.live_work(&c.owner).await.len(), live_before);
+    assert_eq!(c.ledger_verbs().await[ledger_before..], ["due_changed"]);
 }
 
 // ── R-8: bootstrap backfill and shapers/agent membership move ────────────────

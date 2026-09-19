@@ -320,6 +320,84 @@ pub fn offer(
     }
 }
 
+/// Seven days — `io_reopen` after a done (§3.2, §5.5).
+pub const REOPEN_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
+
+fn is_live(state: WorkItemState) -> bool {
+    !matches!(state, WorkItemState::Done)
+}
+
+/// `io_done` (§3.2, §5.1 rule 3): the holder, and no live child.
+pub fn done(item: &WorkItem, actor: &str, children: &[WorkItem]) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if !is_holder(item, actor) {
+        return Err(restricted("not the holder"));
+    }
+    if children.iter().any(|child| is_live(child.state)) {
+        return Err(invalid("open children"));
+    }
+    Ok(())
+}
+
+/// `io_release` (§3.2, §5.1 rule 4): the holder.
+pub fn release(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if is_holder(item, actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the holder"))
+    }
+}
+
+/// `io_set_due` (§3.2): a Shaper for a root; the parent holder for a child.
+pub fn set_due(
+    item: &WorkItem,
+    parent: Option<&WorkItem>,
+    shapers: &Shapers,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if item.parent.is_none() {
+        require_shaper(shapers, actor)
+    } else {
+        let parent = parent.ok_or_else(|| invalid("unknown parent"))?;
+        if is_holder(parent, actor) {
+            Ok(())
+        } else {
+            Err(restricted("not the holder"))
+        }
+    }
+}
+
+/// `io_reopen` (§3.2): the `dri` of a `done` item, within seven days of
+/// `done_at`.
+pub fn reopen(
+    item: &WorkItem,
+    actor: &str,
+    done_at: Option<u64>,
+    now: u64,
+) -> Result<(), IngestError> {
+    if item.state != WorkItemState::Done {
+        return Err(invalid("item is not done"));
+    }
+    if item.dri.as_deref() != Some(actor) {
+        return Err(restricted("not the holder"));
+    }
+    let Some(done_at) = done_at else {
+        return Err(invalid("the reopen window has closed"));
+    };
+    if now >= done_at.saturating_add(REOPEN_WINDOW_SECS) {
+        return Err(invalid("the reopen window has closed"));
+    }
+    Ok(())
+}
+
 /// `io_accept` / `io_decline` (§5.1 rule 2): only `offered_to`, and only
 /// while the item is `offered`.
 pub fn accept_or_decline(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
@@ -916,6 +994,79 @@ mod tests {
         assert_eq!(
             message(accept_or_decline(&offered, &pk(3))),
             "invalid: item is not offered"
+        );
+    }
+
+    #[test]
+    fn done_release_due_and_reopen_follow_the_holder_and_the_window() {
+        let two = shapers(&[1, 2], &[]);
+        let mut held = item(WorkItemState::Accepted, Some(pk(1)), None);
+        held.id = "root".into();
+        held.root = "root".into();
+        assert!(done(&held, &pk(1), &[]).is_ok());
+        assert_eq!(
+            message(done(&held, &pk(2), &[])),
+            "restricted: not the holder"
+        );
+        let mut open_child = item(WorkItemState::Open, None, Some("root"));
+        open_child.id = "child".into();
+        assert_eq!(
+            message(done(&held, &pk(1), &[open_child.clone()])),
+            "invalid: open children"
+        );
+        open_child.state = WorkItemState::Done;
+        assert!(done(&held, &pk(1), &[open_child]).is_ok());
+
+        assert!(release(&held, &pk(1)).is_ok());
+        assert_eq!(
+            message(release(&held, &pk(2))),
+            "restricted: not the holder"
+        );
+
+        assert!(set_due(&held, None, &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(set_due(&held, None, &two, &pk(9))),
+            "restricted: not a Shaper"
+        );
+        let parent = item(WorkItemState::Accepted, Some(pk(1)), None);
+        let child = item(WorkItemState::Accepted, Some(pk(3)), Some("root"));
+        assert!(set_due(&child, Some(&parent), &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(set_due(&child, Some(&parent), &two, &pk(3))),
+            "restricted: not the holder",
+            "the child's own holder cannot set due"
+        );
+
+        let mut closed = held.clone();
+        closed.state = WorkItemState::Done;
+        closed.closed_by = Some(buzz_core::intelligent_org::ClosedBy::Dri);
+        assert_eq!(message(done(&closed, &pk(1), &[])), "invalid: item is done");
+        assert_eq!(message(release(&closed, &pk(1))), "invalid: item is done");
+        assert_eq!(
+            message(set_due(&closed, None, &two, &pk(1))),
+            "invalid: item is done"
+        );
+        assert!(reopen(&closed, &pk(1), Some(1_000), 1_000).is_ok());
+        assert_eq!(
+            message(reopen(&closed, &pk(2), Some(1_000), 1_000)),
+            "restricted: not the holder"
+        );
+        assert_eq!(
+            message(reopen(&held, &pk(1), Some(1_000), 1_000)),
+            "invalid: item is not done"
+        );
+        assert_eq!(
+            message(reopen(
+                &closed,
+                &pk(1),
+                Some(1_000),
+                1_000 + REOPEN_WINDOW_SECS
+            )),
+            "invalid: the reopen window has closed"
+        );
+        assert_eq!(
+            message(reopen(&closed, &pk(1), None, 1_000)),
+            "invalid: the reopen window has closed"
         );
     }
 }
