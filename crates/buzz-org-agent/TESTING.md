@@ -5,11 +5,12 @@
 cargo test -p buzz-org-agent
 ```
 
-That one command is the crate's suite: E-1 fixture round-trips (compiled as
-lib unit tests so the shipped binary does not link the loader), one unit
-test per judge gate, one transition test per Org agent § 5.2 row, the
-`50009` allow-list, and the pipeline proofs (outbox drain after disconnect;
-newer generation mid-THINK → `stale`).
+That one command is the crate's suite: E-1 fixture round-trips and E-2
+gold-case load/parse (compiled as lib unit tests so the shipped binary
+does not link the loader), one unit test per judge gate, one transition
+test per Org agent § 5.2 row, the `50009` allow-list, and the pipeline
+proofs (outbox drain after disconnect; newer generation mid-THINK →
+`stale`).
 
 `cargo test -p buzz-org-agent --features fixtures` builds the same loader
 the harness uses. The default binary is built without that feature.

@@ -1,0 +1,290 @@
+{
+  "suite": "completion-to-direction",
+  "job": "J3b",
+  "cases": [
+    {
+      "id": "j3a-covers-last-child-done",
+      "job": "J3a",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "last_child_done", "item_key": "stall/find-two-neighbours-who-can-cover-a-saturday" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Rota is the last open child under covers; it goes done. (J3a is no-model; the done card is listed here so the suite owns the completion story. The model job on this trigger when the brief is unmet is J2; when the parent is complete it is the done card.)"
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "done",
+            "intent": "Covers is complete — done card to Lea only, not Sam.",
+            "needs": "Lea",
+            "payload": {
+              "item": "cc7b8397-18b5-4932-bf75-96cefc637cd5",
+              "why": "last child closed",
+              "heard": null
+            }
+          }
+        ],
+        "must_not": [
+          { "why": "Sam holds the stall, not covers" }
+        ]
+      },
+      "why_gold": "Rota done under covers, no other children → covers done draft to Lea only. Not to Sam. J3a has no model; the card is still gold so a reviewer sees the routing."
+    },
+    {
+      "id": "j3b-stall-last-fifth-followup",
+      "job": "J3b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_in_review", "item_key": "stall" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "review",
+            "intent": "Stall last-fifth brief from the ledger; recommendation is a follow-up on the same Saturday-stall objective.",
+            "needs": "shaper",
+            "recommendation": "follow_up",
+            "objective_ref": "objectives@3#l_b26b2527",
+            "payload": {
+              "item": "79a1b1af-b3cf-4852-8ed2-b945ccb73773",
+              "brief": [
+                { "text": "Lea still holds covers.", "rows": [] },
+                { "text": "Jun held prices.", "rows": [] }
+              ],
+              "recommendation": {
+                "type": "follow_up",
+                "project": {
+                  "title": "Saturday stall, next season",
+                  "brief": "Keep the weekly stall running next season with the rota and prices this one proved.",
+                  "objective_ref": "objectives@3#l_b26b2527",
+                  "due_at": 1795827600,
+                  "suggested_dri": "96c86d24b6ae262047033ac09da92dcc45b81a520a2377f094f57a5a57411a26",
+                  "why": "The objective 'stall every Saturday' is still live.",
+                  "gaps": [
+                    { "ref": "objectives@3#l_b26b2527", "served": "partly", "by": ["79a1b1af-b3cf-4852-8ed2-b945ccb73773"] }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "why_gold": "The stall objective is still live — every Saturday, all season. Last fifth is a follow-up, not no-further-work. The brief lists ledger facts (who held what, expired offers); the model writes the prose and the one recommendation."
+    },
+    {
+      "id": "j3c-ameland-met-redraw",
+      "job": "J3c",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_done", "item_key": "islands/ameland-tokenised-credits-pilot" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "Treat the Ameland pilot as a root that met its objective. The pilots room asked for a second island (receipt)."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "review",
+            "intent": "Pilot recommendation is no_further_work.",
+            "needs": "shaper",
+            "recommendation": "no_further_work"
+          },
+          {
+            "kind": "objectives",
+            "intent": "Strike the Ameland line; add second-island only because the room said so.",
+            "needs": "shaper",
+            "ops": [
+              { "op": "strike", "id": "l_ameland", "why": "The Ameland pilot met the line." },
+              {
+                "op": "add",
+                "text": "A second island runs the Ameland model by December.",
+                "date": 1796169600,
+                "why": "The pilots room asked for the next island.",
+                "source": null
+              }
+            ],
+            "payload": {
+              "base_version": 6,
+              "ops": [
+                { "op": "strike", "id": "l_ameland", "why": "The Ameland pilot met the line." },
+                {
+                  "op": "add",
+                  "text": "A second island runs the Ameland model by December.",
+                  "date": 1796169600,
+                  "why": "The pilots room asked for the next island.",
+                  "source": null
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "why_gold": "Ameland done and the objective met → no_further_work for the pilot. Redraw is operations: strike that line, add 'second island' only with a room receipt. Untouched Iberia / EMS / playbook lines cannot be rewritten."
+    },
+    {
+      "id": "j3c-close-with-open-work",
+      "job": "J3c",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_done", "item_key": "iberia" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "Iberia is closed while municipalities and the shortlist are still open." },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "review",
+            "intent": "Brief names the open items; recommendation says they return to the Shapers or ride a follow-up.",
+            "needs": "shaper",
+            "recommendation": "follow_up"
+          }
+        ]
+      },
+      "why_gold": "A project that closes with work open must say which items and where they go. Hiding them, or declaring no_further_work, loses the tree."
+    },
+    {
+      "id": "j3-ticket-done-siblings-open",
+      "job": "J3b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "last_child_done", "item_key": "stall" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "One stall child goes done; covers and prices are still open." },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "siblings still open — no parent done draft" }
+        ]
+      },
+      "why_gold": "Done bubbles up only when it was the last open child. One child closing is not the stall closing."
+    },
+    {
+      "id": "j3b-day-40-of-90",
+      "job": "J3b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tick", "item_key": "growers" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A project at day 40 of 90 is not in its last fifth. No review brief. Health (J4) may still write; this suite's job does not."
+    },
+    {
+      "id": "j3c-objective-still-served-elsewhere",
+      "job": "J3c",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "root_done", "item_key": "playbook/video-walkthrough-of-the-member-app" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "the playbook objective is still live under other roots" }
+        ]
+      },
+      "why_gold": "Closing one child of a live objective that other roots still serve is not a redraw. The playbook line stays."
+    },
+    {
+      "id": "j3d-rejection-no-direction-reason",
+      "job": "J3d",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "proposal_rejected", "item_key": "project-harvest" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "Harvest project proposal rejected with no reason, or a timing reason." },
+      "gold": { "silence": true },
+      "why_gold": "A rejected proposal changes direction only through a reasoned constraint. Timing ('not this month') is not a strategy line. The J3d suite owns the reasoned case; this is the quiet one."
+    },
+    {
+      "id": "j3b-room-full-of-unrelated-ideas",
+      "job": "J3b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "root_in_review", "item_key": "islands" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "The islands room in the last fifth is full of ideas for playbook, EMS, and a hardware buy."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "review",
+            "intent": "At most one follow-up, in the islands domain; the rest is why text.",
+            "needs": "shaper",
+            "recommendation": "follow_up"
+          }
+        ],
+        "must_not": [
+          { "why": "unrelated playbook and EMS ideas are not drafts" }
+        ]
+      },
+      "why_gold": "One follow-up at most, same domain. The room's other ideas belong in why, not as extra 50100s."
+    },
+    {
+      "id": "j3c-already-redrawn-last-week",
+      "job": "J3c",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "root_done", "item_key": "islands/ameland-tokenised-credits-pilot" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "Objectives were already redrawn for this close last week.",
+        "declined_gap": "objectives@6#ameland-close"
+      },
+      "gold": { "silence": true },
+      "why_gold": "No second redraw for the same close. The fingerprint includes the close, not just the slug."
+    },
+    {
+      "id": "j3b-brief-follows-ledger-not-talk",
+      "job": "J3b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "root_in_review", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "The tech room says 'done'; the ledger still has the load-test open and the fair-split offer waiting."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "review",
+            "intent": "Brief follows the ledger: load-test has no DRI, fair-split offer is open.",
+            "needs": "shaper",
+            "recommendation": "follow_up"
+          }
+        ],
+        "must_not": [
+          { "why": "a sentence that says the EMS is done while two items are open" }
+        ]
+      },
+      "why_gold": "When talk and the ledger disagree, the brief follows the ledger and names the gap. That is the grounding rule by construction."
+    },
+    {
+      "id": "j3-cold-nothing-to-close",
+      "job": "J3b",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tick" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Cold has no live root, no last fifth, no close. Completion is quiet until J1's drafts become work."
+    }
+  ]
+}

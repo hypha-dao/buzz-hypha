@@ -1,0 +1,508 @@
+{
+  "suite": "direction-to-projects",
+  "job": "J1",
+  "cases": [
+    {
+      "id": "j1-cold-objectives-v1",
+      "job": "J1",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "direction_confirmed", "slug": "objectives" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@1#l_c85b7adf",
+            "intent": "Open the first repair café before July — the café itself, one project.",
+            "needs": "shaper",
+            "suggested_dri": "Ada",
+            "objective_ref": "objectives@1#l_c85b7adf",
+            "payload": {
+              "title": "Open the first repair café",
+              "brief": "Find a room, borrow benches and tools, and open one Saturday repair café before July. The volunteer-training benches wait on this first one running.",
+              "objective_ref": "objectives@1#l_c85b7adf",
+              "due_at": 1782806400,
+              "suggested_dri": "dc9d8cb6920950e9519c0b464776660c4107f2e0b6e987950ddad6abc4b97eac",
+              "why": "No live root serves the July café; Ada is the founder and the only member.",
+              "gaps": [
+                { "ref": "objectives@1#l_c85b7adf", "served": "not", "by": [] },
+                { "ref": "objectives@1#l_778cfce5", "served": "not", "by": [] }
+              ]
+            }
+          },
+          {
+            "kind": "project",
+            "gap": "objectives@1#l_778cfce5",
+            "intent": "Train three volunteers to run a bench by September — after the café exists.",
+            "needs": "shaper",
+            "suggested_dri": "Ada",
+            "objective_ref": "objectives@1#l_778cfce5"
+          }
+        ],
+        "must_not": [
+          { "why": "strategy constraints are not projects", "title": "No charging" },
+          { "why": "mission and vision are direction, not a to-do" }
+        ]
+      },
+      "why_gold": "A cold org has two dated objectives and no tree. An operator opens one project per line, both needs: shaper, both due before the line's month. The founder is the only candidate. Splitting the café into room / tools / publicity is the DRI's job after the root is live."
+    },
+    {
+      "id": "j1-energy-second-island-first-step",
+      "job": "J1",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "direction_confirmed", "slug": "objectives" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "The December island line is newly confirmed; no shortlist ticket exists yet.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_new_island",
+            "text": "A second island by December — no site chosen."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@7#l_new_island",
+            "intent": "Site survey and selection for the second island, not the installation.",
+            "needs": "shaper",
+            "objective_ref": "objectives@7#l_new_island"
+          }
+        ],
+        "must_not": [
+          {
+            "why": "installing before a site is chosen fails right-next-thing",
+            "title": "Install the second-island grid"
+          }
+        ]
+      },
+      "why_gold": "A second island by December with no site is a validation first: survey and pick, then the installation arrives through review when that project closes. One project, why naming what waits. An installation draft is the usual model failure on this line."
+    },
+    {
+      "id": "j1-energy-strategy-publish-report",
+      "job": "J1",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "direction_confirmed", "slug": "strategy" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "A new strategy line names an action, not a constraint.",
+        "direction_lines": [
+          {
+            "slug": "strategy",
+            "id": "l_ameland_report",
+            "text": "Publish the Ameland report before any marketing."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "strategy@4#l_ameland_report",
+            "intent": "Write and publish the Ameland report; marketing stays behind it.",
+            "needs": "shaper"
+          }
+        ]
+      },
+      "why_gold": "Strategy is a constraint unless the line names an action. 'Publish the Ameland report before any marketing' is a dated piece of work with a clear first step. One draft; the marketing ban is why, not a second project."
+    },
+    {
+      "id": "j1-river-grant-roof-rafi",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "A new roof-grant line; Rafi's profile already has council and permits, and we add grant-writing.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_roof",
+            "text": "Get a grant for the hall roof by October."
+          }
+        ],
+        "profile_skills": [{ "person": "Rafi", "skill": "grant-writing" }]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@4#l_roof",
+            "intent": "Apply for the hall-roof grant; suggest Rafi from skills, no prior grant item.",
+            "needs": "shaper",
+            "suggested_dri": "Rafi",
+            "matched": { "skills": ["grant-writing"] }
+          }
+        ]
+      },
+      "why_gold": "River has never held a grant item. Rafi's 39105 now says grant-writing and he is under open_limit. An operator names him from the profile, matched.skills only — inventing a history item, or naming Maya because she is founder, fails who-is-needed."
+    },
+    {
+      "id": "j1-river-stall-followup-lea-history",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "The live stall will close; a follow-up Saturday stall is the unserved next season.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_stall_next",
+            "text": "The Saturday stall runs every week next season."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@4#l_stall_next",
+            "intent": "Next season's stall, suggested holder Lea from the covers she held — no stall skill on her profile.",
+            "needs": "shaper",
+            "suggested_dri": "Lea",
+            "matched": { "skills": [], "items": ["79a1b1af-b3cf-4852-8ed2-b945ccb73773"] }
+          }
+        ]
+      },
+      "why_gold": "Lea has no 39105. She held the stall's covers. History is enough; the follow-up names her with matched.items and empty skills. Naming Priya because she prints, or Sam because he still holds the live stall at open_limit, fails."
+    },
+    {
+      "id": "j1-river-electrics-unfilled",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "An objective that needs a ticket River cannot staff.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_electrics",
+            "text": "Get the hall's electrics certified before we open weekdays."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@4#l_electrics",
+            "intent": "Electrics certification as one project; suggested_dri null; why names the missing certification.",
+            "needs": "shaper",
+            "suggested_dri": null,
+            "requires": ["electrical-certification"],
+            "unfilled": "nobody here has electrical-certification"
+          }
+        ]
+      },
+      "why_gold": "No River profile or history shows electrical certification — Tomas has it in Energy, not here. The draft is still worth a Shaper's minute: it names the gap. Naming Tom because he is handy, or Rafi because he does licences, is unmatched skill."
+    },
+    {
+      "id": "j1-river-locale-pt-same-gaps",
+      "job": "J1",
+      "org": "river",
+      "locale": "pt",
+      "polarity": "adversarial",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "pt" },
+      "imagine": {
+        "note": "Same new roof-grant line as j1-river-grant-roof-rafi, in the pt seed.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_roof",
+            "text": "Get a grant for the hall roof by October."
+          }
+        ],
+        "profile_skills": [{ "person": "Rafi", "skill": "grant-writing" }]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@4#l_roof",
+            "intent": "Same gap key as en; title and brief in Portuguese.",
+            "needs": "shaper",
+            "suggested_dri": "Rafi",
+            "matched": { "skills": ["grant-writing"] }
+          }
+        ]
+      },
+      "why_gold": "Locale changes the words, not the gaps. The pt seed must produce the same gap list and the same suggested DRI; drafts are in Portuguese. A different gap key, or an English title on the pt seed, fails."
+    },
+    {
+      "id": "j1-energy-rowan-not-at-limit",
+      "job": "J1",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "A new on-call objective. Rowan holds the Ameland on-call at open_limit 1.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_oncall",
+            "text": "A second on-call rota covers Iberia nights by August."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@7#l_oncall",
+            "intent": "Iberia night rota; suggest Surya (on-call-operations, under limit), never Rowan.",
+            "needs": "shaper",
+            "suggested_dri": "Surya",
+            "matched": { "skills": ["on-call-operations"] }
+          }
+        ],
+        "must_not": [
+          { "why": "Rowan is at open_limit", "title": "Rowan" }
+        ]
+      },
+      "why_gold": "Rowan has the skill and is at open_limit. Surya has the same skill and a free slot. The draft names Surya. Naming Rowan fails the holder-at-limit gate; naming someone with no on-call skill fails unmatched skill."
+    },
+    {
+      "id": "j1-river-objectives-reconfirmed",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "direction_confirmed", "slug": "objectives" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "v3 text did not change; stall, growers, and weekday are already served or proposed" }
+        ]
+      },
+      "why_gold": "Reconfirming the same objectives is not a gap. Stall and growers are live roots; weekday is an open project proposal. An agent that drafts on every confirm is worse than none."
+    },
+    {
+      "id": "j1-river-stall-already-served",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          {
+            "why": "stall every Saturday is served by the live stall root",
+            "gap": "objectives@3#l_b26b2527"
+          }
+        ]
+      },
+      "why_gold": "The Saturday stall runs every week is the live stall project's job. A second root for the same line is a duplicate, not thoroughness."
+    },
+    {
+      "id": "j1-river-strategy-no-restaurant",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "direction_confirmed", "slug": "strategy" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          {
+            "why": "No restaurant is a constraint, not a to-do",
+            "gap": "strategy@4#l_0f1c6a11"
+          }
+        ]
+      },
+      "why_gold": "Small money / no restaurant / vouchers-with-growers tell the org what it will not do. None of those lines is a project. The preview's 'no brand money' is the same shape; River's live constraint is the restaurant line."
+    },
+    {
+      "id": "j1-river-mission-only",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "direction_confirmed", "slug": "mission" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A mission change is direction. It does not open work. The weekly scan still reads objectives and strategy; this trigger alone must be quiet."
+    },
+    {
+      "id": "j1-river-vision-only",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "direction_confirmed", "slug": "vision" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Same as mission: vision is not a to-do list."
+    },
+    {
+      "id": "j1-cold-strategy-no-charging",
+      "job": "J1",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "direction_confirmed", "slug": "strategy" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "No charging is a constraint", "gap": "strategy@1#l_a8dbf6c8" },
+          { "why": "Borrow before we buy is a method, not a project", "gap": "strategy@1#l_f27e261a" }
+        ]
+      },
+      "why_gold": "The cold strategy says how they will work (borrow, no charging). Confirming it after the objectives already fired must not open a third and fourth root."
+    },
+    {
+      "id": "j1-energy-island-already-shortlisted",
+      "job": "J1",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          {
+            "why": "second island line is already served by the shortlist ticket",
+            "gap": "objectives@6#l_0e5a980f"
+          }
+        ]
+      },
+      "why_gold": "The live seed already has 'A second island runs the Ameland model by December' and islands/second-island-shortlist-three-candidates. The scan must stay quiet on that line. The first-step case is the imagined new line with no item."
+    },
+    {
+      "id": "j1-river-dismissed-same-version",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Shapers declined a harvest-festival root on objectives v3.",
+        "declined_gap": "objectives@3#l_harvest",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_harvest",
+            "text": "A harvest festival in the hall in September."
+          }
+        ]
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "declined on this L3 version", "gap": "objectives@3#l_harvest" }
+        ]
+      },
+      "why_gold": "A declined key stays down until the objectives version or the subtree changes. Nagging the same festival a week later is the failure mode the nag-rate row forbids."
+    },
+    {
+      "id": "j1-cold-weekly-after-roots-exist",
+      "job": "J1",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "cold", "locale": "en" },
+      "imagine": {
+        "note": "Both cold objectives now have live roots (the v1 drafts were accepted)."
+      },
+      "gold": { "silence": true },
+      "why_gold": "Once each line has a live root, the Monday scan is empty. The cold-start positive is the confirm, not an endless weekly drip."
+    },
+    {
+      "id": "j1-river-vague-visible",
+      "job": "J1",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "direction_confirmed", "slug": "objectives" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "A new vague line.",
+        "direction_lines": [
+          { "slug": "objectives", "id": "l_visible", "text": "Be more visible." }
+        ]
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "a confident wrong project for a vague line", "title": "Launch a marketing campaign" },
+          { "why": "vacuous title", "title": "Make a plan" }
+        ]
+      },
+      "why_gold": "Both silence (the line is too vague to serve) and a first-step a Shaper would recognise pass the eval. This gold picks silence: River already has a stall, a hall, and growers — 'be more visible' does not name which. A marketing campaign or a vacuous 'Make a plan' is the fail."
+    },
+    {
+      "id": "j1-energy-overlapping-objectives",
+      "job": "J1",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "direction_confirmed", "slug": "objectives" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "Two new lines that overlap by half.",
+        "direction_lines": [
+          {
+            "slug": "objectives",
+            "id": "l_six_ready",
+            "text": "Six Iberian communities ready for EECF by spring, starting with a legal pack."
+          },
+          {
+            "slug": "objectives",
+            "id": "l_legal_pack",
+            "text": "A legal pack that gets Iberian communities EECF-ready by spring."
+          }
+        ]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "project",
+            "gap": "objectives@7#l_six_ready",
+            "intent": "One legal-pack / EECF-readiness project, boundary stated in why.",
+            "needs": "shaper"
+          }
+        ],
+        "must_not": [
+          { "why": "two drafts for one thing", "gap": "objectives@7#l_legal_pack" }
+        ]
+      },
+      "why_gold": "The two lines are one piece of work. Gold is one draft with a stated boundary, or two with an explicit split. Two untitled twins fail. This gold picks one."
+    }
+  ]
+}

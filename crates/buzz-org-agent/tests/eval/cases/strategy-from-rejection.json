@@ -1,0 +1,112 @@
+{
+  "suite": "strategy-from-rejection",
+  "job": "J3d",
+  "cases": [
+    {
+      "id": "j3d-brand-money-constraint",
+      "job": "J3d",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "A direction/strategy or project proposal was declined with 'not with brand money'."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "direction",
+            "intent": "One strategy draft citing the decline reason — we do not take brand money.",
+            "needs": "shaper",
+            "payload": {
+              "slug": "strategy",
+              "base_version": 4,
+              "body": "Small money, many hands. No restaurant. RIVER vouchers with the growers. We do not take brand money.",
+              "lines": [
+                { "n": 1, "id": "l_ea714a27", "text": "Small money, many hands — the stall funds the hall, not a grant round.", "date": null },
+                { "n": 2, "id": "l_0f1c6a11", "text": "No restaurant. Two days a week, not a fleet.", "date": null },
+                { "n": 3, "id": "l_fb1f70e9", "text": "RIVER vouchers keep value with the growers, not the middle.", "date": null },
+                { "n": 4, "id": "l_brand", "text": "We do not take brand money.", "date": null }
+              ],
+              "diff": "add: We do not take brand money.",
+              "heard": []
+            }
+          }
+        ]
+      },
+      "why_gold": "A decline reason that states a constraint yields one strategy draft citing the reason. This is the preview's 'no brand money' line, written when someone actually said it on a rejection — not invented from the air."
+    },
+    {
+      "id": "j3d-energy-no-vendor-lockin",
+      "job": "J3d",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "A hardware-vendor project was declined: 'not if it locks the coop to one inverter brand'."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "direction",
+            "intent": "Strategy line: pilots stay vendor-neutral.",
+            "needs": "shaper"
+          }
+        ]
+      },
+      "why_gold": "Same shape on Energy: a reasoned rejection becomes a strategy constraint, one draft, the reason as receipt."
+    },
+    {
+      "id": "j3d-no-reason",
+      "job": "J3d",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "Harvest proposal rejected with an empty reason." },
+      "gold": { "silence": true },
+      "why_gold": "A decline with no reason yields nothing. Strategy is not inferred from a silent no."
+    },
+    {
+      "id": "j3d-timing-reason",
+      "job": "J3d",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "Rejected 'not this quarter — wait for EECF'." },
+      "gold": { "silence": true },
+      "why_gold": "A reason about timing is not a constraint the org will live by. It is a calendar. No strategy draft."
+    },
+    {
+      "id": "j3d-holder-wrong-not-strategy",
+      "job": "J3d",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "A DRI proposal declined wrong_holder." },
+      "gold": { "silence": true },
+      "why_gold": "wrong_holder is a who, not a how. J1b may re-arm; J3d does not write strategy."
+    },
+    {
+      "id": "j3d-cold-no-rejection",
+      "job": "J3d",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "proposal_rejected" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Cold has no rejected direction. The trigger without a reasoned 39102 is quiet."
+    }
+  ]
+}
