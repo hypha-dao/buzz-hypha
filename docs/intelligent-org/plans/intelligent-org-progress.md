@@ -50,6 +50,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 
 | Slice | Status | PR | Merged as | Notes |
 | ----- | ------ | -- | --------- | ----- |
+| D-0   | open | [#27](https://github.com/hypha-dao/buzz-hypha/pull/27) |           | Desktop only. `org` preview feature (V14); routes `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render empty states; sidebar group; live REQ hooks per Protocol §6.5 with backfill/live overlap; `commands.ts` + `useOrgCommands` (C-1 tags, `sign_event` → EVENT). Reuses D-5 `orgAgent` / `useOrgAgent`. Bodies are D-1 / D-2 / D-3. |
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
@@ -404,6 +405,23 @@ absorb an item into an unrelated slice.
 - **Home roster / `maintainers` sync on a passed `dri` is R-9a.** R-4b
   rewrites the `39101` (`dri`, `accepted`, offer cleared) and writes
   `item_accepted`; it does not touch the project room.
+- **D-0 has no command UI yet.** The Playwright proof for kind/tags binds
+  the production `publishOrgCommand` path through
+  `window.__BUZZ_E2E_ORG_COMMANDS__` (`useOrgCommandE2eBridge` on Overview,
+  e2e builds only). D-1 / D-2 / D-3 should keep asserting on that same
+  `sign_event` capture; drop the window hook once a real tap exists.
+- **My Work REQs `39103` in addition to the Protocol §6.5 set** so the
+  hook can apply the Shaper `#n=shaper` addendum once the newest
+  `d=shapers` names the viewer. D-5 already watches `39103.agent`; a later
+  door slice can share that event instead of a second live REQ.
+- **Adding `org-skeleton.spec.ts` re-cuts the Playwright smoke shards**
+  the same way D-5's `org-agent-defaults.spec.ts` did. Judge shards by
+  which specs failed, not by shard number.
+- **The mock bridge now accepts `50001–50021` without an `h` tag.** Org
+  commands are community-scoped (Protocol §4.8); the mock's default EVENT
+  path required a channel tag. D-0's command proof (`io_done` →
+  `__BUZZ_E2E_SIGNED_EVENTS__`) needs that exemption. The real relay
+  already routes these through the R-3 ingest path.
 
 ---
 

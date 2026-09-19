@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  Building2,
   CircleDot,
   Copy,
   FileText,
@@ -30,7 +31,14 @@ type ChatHeaderProps = {
   channelType?: ChannelType;
   visibility?: ChannelVisibility;
   leadingContent?: React.ReactNode;
-  mode?: "home" | "channel" | "agents" | "workflows" | "pulse" | "projects";
+  mode?:
+    | "home"
+    | "channel"
+    | "agents"
+    | "workflows"
+    | "pulse"
+    | "projects"
+    | "org";
   overlaysContent?: boolean;
   statusBadge?: React.ReactNode;
   /** Identity adornment rendered exactly 4px after a DM title. */
@@ -49,7 +57,14 @@ function ChannelIcon({
 }: {
   channelType?: ChannelType;
   visibility?: ChannelVisibility;
-  mode?: "home" | "channel" | "agents" | "workflows" | "pulse" | "projects";
+  mode?:
+    | "home"
+    | "channel"
+    | "agents"
+    | "workflows"
+    | "pulse"
+    | "projects"
+    | "org";
 }) {
   if (mode === "home") {
     return <House className={HEADER_ICON_CLASS} />;
@@ -69,6 +84,10 @@ function ChannelIcon({
 
   if (mode === "projects") {
     return <FolderGit2 className={HEADER_ICON_CLASS} />;
+  }
+
+  if (mode === "org") {
+    return <Building2 className={HEADER_ICON_CLASS} />;
   }
 
   if (channelType === "dm") {

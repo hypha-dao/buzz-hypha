@@ -30,6 +30,12 @@
       "name": "Agent-managed profiles",
       "description": "Let agents manage their own relay name and avatar instead of restoring the desktop copy",
       "platforms": ["desktop"]
+    },
+    {
+      "id": "org",
+      "name": "Org",
+      "description": "Overview, Work, and My Work — the intelligent organization doors",
+      "platforms": ["desktop"]
     }
   ]
 }

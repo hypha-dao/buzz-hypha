@@ -93,6 +93,51 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goOrg = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
+  const goOrgWork = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org/work",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
+  const goOrgWorkItem = React.useCallback(
+    (itemId: string, behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org/work/$itemId",
+          params: { itemId },
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
+  const goOrgMyWork = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org/my-work",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
   const goPulse = React.useCallback(
     (behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -465,6 +510,10 @@ export function useAppNavigation() {
     goForumPost,
     goHome,
     goNewMessage,
+    goOrg,
+    goOrgMyWork,
+    goOrgWork,
+    goOrgWorkItem,
     goNewWorkflow,
     goNewWorkflowForChannel,
     goProject,

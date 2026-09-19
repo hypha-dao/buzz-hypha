@@ -1,5 +1,6 @@
 import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
 
+import { OrgSidebarGroup } from "@/features/org/ui/OrgSidebarGroup";
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
 import { FeatureGate } from "@/shared/features";
@@ -21,7 +22,8 @@ type SidebarSelectedView =
   | "agents"
   | "workflows"
   | "pulse"
-  | "projects";
+  | "projects"
+  | "org";
 
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
@@ -127,6 +129,9 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuBadge>
             ) : null}
           </SidebarMenuItem>
+          <FeatureGate feature="org">
+            <OrgSidebarGroup />
+          </FeatureGate>
           <FeatureGate feature="pulse">
             <SidebarMenuItem>
               <SidebarMenuButton
