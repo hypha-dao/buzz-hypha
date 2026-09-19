@@ -111,11 +111,12 @@ test.describe("Org Overview door (D-1)", () => {
       "opened 6",
     );
 
-    await page.getByTestId("org-tally-card").scrollIntoViewIfNeeded();
     await waitForAnimations(page);
     await page.getByTestId("org-overview").screenshot({
       path: `${SHOTS}/02-seeded-overview.png`,
     });
+    await page.getByTestId("org-tally-card").scrollIntoViewIfNeeded();
+    await waitForAnimations(page);
     await page.getByTestId("org-tally-card").screenshot({
       path: `${SHOTS}/02-tally-card.png`,
     });
