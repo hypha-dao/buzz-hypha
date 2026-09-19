@@ -171,7 +171,7 @@ test.describe("Org My Work — the card set (D-2)", () => {
     await installMockBridge(page, { org: { events: myWorkSeedEvents() } });
     await page.goto("/");
     await page.getByTestId("channel-general").click();
-    await page.getByTestId("sidebar-primary-menu").getByText("Inbox").click();
+    await page.getByRole("button", { name: "Inbox" }).click();
     await expect(page.getByTestId("home-inbox")).toBeVisible();
     await page.getByTestId("inbox-filter-trigger").click();
     await page.getByRole("menuitemradio", { name: "Needs action" }).click();
@@ -182,7 +182,9 @@ test.describe("Org My Work — the card set (D-2)", () => {
     await expect(card.getByTestId("org-card-kicker")).toHaveText(
       "AI is asking you",
     );
-    await expect(card.getByRole("button", { name: "Agree" })).toBeVisible();
+    await expect(
+      card.getByRole("button", { name: "Agree", exact: true }),
+    ).toBeVisible();
 
     await waitForAnimations(page);
     await page.getByTestId("org-inbox-card").screenshot({
@@ -198,7 +200,9 @@ test.describe("Org My Work — the card set (D-2)", () => {
       "aria-labelledby",
       `org-card-claim-${ASKING_ID}`,
     );
-    await expect(asking.getByRole("button", { name: "Agree" })).toBeVisible();
+    await expect(
+      asking.getByRole("button", { name: "Agree", exact: true }),
+    ).toBeVisible();
     await expect(
       asking.getByRole("button", { name: "Edit then agree" }),
     ).toBeVisible();
