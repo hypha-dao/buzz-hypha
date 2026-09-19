@@ -97,25 +97,18 @@ pub async fn find_dm_by_participants(
 /// existing one if a DM with the same participant set already exists.
 ///
 /// Rules:
-/// - `participants` must contain 2-9 entries (enforced here).
-/// - `created_by` must be one of the participants.
-/// - The operation is idempotent: same participant set -> same channel returned.
+/// - The **identity** set (participants minus `39103.agent`) must contain
+///   1–9 entries (2–9 humans, or 1 for the agent DM). The agent does not
+///   count against the cap and is not hashed (Protocol §6.8, V5).
+/// - `created_by` is recorded as the channel creator; it need not be in
+///   the identity set (the org agent may open a member's DM).
+/// - The operation is idempotent: same identity set -> same channel returned.
 pub async fn create_dm(
     pool: &PgPool,
     community_id: CommunityId,
     participants: &[&[u8]],
     created_by: &[u8],
 ) -> Result<ChannelRecord> {
-    if participants.len() < 2 {
-        return Err(DbError::InvalidData(
-            "DM requires at least 2 participants".to_string(),
-        ));
-    }
-    if participants.len() > 9 {
-        return Err(DbError::InvalidData(
-            "DM supports at most 9 participants".to_string(),
-        ));
-    }
     for pk in participants {
         if pk.len() != 32 {
             return Err(DbError::InvalidData(format!(
@@ -124,10 +117,28 @@ pub async fn create_dm(
             )));
         }
     }
-
-    let hash = compute_participant_hash(participants);
+    if created_by.len() != 32 {
+        return Err(DbError::InvalidData(format!(
+            "pubkey must be 32 bytes, got {}",
+            created_by.len()
+        )));
+    }
 
     let mut tx = pool.begin().await?;
+    let agent = crate::org_agent_membership::live_agent_pubkey(&mut tx, community_id).await?;
+    let identity = crate::org_agent_membership::without_agent(participants, agent.as_deref());
+    if identity.is_empty() {
+        return Err(DbError::InvalidData(
+            "DM requires at least 1 participant".to_string(),
+        ));
+    }
+    if identity.len() > 9 {
+        return Err(DbError::InvalidData(
+            "DM supports at most 9 participants".to_string(),
+        ));
+    }
+
+    let hash = compute_participant_hash(&identity);
 
     // Idempotency check inside the transaction.
     let existing = sqlx::query(
@@ -152,15 +163,26 @@ pub async fn create_dm(
     .await?;
 
     if let Some(row) = existing {
+        let record = row_to_channel_record(row)?;
+        if let Some(agent) = agent.as_deref() {
+            crate::org_agent_membership::put_org_agent_member(
+                &mut tx,
+                community_id,
+                record.id,
+                agent,
+                created_by,
+            )
+            .await?;
+        }
         tx.commit().await?;
-        return row_to_channel_record(row);
+        return Ok(record);
     }
 
-    // Name the DM based on participant count.
-    let name = if participants.len() == 2 {
+    // Name the DM based on the human identity set.
+    let name = if identity.len() <= 2 {
         "DM".to_string()
     } else {
-        format!("Group DM ({})", participants.len())
+        format!("Group DM ({})", identity.len())
     };
 
     let id = Uuid::new_v4();
@@ -180,8 +202,8 @@ pub async fn create_dm(
     .execute(&mut *tx)
     .await?;
 
-    // Add all participants as members with role='member'.
-    for pk in participants {
+    // Add the identity set as members with role='member'.
+    for pk in &identity {
         sqlx::query(
             r#"
             INSERT INTO channel_members (community_id, channel_id, pubkey, role, invited_by)
@@ -197,6 +219,16 @@ pub async fn create_dm(
         .bind(*pk)
         .bind(created_by)
         .execute(&mut *tx)
+        .await?;
+    }
+    if let Some(agent) = agent.as_deref() {
+        crate::org_agent_membership::put_org_agent_member(
+            &mut tx,
+            community_id,
+            id,
+            agent,
+            created_by,
+        )
         .await?;
     }
 
@@ -362,29 +394,54 @@ pub async fn open_dm(
     created_by: &[u8],
 ) -> Result<(ChannelRecord, bool)> {
     // Merge created_by into the participant set (dedup handled by compute_participant_hash).
+    // The org agent is stripped before hashing so it is not part of DM identity.
     let mut all: Vec<&[u8]> = pubkeys.to_vec();
     if !all.contains(&created_by) {
         all.push(created_by);
     }
 
-    // Enforce max before hitting the DB.
-    if all.len() > 9 {
+    let agent = {
+        let mut conn = pool.acquire().await?;
+        crate::org_agent_membership::live_agent_pubkey(&mut conn, community_id).await?
+    };
+    let identity = crate::org_agent_membership::without_agent(&all, agent.as_deref());
+
+    // Enforce the human cap before hitting the create path.
+    if identity.is_empty() {
+        return Err(DbError::InvalidData(
+            "DM requires at least 1 participant".to_string(),
+        ));
+    }
+    if identity.len() > 9 {
         return Err(DbError::InvalidData(
             "DM supports at most 9 participants".to_string(),
         ));
     }
 
-    let hash = compute_participant_hash(&all);
+    let hash = compute_participant_hash(&identity);
 
     // Check for existing DM first (fast path, no transaction).
     if let Some(existing) = find_dm_by_participants(pool, community_id, &hash).await? {
         // Clear hidden_at for the caller so the DM reappears in their sidebar.
         unhide_dm(pool, community_id, existing.id, created_by).await?;
+        // A 9001 may have dropped the agent; the next open puts them back.
+        if let Some(agent) = agent.as_deref() {
+            let mut tx = pool.begin().await?;
+            crate::org_agent_membership::put_org_agent_member(
+                &mut tx,
+                community_id,
+                existing.id,
+                agent,
+                created_by,
+            )
+            .await?;
+            tx.commit().await?;
+        }
         return Ok((existing, false));
     }
 
-    // Create new DM.
-    let channel = create_dm(pool, community_id, &all, created_by).await?;
+    // Create new DM from the human identity set; create_dm adds the agent.
+    let channel = create_dm(pool, community_id, &identity, created_by).await?;
 
     Ok((channel, true))
 }

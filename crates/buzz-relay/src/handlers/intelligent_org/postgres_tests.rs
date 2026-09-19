@@ -1,4 +1,4 @@
-//! R-3, R-4a, and R-4b proofs at the production seam: every command enters
+//! R-3, R-4a, R-4b, and R-8 proofs at the production seam: every command enters
 //! through [`crate::handlers::ingest::ingest_event`] exactly as a WebSocket
 //! or HTTP client's would, and every assertion reads the tables the relay
 //! serves from. Redis is deliberately unreachable — fan-out is best-effort
@@ -12,10 +12,11 @@ use buzz_core::intelligent_org::{
     VoteChoice, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
-    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
-    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_VOTE, KIND_IO_WORK_ITEM,
+    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE,
+    KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
+    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_VOTE, KIND_IO_WORK_ITEM,
+    KIND_NIP29_CREATE_GROUP, KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::CommunityId;
@@ -58,7 +59,7 @@ impl Harness {
     async fn ingest(&self, keys: &Keys, event: Event) -> Result<String, IngestError> {
         let auth = IngestAuth::Http {
             pubkey: keys.public_key(),
-            scopes: vec![Scope::MessagesWrite],
+            scopes: vec![Scope::MessagesWrite, Scope::ChannelsWrite],
             auth_method: HttpAuthMethod::Nip98,
         };
         ingest_event(&self.state, &self.tenant, event, auth)
@@ -354,6 +355,98 @@ impl Harness {
         Ok(serde_json::from_str(&message).expect("project reply is json"))
     }
 
+    /// Active membership pubkeys of `channel`, hex-sorted.
+    async fn member_pubkeys(&self, channel: Uuid) -> Vec<String> {
+        let mut members = self.roster(channel).await;
+        members.sort();
+        members.into_iter().map(|(p, _)| p).collect()
+    }
+
+    /// `p` tag values of the live discovery event for `channel`.
+    async fn discovery_p_tags(&self, kind: u32, channel: Uuid) -> Vec<String> {
+        let rows = sqlx::query(
+            "SELECT tags FROM events \
+             WHERE community_id = $1 AND kind = $2 AND channel_id = $3 \
+               AND deleted_at IS NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(self.community().as_uuid())
+        .bind(kind as i32)
+        .bind(channel)
+        .fetch_optional(&self.pool)
+        .await
+        .expect("read discovery event");
+        let Some(row) = rows else {
+            return Vec::new();
+        };
+        let tags: serde_json::Value = row.get("tags");
+        let mut p: Vec<String> = tags
+            .as_array()
+            .expect("tags")
+            .iter()
+            .filter(|t| t[0] == "p")
+            .map(|t| t[1].as_str().expect("p").to_owned())
+            .collect();
+        p.sort();
+        p
+    }
+
+    /// `participants` of the `41010` system message (kind 40099) for `channel`.
+    async fn dm_system_participants(&self, channel: Uuid) -> Vec<String> {
+        let content: String = sqlx::query_scalar(
+            "SELECT content FROM events \
+             WHERE community_id = $1 AND kind = 40099 AND channel_id = $2 \
+               AND deleted_at IS NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(self.community().as_uuid())
+        .bind(channel)
+        .fetch_one(&self.pool)
+        .await
+        .expect("system message");
+        let body: serde_json::Value = serde_json::from_str(&content).expect("system json");
+        let mut p: Vec<String> = body["participants"]
+            .as_array()
+            .expect("participants")
+            .iter()
+            .map(|v| v.as_str().expect("hex").to_owned())
+            .collect();
+        p.sort();
+        p
+    }
+
+    async fn open_dm(&self, keys: &Keys, others: &[&Keys]) -> Uuid {
+        let tags = others
+            .iter()
+            .map(|k| tag(["p", &k.public_key().to_hex()]))
+            .collect();
+        let message = self
+            .send(keys, KIND_DM_OPEN, tags, "")
+            .await
+            .expect("41010 accepted");
+        let payload = message.strip_prefix("response:").expect("response: prefix");
+        let reply: serde_json::Value = serde_json::from_str(payload).expect("dm reply");
+        Uuid::parse_str(reply["channel_id"].as_str().expect("channel_id")).expect("uuid")
+    }
+
+    async fn create_stream(&self, keys: &Keys) -> Uuid {
+        let id = Uuid::new_v4();
+        self.send(
+            keys,
+            KIND_NIP29_CREATE_GROUP,
+            vec![
+                tag(["h", &id.to_string()]),
+                tag(["name", &format!("room-{id}")]),
+                tag(["channel_type", "stream"]),
+                tag(["visibility", "open"]),
+            ],
+            "",
+        )
+        .await
+        .expect("9007 accepted");
+        id
+    }
+
     /// Seed a work item the way R-5a will write it — R-4b cannot create one
     /// through a command, so DRI proofs start from a projection row.
     async fn seed_item(&self, item: &WorkItem) {
@@ -597,6 +690,7 @@ async fn bootstrap_writes_39103_with_the_hosted_agent_and_the_room_roster() {
             "proposal_passed",
             "shaper_added",
             "agent_changed",
+            "agent_membership_synced",
         ]
     );
 }
@@ -1504,7 +1598,7 @@ async fn rules_and_agent_need_every_shaper_and_the_agent_must_be_a_non_shaper_me
     );
     assert_eq!(
         h.ledger_verbs().await.last().map(String::as_str),
-        Some("agent_changed")
+        Some("agent_membership_synced")
     );
 
     // No p: back to the hosted default from io_hosted_agents.
@@ -2094,4 +2188,200 @@ async fn a_passing_project_vote_is_refused_until_r5a() {
     assert_eq!(h.proposal(&waiting).await.status, ProposalStatus::Open);
     assert!(h.proposal(&waiting).await.votes.is_empty());
     assert!(h.live_state(KIND_IO_WORK_ITEM).await.is_empty());
+}
+
+// ── R-8: the agent everywhere ────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn two_members_opening_our_dm_share_one_channel_that_hides_the_agent() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let alice = Keys::generate();
+    let bob = Keys::generate();
+    h.member(&alice).await;
+    h.member(&bob).await;
+    let alice_hex = alice.public_key().to_hex();
+    let bob_hex = bob.public_key().to_hex();
+    let agent_hex = h.agent.public_key().to_hex();
+
+    let first = h.open_dm(&alice, &[&bob]).await;
+    let second = h.open_dm(&bob, &[&alice]).await;
+    assert_eq!(first, second, "two humans opening our DM find one channel");
+
+    let mut humans = vec![alice_hex.clone(), bob_hex.clone()];
+    humans.sort();
+    let mut members = vec![alice_hex.clone(), bob_hex.clone(), agent_hex.clone()];
+    members.sort();
+    assert_eq!(
+        h.member_pubkeys(first).await,
+        members,
+        "channel_members holds the two humans and the agent"
+    );
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_METADATA, first).await,
+        humans,
+        "39000 lists two p"
+    );
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_MEMBERS, first).await,
+        humans,
+        "39002 lists two p"
+    );
+    assert_eq!(
+        h.dm_system_participants(first).await,
+        humans,
+        "the 41010 system message names two participants"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_nine_human_dm_holds_the_agent_as_a_tenth_row_and_41011_keeps_identity() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let mut people: Vec<Keys> = (0..9).map(|_| Keys::generate()).collect();
+    for keys in &people {
+        h.member(keys).await;
+    }
+    let opener = people.remove(0);
+    let others: Vec<&Keys> = people.iter().collect();
+    let dm = h.open_dm(&opener, &others).await;
+    assert_eq!(
+        h.member_pubkeys(dm).await.len(),
+        10,
+        "nine humans plus the agent"
+    );
+    let tenth = Keys::generate();
+    h.member(&tenth).await;
+    assert_eq!(
+        rejected(
+            h.send(
+                &opener,
+                KIND_DM_ADD_MEMBER,
+                vec![
+                    tag(["h", &dm.to_string()]),
+                    tag(["p", &tenth.public_key().to_hex()]),
+                ],
+                "",
+            )
+            .await
+        ),
+        "invalid: DM supports at most 9 participants"
+    );
+
+    let extra = Keys::generate();
+    h.member(&extra).await;
+    // 41011 on a 2-human DM (fresh) then a 41010 by the humans finds that channel.
+    let carol = Keys::generate();
+    h.member(&carol).await;
+    let pair = h.open_dm(&opener, &[&carol]).await;
+    h.send(
+        &opener,
+        KIND_DM_ADD_MEMBER,
+        vec![
+            tag(["h", &pair.to_string()]),
+            tag(["p", &extra.public_key().to_hex()]),
+        ],
+        "",
+    )
+    .await
+    .expect("41011 accepted");
+    let again = h.open_dm(&opener, &[&carol, &extra]).await;
+    let via_carol = h.open_dm(&carol, &[&opener, &extra]).await;
+    assert_eq!(again, via_carol);
+    assert_ne!(again, pair, "41011 created a new identity set");
+    assert_eq!(h.member_pubkeys(again).await.len(), 4, "3 humans + agent");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_member_only_41010_opens_the_agent_dm_and_a_channel_lists_the_agent() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    h.member(&member).await;
+    let member_hex = member.public_key().to_hex();
+    let agent_hex = h.agent.public_key().to_hex();
+
+    let tagged_self = h.open_dm(&member, &[&member]).await;
+    let tagged_agent = h.open_dm(&member, &[&h.agent]).await;
+    assert_eq!(
+        tagged_self, tagged_agent,
+        "[member] and [member, agent] are the same DM"
+    );
+    assert_eq!(h.member_pubkeys(tagged_self).await, {
+        let mut m = vec![member_hex.clone(), agent_hex.clone()];
+        m.sort();
+        m
+    });
+    assert_eq!(
+        h.discovery_p_tags(KIND_NIP29_GROUP_METADATA, tagged_self)
+            .await,
+        vec![member_hex.clone()],
+        "the agent DM's 39000 is {{member}}"
+    );
+
+    let room = h.create_stream(&member).await;
+    let members = h.member_pubkeys(room).await;
+    assert!(
+        members.contains(&agent_hex),
+        "a member-created channel has the agent in channel_members"
+    );
+    let p = h.discovery_p_tags(KIND_NIP29_GROUP_MEMBERS, room).await;
+    assert!(
+        p.contains(&agent_hex),
+        "a channel created by a member has the agent in 39002"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn bootstrap_backfills_existing_rooms_and_shapers_agent_moves_every_row() {
+    let h = harness().await;
+    let alice = Keys::generate();
+    h.member(&alice).await;
+    let before_room = h.create_stream(&h.owner).await;
+    let before_dm = h.open_dm(&h.owner, &[&alice]).await;
+    assert!(
+        !h.member_pubkeys(before_room)
+            .await
+            .contains(&h.agent.public_key().to_hex()),
+        "no 39103 yet: the agent is not in the room"
+    );
+
+    let reply = h.bootstrap().await;
+    let agent_hex = h.agent.public_key().to_hex();
+    assert!(
+        h.member_pubkeys(before_room).await.contains(&agent_hex),
+        "bootstrap backfills existing channels"
+    );
+    assert!(
+        h.member_pubkeys(before_dm).await.contains(&agent_hex),
+        "bootstrap backfills existing DMs"
+    );
+    let verbs = h.ledger_verbs().await;
+    assert!(
+        verbs.contains(&"agent_membership_synced".to_owned()),
+        "bootstrap writes the backfill ledger row"
+    );
+
+    let new_agent = Keys::generate();
+    let new_hex = new_agent.public_key().to_hex();
+    h.member(&new_agent).await;
+    h.propose(
+        &h.owner,
+        "agent",
+        Some(&new_hex),
+        r#"{"why":"our own"}"#,
+        true,
+    )
+    .await
+    .expect("one Shaper: opener agree passes agent");
+
+    for channel in [reply.room, before_room, before_dm] {
+        let members = h.member_pubkeys(channel).await;
+        assert!(members.contains(&new_hex), "the new key is in every room");
+        assert!(!members.contains(&agent_hex), "the old key is in no room");
+    }
 }

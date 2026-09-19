@@ -105,8 +105,10 @@ pub async fn create_room(
     .bind(visibility.as_str())
     .bind(description)
     .bind(created_by)
-    .execute(conn)
+    .execute(&mut *conn)
     .await?;
+    crate::org_agent_membership::ensure_live_agent_member(conn, community_id, id, created_by)
+        .await?;
     Ok(id)
 }
 

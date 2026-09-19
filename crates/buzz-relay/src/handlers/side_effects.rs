@@ -971,10 +971,17 @@ async fn emit_addressable_discovery_event(
     Ok(())
 }
 
-fn group_members_tags(group_id: &str, members: &[MemberRecord]) -> anyhow::Result<Vec<Tag>> {
+fn group_members_tags(
+    group_id: &str,
+    members: &[MemberRecord],
+    omit: Option<&[u8]>,
+) -> anyhow::Result<Vec<Tag>> {
     let mut tags: Vec<Tag> = Vec::with_capacity(members.len() + 1);
     tags.push(Tag::parse(["d", group_id])?);
     for member in members {
+        if buzz_db::org_agent_membership::is_org_agent(&member.pubkey, omit) {
+            continue;
+        }
         let pubkey_hex = hex::encode(&member.pubkey);
         // NIP-29 convention: ["p", pubkey, relay_url, role]. Empty relay_url
         // because the canonical relay is implicit (this event is signed by it).
@@ -988,9 +995,10 @@ async fn store_group_members_event(
     state: &Arc<AppState>,
     channel_id: Uuid,
     member_snapshot: &mut buzz_db::channel::LockedMemberSnapshot,
+    omit: Option<&[u8]>,
 ) -> anyhow::Result<Option<buzz_core::StoredEvent>> {
     let group_id = channel_id.to_string();
-    let tags = group_members_tags(&group_id, &member_snapshot.members)?;
+    let tags = group_members_tags(&group_id, &member_snapshot.members, omit)?;
     let relay_pubkey = state.relay_keypair.public_key().to_bytes();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1061,6 +1069,15 @@ pub async fn emit_group_discovery_events(
         .db
         .get_members_for_event_write(tenant.community(), channel_id)
         .await?;
+    // DM identity excludes 39103.agent from 39000/39002 `p` tags (V5).
+    // Channel 39002 still lists the agent — that roster is the truth.
+    let agent = state
+        .db
+        .org_agent_pubkey(tenant.community())
+        .await
+        .ok()
+        .flatten();
+    let omit_from_dm_identity = agent.as_deref().filter(|_| channel.channel_type == "dm");
 
     let relay_pubkey_hex = hex::encode(state.relay_keypair.public_key().to_bytes());
     let group_id = channel_id.to_string();
@@ -1086,7 +1103,11 @@ pub async fn emit_group_discovery_events(
             tags.push(Tag::parse(["hidden"])?);
             // Include participant pubkeys in kind:39000 for DMs so clients can
             // resolve display names without a separate kind:39002 fetch.
+            // Omit the org agent — it is not a displayed participant.
             for m in &members {
+                if buzz_db::org_agent_membership::is_org_agent(&m.pubkey, omit_from_dm_identity) {
+                    continue;
+                }
                 let pubkey_hex = hex::encode(&m.pubkey);
                 tags.push(Tag::parse(["p", &pubkey_hex])?);
             }
@@ -1156,8 +1177,14 @@ pub async fn emit_group_discovery_events(
         .db
         .lock_member_snapshot(tenant.community(), channel_id, &relay_pubkey)
         .await?;
-    let stored_members =
-        store_group_members_event(tenant, state, channel_id, &mut member_snapshot).await?;
+    let stored_members = store_group_members_event(
+        tenant,
+        state,
+        channel_id,
+        &mut member_snapshot,
+        omit_from_dm_identity,
+    )
+    .await?;
     member_snapshot.release().await?;
     dispatch_group_members_event(tenant, state, stored_members, &relay_pubkey_hex).await;
 
@@ -3197,7 +3224,8 @@ pub async fn reconcile_large_channel_member_snapshots(
                 .await?;
             let tenant = TenantContext::resolved(candidate.community_id, candidate.host.clone());
             let stored_members =
-                store_group_members_event(&tenant, state, channel_id, &mut member_snapshot).await?;
+                store_group_members_event(&tenant, state, channel_id, &mut member_snapshot, None)
+                    .await?;
             member_snapshot.release().await?;
             dispatch_group_members_event(&tenant, state, stored_members, &relay_pubkey_hex).await;
             Ok::<bool, anyhow::Error>(true)
@@ -3679,7 +3707,7 @@ mod tests {
             })
             .collect();
 
-        let tags = group_members_tags(&channel_id.to_string(), &members).expect("build tags");
+        let tags = group_members_tags(&channel_id.to_string(), &members, None).expect("build tags");
         assert_eq!(tags.len(), 1_502, "d tag plus every member p tag");
 
         let late_pubkey = hex::encode(&members[1_500].pubkey);

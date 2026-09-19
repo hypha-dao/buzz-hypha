@@ -49,8 +49,9 @@ pub const MAX_STATE_DRIFT_SECS: u64 = 900;
 /// later Shaper change.
 pub const SHAPER_ROOM_ROLE: MemberRole = MemberRole::Admin;
 
-/// The role the org agent holds in `#shapers` (R-8 settles its role in every
-/// other room).
+/// The role the org agent holds in every room, `#shapers` included. R-8
+/// kept `member` (Design § Shapers); a different role would change this
+/// constant and that section together.
 pub const AGENT_ROOM_ROLE: MemberRole = MemberRole::Member;
 
 /// What the command changed, in the canonical §4 content type. `apply`
