@@ -606,6 +606,20 @@ pub(super) async fn done(cmd: &Command<'_>) -> Result<IngestResult, IngestError>
             "done_receipt": done_receipt,
         }),
     )?];
+    // Index only when the command cites a distinct message (§5.5 / §6.8).
+    // When the command itself is the receipt there is no room message to unlock.
+    if let Some(cited_hex) = receipt_marker(cmd.event)? {
+        let cited = hex::decode(&cited_hex).map_err(|e| internal("decode done receipt", e))?;
+        store::insert_receipts(
+            &mut tx,
+            cmd.tenant.community(),
+            &cmd.receipt_bytes(),
+            &[cited],
+            store::receipt_source::DONE_RECEIPT,
+        )
+        .await
+        .map_err(|e| internal("write io_receipts", e))?;
+    }
     persist(
         cmd,
         tx,

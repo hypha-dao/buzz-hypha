@@ -3170,3 +3170,84 @@ async fn r11_claim_writes_member_joined_without_any_8000_publish() {
     );
     assert_eq!(c.relay_role(&joiner).await.as_deref(), Some("member"));
 }
+
+// ── R-10: receipt read (§6.8) ────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn r10_cited_message_is_readable_by_ids_but_not_by_h() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let outsider = Keys::generate();
+    c.seed_member(&outsider, "member").await;
+
+    let room = Uuid::new_v4();
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_NIP29_CREATE_GROUP,
+            vec![
+                tag(["h", &room.to_string()]),
+                tag(["name", &format!("private-{room}")]),
+                tag(["channel_type", "stream"]),
+                tag(["visibility", "private"]),
+            ],
+            "",
+        ),
+    )
+    .await;
+
+    let cited = signed(
+        &c.owner,
+        9,
+        vec![tag(["h", &room.to_string()])],
+        "the cited message",
+    );
+    c.submit_ok(&c.owner, &cited).await;
+    let uncited = signed(
+        &c.owner,
+        9,
+        vec![tag(["h", &room.to_string()])],
+        "an uncited sibling",
+    );
+    c.submit_ok(&c.owner, &uncited).await;
+
+    let needs = c.owner.public_key().to_hex();
+    c.submit_ok(
+        &c.agent,
+        &r7_draft(&c.agent, &needs, "gap-r10", &cited.id.to_hex(), R7_PROJECT),
+    )
+    .await;
+
+    // Outsider is not in the room: `{ids}` for the cited message returns it.
+    let got = c
+        .query(&outsider, json!({ "ids": [cited.id.to_hex()] }))
+        .await;
+    assert_eq!(
+        got.len(),
+        1,
+        "cited message must return for a community member"
+    );
+    assert_eq!(got[0]["id"], cited.id.to_hex());
+    assert_eq!(got[0]["content"], "the cited message");
+
+    // Same room, uncited sibling: nothing.
+    let denied = c
+        .query(&outsider, json!({ "ids": [uncited.id.to_hex()] }))
+        .await;
+    assert!(
+        denied.is_empty(),
+        "uncited message in the same room must stay gated"
+    );
+
+    // `#h` of that room still returns nothing — a receipt is not a room key.
+    let window = c
+        .query(&outsider, json!({ "kinds": [9], "#h": [room.to_string()] }))
+        .await;
+    assert!(
+        window.is_empty(),
+        "#h of a room the reader is not in must return nothing"
+    );
+}
+

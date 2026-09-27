@@ -472,6 +472,24 @@ pub(super) async fn ingest_draft(cmd: &Command<'_>) -> Result<IngestResult, Inge
         &draft_hex,
         serde_json::json!({ "gap": gap, "kind": kind, "shadow": shadow }),
     )?];
+    let cited: Vec<Vec<u8>> = receipts
+        .iter()
+        .filter_map(|r| match r {
+            Receipt::Event(id) => Some(id.clone()),
+            _ => None,
+        })
+        .collect();
+    if !cited.is_empty() {
+        store::insert_receipts(
+            &mut tx,
+            cmd.tenant.community(),
+            &cmd.receipt_bytes(),
+            &cited,
+            store::receipt_source::E_TAG,
+        )
+        .await
+        .map_err(|e| internal("write io_receipts", e))?;
+    }
     persist_write(
         cmd,
         tx,
@@ -537,6 +555,21 @@ pub(super) async fn ingest_health(cmd: &Command<'_>) -> Result<IngestResult, Ing
         &read.item,
         serde_json::json!({ "week": read.week, "band": read.band }),
     )?];
+    let cited: Vec<Vec<u8>> = row_ids
+        .iter()
+        .map(|id| parse_hex32(id, "receipt"))
+        .collect::<Result<_, _>>()?;
+    if !cited.is_empty() {
+        store::insert_receipts(
+            &mut tx,
+            cmd.tenant.community(),
+            &cmd.receipt_bytes(),
+            &cited,
+            store::receipt_source::HEALTH_ROW,
+        )
+        .await
+        .map_err(|e| internal("write io_receipts", e))?;
+    }
     persist_write(
         cmd,
         tx,

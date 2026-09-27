@@ -584,3 +584,93 @@ async fn health_read_stores_when_the_item_and_rows_resolve() {
     h.ingest(&h.agent, event).await.expect("health read");
     assert!(h.ledger_verbs().await.contains(&"health_read".to_owned()));
 }
+
+/// R-10: storing a `50100` with an e-receipt indexes `io_receipts`, so a
+/// later `{ids}` query can unlock that one message from a room the reader
+/// is not in. Bound to `ingest_event` → `insert_receipts` →
+/// `cited_receipt_ids` → `query_events` with `receipt_ids`.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn draft_e_receipt_indexes_io_receipts_for_receipt_read() {
+    use buzz_db::EventQuery;
+
+    let h = harness().await;
+    h.bootstrap().await;
+
+    let room = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by) \
+         VALUES ($1, $2, 'private-r10', 'stream', 'private', $3)",
+    )
+    .bind(room)
+    .bind(h.community().as_uuid())
+    .bind(h.owner.public_key().to_bytes().as_slice())
+    .execute(&h.pool)
+    .await
+    .expect("seed private channel");
+
+    let message = signed(&h.owner, 9, vec![tag(["h", &room.to_string()])], "cited");
+    sqlx::query(
+        "INSERT INTO events \
+            (community_id, id, pubkey, created_at, kind, tags, content, sig, channel_id) \
+         VALUES ($1, $2, $3, now(), 9, $4::jsonb, $5, $6, $7)",
+    )
+    .bind(h.community().as_uuid())
+    .bind(message.id.as_bytes().as_slice())
+    .bind(message.pubkey.to_bytes().as_slice())
+    .bind(
+        serde_json::to_value(
+            message
+                .tags
+                .iter()
+                .map(|t| t.as_slice().to_vec())
+                .collect::<Vec<_>>(),
+        )
+        .expect("tags json"),
+    )
+    .bind(&message.content)
+    .bind(message.sig.serialize().as_slice())
+    .bind(room)
+    .execute(&h.pool)
+    .await
+    .expect("seed cited message");
+
+    let needs = h.owner.public_key().to_hex();
+    let draft = draft_event(
+        &h.agent,
+        &needs,
+        "gap-receipt-read",
+        &message.id.to_hex(),
+        PROJECT,
+    );
+    h.ingest(&h.agent, draft)
+        .await
+        .expect("draft with e-receipt");
+
+    let cited = h
+        .state
+        .db
+        .cited_receipt_ids(h.community(), &[message.id.to_bytes().to_vec()])
+        .await
+        .expect("lookup");
+    assert_eq!(
+        cited,
+        vec![message.id.to_bytes().to_vec()],
+        "50100 e-receipt must land in io_receipts"
+    );
+
+    let events = buzz_db::event::query_events(
+        &h.pool,
+        &EventQuery {
+            ids: Some(vec![message.id.to_bytes().to_vec()]),
+            channel_ids: Some(vec![]),
+            channel_ids_include_global: true,
+            receipt_ids: Some(cited),
+            ..EventQuery::for_community(h.community())
+        },
+    )
+    .await
+    .expect("query with receipt exemption");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event.id, message.id);
+}
