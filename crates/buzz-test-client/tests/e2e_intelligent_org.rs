@@ -8,7 +8,10 @@
 //! lines — `50100` / `50101` / `50103` ingest, draft settlement, `50012`,
 //! `50017` — the R-8 lines —
 //! bootstrap backfill of `39103.agent` and the `shapers/agent`
-//! membership move — and the R-12 lines — invites minted by Shapers, the
+//! membership move — the R-11 lines — `50021` → `39105` / `io_profiles`,
+//! profile draft rules, inactive on NIP-43 removal, and the
+//! `member_joined` ledger independence from the best-effort `8000`
+//! publish — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through
 //! the relay's real HTTP door (`POST /events`, `POST /query`,
 //! `POST /api/invites`, `GET /api/join-policy`, NIP-98) exactly as a
@@ -52,9 +55,10 @@ use buzz_core::kind::{
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
     KIND_IO_DRAFT_OUTCOME, KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE,
     KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
-    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
-    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
+    KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
+    KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
+    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
 };
 use buzz_sdk::intelligent_org::{
     build_io_accept, build_io_direction_propose, build_io_done, build_io_draft, build_io_offer,
@@ -3023,4 +3027,146 @@ impl Community {
         let message = self.submit_ok(keys, &event).await;
         serde_json::from_str(&message).expect("vote reply json")
     }
+}
+
+// ── R-11: org profile and membership stream ─────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn r11_profile_set_limits_self_skill_query_and_draft_address() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let me = c.owner.public_key().to_hex();
+    let other = Keys::generate();
+    let other_hex = other.public_key().to_hex();
+    c.seed_member(&other, "member").await;
+
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROFILE_SET,
+            vec![],
+            r#"{"about":"I write grants.","skills":["grant writing","Rust"],"open_limit":3}"#,
+        ),
+    )
+    .await;
+    let profiles = c
+        .query(&c.owner, json!({ "kinds": [KIND_IO_PROFILE], "#d": [me] }))
+        .await;
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(content(&profiles[0])["version"], 1);
+    assert_eq!(
+        content(&profiles[0])["skills"],
+        json!([
+            {"slug":"grant-writing","label":"grant writing"},
+            {"slug":"rust","label":"Rust"}
+        ])
+    );
+
+    let who = c
+        .query(
+            &c.owner,
+            json!({ "kinds": [KIND_IO_PROFILE], "#k": ["grant-writing"] }),
+        )
+        .await;
+    assert_eq!(who.len(), 1);
+    assert_eq!(who[0]["id"], profiles[0]["id"]);
+
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROFILE_SET,
+            vec![],
+            &format!(r#"{{"pubkey":"{other_hex}","about":"no","skills":[]}}"#),
+        ),
+        "invalid: cannot set another member's profile",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROFILE_SET,
+            vec![tag(["p", &other_hex])],
+            r#"{"about":"no","skills":[]}"#,
+        ),
+        "invalid: cannot set another member's profile",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROFILE_SET,
+            vec![],
+            &format!(r#"{{"about":"{}","skills":[]}}"#, "x".repeat(1001)),
+        ),
+        "invalid: about over 1000 characters",
+    )
+    .await;
+
+    let receipt = c.shapers_event_id().await;
+    // needs = other, subject = me → refused.
+    c.submit_rejected(
+        &c.agent,
+        &signed(
+            &c.agent,
+            KIND_IO_DRAFT,
+            vec![
+                tag(["n", &other_hex]),
+                tag(["t", "profile"]),
+                tag(["move", "1"]),
+                tag(["origin", "gap"]),
+                tag(["gap", "profile-wrong"]),
+                tag(["e", &receipt, "", "receipt"]),
+                tag(["p", &other_hex, "", "needs"]),
+            ],
+            &format!(
+                r#"{{"pubkey":"{me}","about":"hi","skills":["rust"],"open_limit":null,"heard":[]}}"#
+            ),
+        ),
+        "invalid: profile draft not addressed to its subject",
+    )
+    .await;
+}
+
+/// Protocol §6.6 / V7: `member_joined` is written by `claim_relay_invite`
+/// itself. This test never calls the NIP-43 publish path — the ledger row
+/// lands even when `8000` would have failed.
+#[tokio::test]
+#[ignore]
+async fn r11_claim_writes_member_joined_without_any_8000_publish() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let (status, body) = c.mint_invite(&c.owner).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let code = body["code"].as_str().expect("code").to_owned();
+    let token_hash = buzz_core::invite::hash_v2_code(&code);
+    let joiner = Keys::generate();
+    let joiner_hex = joiner.public_key().to_hex();
+
+    assert!(c.member_joined_rows().await.is_empty());
+    let outcome = buzz_db::relay_invite::claim_relay_invite(
+        &c.pool,
+        buzz_core::CommunityId::from_uuid(c.id),
+        &token_hash,
+        &joiner_hex,
+        None,
+    )
+    .await
+    .expect("claim on the store seam — no publish_nip43_member_added");
+    assert!(matches!(
+        outcome,
+        buzz_db::relay_invite::ClaimOutcome::Joined { .. }
+    ));
+    assert_eq!(
+        c.member_joined_rows().await,
+        vec![(
+            joiner_hex,
+            json!({ "via": "invite", "minted_by": c.owner.public_key().to_hex() })
+        )]
+    );
+    assert_eq!(c.relay_role(&joiner).await.as_deref(), Some("member"));
 }

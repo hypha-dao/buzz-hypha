@@ -31,7 +31,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row as _};
 
 use crate::error::Result;
-use crate::store::intelligent_org::{insert_ledger, LedgerEntry};
+use crate::store::intelligent_org::{insert_ledger, set_profile_active_hex, LedgerEntry};
 use crate::{CommunityId, Db};
 
 /// Ledger verb written when an invite claim admits a new member (Protocol §6.2).
@@ -412,6 +412,10 @@ pub async fn claim_relay_invite(
         },
     )
     .await?;
+
+    // Protocol §5.4a: a prior leave left `io_profiles.active = false`; rejoin
+    // picks the row back up on the same commit as membership.
+    let _ = set_profile_active_hex(&mut tx, community, claimer_pubkey, true).await?;
 
     // 12. Commit.
     tx.commit().await?;
