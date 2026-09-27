@@ -331,47 +331,51 @@ pub async fn handle_req(
     let mut seen_ids: HashSet<nostr::EventId> = HashSet::new();
     let mut total_sent: usize = 0;
 
-    // Phase 1 — pure query construction, in filter order.
-    let filter_queries: Vec<(usize, Option<uuid::Uuid>, EventQuery)> = filters
-        .iter()
-        .enumerate()
-        .map(|(idx, filter)| {
-            // Use per-filter #h channel scope when available, falling back to the
-            // subscription-level channel_id. This prevents unrelated accessible-channel
-            // rows from consuming the LIMIT when filters target specific channels but
-            // the subscription is global (multiple distinct #h values across filters).
-            let per_filter_channel = {
-                let h = nostr::SingleLetterTag::lowercase(nostr::Alphabet::H);
-                filter
-                    .generic_tags
-                    .get(&h)
-                    .and_then(|vs| {
-                        if vs.len() == 1 {
-                            vs.iter().next()?.parse::<uuid::Uuid>().ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .or(channel_id)
-            };
-            let mut params =
-                filter_to_query_params(filter, per_filter_channel, conn.tenant.community());
-            params.before_id = before_ids.get(idx).cloned().flatten();
-            apply_channel_scope_to_query(
-                &mut params,
-                filter,
-                per_filter_channel,
-                &accessible_channels,
-            );
-            // Shared-gated visibility pushdown: set reader bytes so query_events
-            // appends the SQL visibility clause before ORDER/LIMIT, preventing
-            // newer private events from starving older shared ones off the page.
-            if filter_can_match_shared_gated_kinds(filter) {
-                params.shared_gated_reader = Some(pubkey_bytes.clone());
-            }
-            (idx, per_filter_channel, params)
-        })
-        .collect();
+    // Phase 1 — query construction, in filter order. Receipt-read lookup
+    // (Protocol §6.8) is async, so this is a loop rather than a pure map.
+    let mut filter_queries: Vec<(usize, Option<uuid::Uuid>, EventQuery)> =
+        Vec::with_capacity(filters.len());
+    for (idx, filter) in filters.iter().enumerate() {
+        // Use per-filter #h channel scope when available, falling back to the
+        // subscription-level channel_id. This prevents unrelated accessible-channel
+        // rows from consuming the LIMIT when filters target specific channels but
+        // the subscription is global (multiple distinct #h values across filters).
+        let per_filter_channel = {
+            let h = nostr::SingleLetterTag::lowercase(nostr::Alphabet::H);
+            filter
+                .generic_tags
+                .get(&h)
+                .and_then(|vs| {
+                    if vs.len() == 1 {
+                        vs.iter().next()?.parse::<uuid::Uuid>().ok()
+                    } else {
+                        None
+                    }
+                })
+                .or(channel_id)
+        };
+        let mut params =
+            filter_to_query_params(filter, per_filter_channel, conn.tenant.community());
+        params.before_id = before_ids.get(idx).cloned().flatten();
+        apply_channel_scope_to_query(
+            &mut params,
+            filter,
+            per_filter_channel,
+            &accessible_channels,
+        );
+        if let Err(e) = apply_receipt_read_exemption(&mut params, filter, &state.db).await {
+            warn!(conn_id = %conn_id, sub_id = %sub_id, "Receipt-read lookup failed: {e}");
+            conn.send(RelayMessage::eose(&sub_id));
+            return;
+        }
+        // Shared-gated visibility pushdown: set reader bytes so query_events
+        // appends the SQL visibility clause before ORDER/LIMIT, preventing
+        // newer private events from starving older shared ones off the page.
+        if filter_can_match_shared_gated_kinds(filter) {
+            params.shared_gated_reader = Some(pubkey_bytes.clone());
+        }
+        filter_queries.push((idx, per_filter_channel, params));
+    }
 
     // Phase 2 — DB reads, bounded-concurrent. `buffered` (not `buffer_unordered`)
     // yields results in input order, so phase 3 observes filters in their
@@ -1134,6 +1138,40 @@ pub(crate) fn apply_channel_scope_to_query(
     }
 }
 
+/// Protocol §6.8 Receipt read (V6 / R-10): when a community member REQs
+/// `{ids:[…]}` without `#h`, fill [`EventQuery::receipt_ids`] with those of
+/// the requested ids that are cited as receipts on a stored community-global
+/// io event. The access-scope SQL then ORs them in so the reader gets that
+/// one event — never a window, never a `#h` read of the room.
+pub(crate) async fn apply_receipt_read_exemption(
+    query: &mut EventQuery,
+    filter: &Filter,
+    db: &buzz_db::Db,
+) -> Result<(), buzz_db::DbError> {
+    if !receipt_read_eligible(query, filter) {
+        return Ok(());
+    }
+    let ids = query.ids.as_ref().expect("eligible filters carry ids");
+    let cited = db.cited_receipt_ids(query.community_id, ids).await?;
+    if !cited.is_empty() {
+        query.receipt_ids = Some(cited);
+    }
+    Ok(())
+}
+
+/// Whether this filter/query pair is eligible for the §6.8 receipt exemption.
+/// Pure so the early-out cases are unit-testable without a Db.
+fn receipt_read_eligible(query: &EventQuery, filter: &Filter) -> bool {
+    if query.channel_id.is_some() {
+        return false;
+    }
+    let h_tag = nostr::SingleLetterTag::lowercase(nostr::Alphabet::H);
+    if filter.generic_tags.contains_key(&h_tag) {
+        return false;
+    }
+    query.ids.as_ref().is_some_and(|ids| !ids.is_empty())
+}
+
 /// Extract the complete channel set when every filter is explicitly #h-scoped.
 /// `None` means at least one filter is community-global.
 ///
@@ -1642,6 +1680,30 @@ mod tests {
 
         assert!(query.channel_ids.is_none());
         assert_eq!(query.channel_id, Some(channel));
+    }
+
+    /// R-10: `#h` and exact `channel_id` skip the receipt exemption; only a
+    /// community-wide `{ids:[…]}` filter is eligible (Protocol §6.8).
+    #[test]
+    fn receipt_read_eligible_only_for_ids_without_h_or_channel() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
+        let mut query = EventQuery::for_community(community);
+        query.ids = Some(vec![vec![0xab; 32]]);
+        assert!(receipt_read_eligible(&query, &Filter::new()));
+
+        let h_filter: Filter = serde_json::from_value(serde_json::json!({
+            "ids": ["ab".repeat(32)],
+            "#h": [uuid::Uuid::new_v4().to_string()],
+        }))
+        .unwrap();
+        assert!(!receipt_read_eligible(&query, &h_filter));
+
+        query.channel_id = Some(uuid::Uuid::new_v4());
+        assert!(!receipt_read_eligible(&query, &Filter::new()));
+
+        query.channel_id = None;
+        query.ids = None;
+        assert!(!receipt_read_eligible(&query, &Filter::new()));
     }
 
     /// S2 invariant: the bounded-concurrency pipeline (phase 2) must yield

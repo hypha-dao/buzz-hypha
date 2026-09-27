@@ -1,18 +1,21 @@
-//! Intelligent organization projections (Protocol §6.2).
+//! Intelligent organization projections (Protocol §6.2 / §6.8).
 //!
-//! Typed reads and writes over the `io_*` tables that migration 0045 creates.
-//! The relay-signed state events (`39100–39105`) remain the wire truth; these
-//! rows are the executor's, scheduler's, and agent's query surface for the
-//! same state. Every row keeps the canonical Protocol §4 content — the
-//! [`buzz_core::intelligent_org`] type — next to the typed columns the relay
-//! filters on, so a projection can re-emit its event without a second lookup.
+//! Typed reads and writes over the `io_*` tables that migrations 0045,
+//! 0047, and 0048 create. The relay-signed state events (`39100–39105`) remain the
+//! wire truth; these rows are the executor's, scheduler's, and agent's
+//! query surface for the same state. Every row keeps the canonical
+//! Protocol §4 content — the [`buzz_core::intelligent_org`] type — next to
+//! the typed columns the relay filters on, so a projection can re-emit its
+//! event without a second lookup. `io_receipts` indexes event-id citations
+//! for the §6.8 Receipt read exemption.
 //!
 //! Every function takes a `&mut PgConnection` so the executor can run it on
 //! the transaction `persist_command_event` returns (V3): the command event,
 //! the projection change, the ledger row, and the state event either all
 //! commit or none do. Nothing here opens a transaction or touches the pool —
 //! except the [`Db`] methods at the bottom: the invite handlers' pool-scoped
-//! reads, and the operator writer [`Db::set_hosted_agent`] (O-1).
+//! reads, the operator writer [`Db::set_hosted_agent`] (O-1), and the REQ
+//! receipt-read lookup [`Db::cited_receipt_ids`] (R-10).
 //!
 //! Pubkeys and event ids are hex in content and `BYTEA` in the tables;
 //! conversion failures surface as [`DbError::InvalidData`] rather than
@@ -1600,6 +1603,81 @@ pub async fn retire_hosted_agent(
     Ok(result.rows_affected() == 1)
 }
 
+// ── io_receipts (Protocol §6.8 Receipt read / V6 / R-10) ──────────────────────
+
+/// How a cited event id was recorded on a community-global io event.
+pub mod receipt_source {
+    /// `["e", <id>, "", "receipt"]` on a `50100` (or any other e-receipt tag).
+    pub const E_TAG: &str = "e_tag";
+    /// Optional receipt marker on `50009` / `done_receipt` on `39101`.
+    pub const DONE_RECEIPT: &str = "done_receipt";
+    /// An event id in a `50101` `rows` list.
+    pub const HEALTH_ROW: &str = "health_row";
+}
+
+/// Record that `citing_id` cites each of `cited_ids` as a receipt of `source`.
+/// Idempotent: a repeat of the same `(cited, citing, source)` is a no-op.
+pub async fn insert_receipts(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    citing_id: &[u8],
+    cited_ids: &[Vec<u8>],
+    source: &str,
+) -> Result<()> {
+    for cited in cited_ids {
+        if cited.len() != 32 {
+            return Err(DbError::InvalidData(format!(
+                "cited receipt id must be 32 bytes, got {}",
+                cited.len()
+            )));
+        }
+        sqlx::query(
+            "INSERT INTO io_receipts (community_id, cited_id, citing_id, source) \
+             VALUES ($1, $2, $3, $4) \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(community_id.as_uuid())
+        .bind(cited)
+        .bind(citing_id)
+        .bind(source)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Among `candidates`, return the ids that are cited on a still-stored
+/// community-global (`channel_id IS NULL`) io event in this community.
+pub async fn cited_receipt_ids(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    candidates: &[Vec<u8>],
+) -> Result<Vec<Vec<u8>>> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query(
+        "SELECT DISTINCT r.cited_id \
+         FROM io_receipts r \
+         INNER JOIN events e \
+            ON e.community_id = r.community_id \
+           AND e.id = r.citing_id \
+         WHERE r.community_id = $1 \
+           AND r.cited_id = ANY($2) \
+           AND e.deleted_at IS NULL \
+           AND e.channel_id IS NULL",
+    )
+    .bind(community_id.as_uuid())
+    .bind(candidates)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(row.try_get("cited_id")?);
+    }
+    Ok(out)
+}
+
 // ── Pool-scoped reads for handlers outside the executor ───────────────────────
 
 impl Db {
@@ -1616,6 +1694,26 @@ impl Db {
         Ok(get_shapers(&mut conn, community)
             .await?
             .is_some_and(|row| row.content.shapers.iter().any(|p| p == pubkey_hex)))
+    }
+
+    /// Protocol §6.8 Receipt read (R-10 / V6): among `candidates`, which event
+    /// ids are cited as receipts on a stored community-global io event?
+    /// One SELECT; the REQ handler puts the result on
+    /// [`crate::EventQuery::receipt_ids`].
+    pub async fn cited_receipt_ids(
+        &self,
+        community: CommunityId,
+        candidates: &[Vec<u8>],
+    ) -> Result<Vec<Vec<u8>>> {
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = observability::acquire_writer(
+            &self.pool,
+            observability::WriterOperation::SubscriptionHistory,
+        )
+        .await?;
+        cited_receipt_ids(&mut conn, community, candidates).await
     }
 
     /// Whether the community is an intelligent organization for the purposes

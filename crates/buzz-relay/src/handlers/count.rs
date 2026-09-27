@@ -180,6 +180,12 @@ pub async fn handle_count(
                 ch_id,
                 &accessible_channels,
             );
+            if let Err(e) =
+                super::req::apply_receipt_read_exemption(&mut query, filter, &state.db).await
+            {
+                conn.send(RelayMessage::closed(&sub_id, &format!("error: {e}")));
+                return;
+            }
             // Shared-gated visibility pushdown: pre-filter the fallback
             // query_events candidate page before ORDER/LIMIT.
             if needs_shared_gate_filtering {
@@ -253,6 +259,12 @@ pub async fn handle_count(
             )
             .await;
             query.channel_ids = Some(accessible_channels.to_vec());
+            if let Err(e) =
+                super::req::apply_receipt_read_exemption(&mut query, filter, &state.db).await
+            {
+                conn.send(RelayMessage::closed(&sub_id, &format!("error: {e}")));
+                return;
+            }
             // Shared-gated visibility pushdown for the fallback query_events path.
             if needs_shared_gate_filtering {
                 query.shared_gated_reader = Some(pubkey_bytes.clone());

@@ -107,6 +107,13 @@ pub struct EventQuery {
     /// Whether [`EventQuery::channel_ids`] also retains channel-less global
     /// events. Defaults to `true` for access-scope queries.
     pub channel_ids_include_global: bool,
+    /// Protocol §6.8 Receipt read (V6 / R-10): event ids that are cited as
+    /// receipts on a stored community-global io event. When set with
+    /// [`EventQuery::channel_ids`], the access-scope SQL becomes
+    /// `(channel in scope) OR id IN receipt_ids` so a member's `{ids:[…]}`
+    /// REQ returns that one cited message from a room they are not in —
+    /// never a window. Filled only when the filter has `ids` and no `#h`.
+    pub receipt_ids: Option<Vec<Vec<u8>>>,
     /// Override the default page clamp ([`DEFAULT_MAX_PAGE_LIMIT`]). Used by
     /// the COUNT fallback path, which needs to fetch all matching events for
     /// post-filter counting. When None, the default clamp applies.
@@ -158,6 +165,7 @@ impl EventQuery {
             custom_tags: Vec::new(),
             channel_ids: None,
             channel_ids_include_global: true,
+            receipt_ids: None,
             max_limit: None,
             shared_gated_reader: None,
         }
@@ -547,30 +555,18 @@ pub(crate) async fn query_events_on(
     }
 
     // Multi-channel IN pushdown. Access-scope queries retain global events;
-    // explicit multi-value #h filters do not.
+    // explicit multi-value #h filters do not. Receipt-cited ids (R-10) OR in
+    // so a single cited message from an inaccessible room is still returned.
     //
     // SECURITY: Some(empty vec) means "match no channels". Access-scope
     // queries still retain globals; explicit #h queries match nothing.
-    if let Some(ref ch_ids) = q.channel_ids {
-        if ch_ids.is_empty() {
-            if q.channel_ids_include_global {
-                qb.push(format!(" AND {col_prefix}channel_id IS NULL"));
-            } else {
-                qb.push(" AND FALSE");
-            }
-        } else {
-            qb.push(" AND (");
-            if q.channel_ids_include_global {
-                qb.push(format!("{col_prefix}channel_id IS NULL OR "));
-            }
-            qb.push(format!("{col_prefix}channel_id IN ("));
-            let mut sep = qb.separated(", ");
-            for ch in ch_ids {
-                sep.push_bind(*ch);
-            }
-            qb.push("))");
-        }
-    }
+    push_channel_access_scope(
+        &mut qb,
+        col_prefix,
+        q.channel_ids.as_deref(),
+        q.channel_ids_include_global,
+        q.receipt_ids.as_deref(),
+    );
 
     if let Some(ks) = q.kinds.as_deref().filter(|k| !k.is_empty()) {
         qb.push(format!(" AND {col_prefix}kind IN ("));
@@ -726,6 +722,55 @@ pub(crate) async fn query_events_on(
     Ok(out)
 }
 
+/// Render the access-scope / multi-`#h` channel predicate, optionally OR-ing
+/// Protocol §6.8 receipt-cited event ids so one message from an inaccessible
+/// room can still return on an `{ids:[…]}` REQ (R-10 / V6).
+fn push_channel_access_scope(
+    qb: &mut QueryBuilder<sqlx::Postgres>,
+    col_prefix: &str,
+    channel_ids: Option<&[uuid::Uuid]>,
+    include_global: bool,
+    receipt_ids: Option<&[Vec<u8>]>,
+) {
+    let Some(ch_ids) = channel_ids else {
+        return;
+    };
+    let receipts = receipt_ids.filter(|ids| !ids.is_empty());
+
+    qb.push(" AND ");
+    if receipts.is_some() {
+        qb.push("(");
+    }
+
+    if ch_ids.is_empty() {
+        if include_global {
+            qb.push(format!("{col_prefix}channel_id IS NULL"));
+        } else {
+            qb.push("FALSE");
+        }
+    } else {
+        qb.push("(");
+        if include_global {
+            qb.push(format!("{col_prefix}channel_id IS NULL OR "));
+        }
+        qb.push(format!("{col_prefix}channel_id IN ("));
+        let mut sep = qb.separated(", ");
+        for ch in ch_ids {
+            sep.push_bind(*ch);
+        }
+        qb.push("))");
+    }
+
+    if let Some(ids) = receipts {
+        qb.push(format!(" OR {col_prefix}id IN ("));
+        let mut sep = qb.separated(", ");
+        for id in ids {
+            sep.push_bind(id.clone());
+        }
+        qb.push("))");
+    }
+}
+
 /// Render [`EventQuery::custom_tags`]: one `AND (…)` group per tag, each an
 /// `OR` of JSONB containment probes served by `idx_events_tags_gin`.
 ///
@@ -859,27 +904,15 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
     }
 
     // Multi-channel IN pushdown for COUNT. Access-scope queries retain global
-    // events; explicit multi-value #h filters do not.
-    if let Some(ref ch_ids) = q.channel_ids {
-        if ch_ids.is_empty() {
-            if q.channel_ids_include_global {
-                qb.push(format!(" AND {col_prefix}channel_id IS NULL"));
-            } else {
-                qb.push(" AND FALSE");
-            }
-        } else {
-            qb.push(" AND (");
-            if q.channel_ids_include_global {
-                qb.push(format!("{col_prefix}channel_id IS NULL OR "));
-            }
-            qb.push(format!("{col_prefix}channel_id IN ("));
-            let mut sep = qb.separated(", ");
-            for ch in ch_ids {
-                sep.push_bind(*ch);
-            }
-            qb.push("))");
-        }
-    }
+    // events; explicit multi-value #h filters do not. Receipt-cited ids (R-10)
+    // OR in, matching `query_events`.
+    push_channel_access_scope(
+        &mut qb,
+        col_prefix,
+        q.channel_ids.as_deref(),
+        q.channel_ids_include_global,
+        q.receipt_ids.as_deref(),
+    );
 
     if let Some(ks) = q.kinds.as_deref().filter(|k| !k.is_empty()) {
         qb.push(format!(" AND {col_prefix}kind IN ("));
@@ -2643,6 +2676,105 @@ mod postgres_tests {
             events[1].event.id, older_accessible.id,
             "older accessible row must not be hidden behind newer inaccessible rows"
         );
+    }
+
+    /// R-10 / V6: `receipt_ids` ORs cited ids past the access-scope fence so
+    /// one message from an inaccessible room returns on an `{ids}` query —
+    /// and an uncited sibling in the same room does not.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn receipt_cited_id_bypasses_channel_access_scope() {
+        let pool = setup_pool().await;
+        let community_uuid = make_test_community(&pool).await;
+        let community = CommunityId::from_uuid(community_uuid);
+        let accessible = make_test_channel(&pool, community_uuid, None).await;
+        let inaccessible = make_test_channel(&pool, community_uuid, None).await;
+        let base = 1_800_000_000;
+
+        let cited = make_event_at(9, "cited in private room", base + 1);
+        insert_event(&pool, community, &cited, Some(inaccessible))
+            .await
+            .expect("insert cited");
+        let uncited = make_event_at(9, "uncited sibling", base + 2);
+        insert_event(&pool, community, &uncited, Some(inaccessible))
+            .await
+            .expect("insert uncited");
+        let visible = make_event_at(9, "in accessible room", base + 3);
+        insert_event(&pool, community, &visible, Some(accessible))
+            .await
+            .expect("insert visible");
+
+        // Without receipt_ids the inaccessible cited id is invisible.
+        let denied = query_events(
+            &pool,
+            &EventQuery {
+                ids: Some(vec![cited.id.to_bytes().to_vec()]),
+                channel_ids: Some(vec![accessible]),
+                ..EventQuery::for_community(community)
+            },
+        )
+        .await
+        .expect("query without receipt exemption");
+        assert!(
+            denied.is_empty(),
+            "uncited inaccessible message stays gated"
+        );
+
+        // With receipt_ids the cited id returns; the uncited sibling does not
+        // even when asked for by id in the same query (ids filter ∩ exemption).
+        let allowed = query_events(
+            &pool,
+            &EventQuery {
+                ids: Some(vec![
+                    cited.id.to_bytes().to_vec(),
+                    uncited.id.to_bytes().to_vec(),
+                ]),
+                channel_ids: Some(vec![accessible]),
+                receipt_ids: Some(vec![cited.id.to_bytes().to_vec()]),
+                ..EventQuery::for_community(community)
+            },
+        )
+        .await
+        .expect("query with receipt exemption");
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0].event.id, cited.id);
+
+        // An explicit #h (include_global=false, no receipt_ids) still matches
+        // nothing for the inaccessible room — the REQ handler never sets
+        // receipt_ids when #h is present.
+        let h_gated = query_events(
+            &pool,
+            &EventQuery {
+                ids: Some(vec![cited.id.to_bytes().to_vec()]),
+                channel_ids: Some(vec![inaccessible]),
+                channel_ids_include_global: false,
+                ..EventQuery::for_community(community)
+            },
+        )
+        .await
+        .expect("explicit #h of inaccessible room");
+        // Reader is not a member of inaccessible — REQ would have filtered it
+        // out of channel_ids; here we simulate authorized #h of that room,
+        // which does return the cited message (membership granted). The prove
+        // that `#h` of an unauthorized room returns nothing is the empty
+        // channel_ids case:
+        let unauthorized_h = query_events(
+            &pool,
+            &EventQuery {
+                ids: Some(vec![cited.id.to_bytes().to_vec()]),
+                channel_ids: Some(vec![]),
+                channel_ids_include_global: false,
+                ..EventQuery::for_community(community)
+            },
+        )
+        .await
+        .expect("unauthorized #h");
+        assert!(
+            unauthorized_h.is_empty(),
+            "#h with no authorized channels matches nothing even for a cited id"
+        );
+        assert_eq!(h_gated.len(), 1, "authorized #h still sees its room");
+        let _ = visible; // seeded for realism; unused in asserts
     }
 
     fn make_text_event(content: &str) -> nostr::Event {

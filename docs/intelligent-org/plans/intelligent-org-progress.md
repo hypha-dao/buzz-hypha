@@ -34,7 +34,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-7   | merged | [#41](https://github.com/hypha-dao/buzz-hypha/pull/41) | `57b8f6051` | `handlers/intelligent_org/drafts.rs`: `50100` ingest (shape, `needs`, community-wide receipt resolve, one open draft per `gap`, holder `39105`/`39101` evidence, `k` slugs, `open_limit`) → `39104` `open` (or `shadow` from birth); `50101` (item exists, `rows` resolve); `50103` (`39103.agent` only, no receipt check, ledger verb); draft settlement on any command carrying `["e", id, "", "draft"]` (`accepted` vs `amended`); `50012`; `50017`. `persist_write` is the shared write path so a draft tag and the command share one transaction, including R-5b's `50009`–`50011` / `50018`. `50102` / `50021` untouched. Nine Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-8   | merged | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) | `c5f842ba4` | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
 | R-9a  |        |    |           | R-9b is wave 6. |
-| R-10  |        |    |           | |
+| R-10  | open | [#51](https://github.com/hypha-dao/buzz-hypha/pull/51) |           | `{ids:[…]}` REQ exemption for receipt-cited events (Protocol §6.8 / V6): migration `0048_io_receipts`, `EventQuery.receipt_ids` OR'd into access-scope SQL, filled from `io_receipts` when the filter has `ids` and no `#h`; writers on `50100` e-receipt / `50101` rows / `50009` done marker. Postgres: `receipt_cited_id_bypasses_channel_access_scope`, `draft_e_receipt_indexes_io_receipts_for_receipt_read`; E2E: `r10_cited_message_is_readable_by_ids_but_not_by_h`. |
 | R-11  | merged | [#50](https://github.com/hypha-dao/buzz-hypha/pull/50) | `c6cc65f4` | `handlers/intelligent_org/profiles.rs`: `50021` → `39105` + `io_profiles` (version bump, kebab `k` tags, ledger `profile_set`); §4.7a limits; self-only (`pubkey` field / foreign `p` refused); `profile` draft `needs` must equal subject (R-7 ingest); NIP-43 remove flips `io_profiles.active` (rejoin restores); claim's `member_joined` stays on the store transaction (no `8000` needed — V7). Two Postgres-lane proofs through `ingest_event`, two E2E in `e2e_intelligent_org.rs`. |
 | R-12  | merged | [#12](https://github.com/hypha-dao/buzz-hypha/pull/12) | `bfa3de73a` | `POST /api/invites` admits a pubkey in the live `39103.shapers` (`Db::is_org_shaper`, one `io_shapers` read per request, no cache); `claim_relay_invite` appends `member_joined` (`actor` = claimant, `detail.via = "invite"`, `detail.minted_by` = the minter) on the claim's own transaction; `GET /api/join-policy` carries `org.transparency_notice` (`api::invites::ORG_TRANSPARENCY_NOTICE`, `Db::is_org_community`: an `io_hosted_agents` row or an `io_shapers` row) and `web/` renders it on `/invite/<code>` above the join controls, gating nothing. Two Postgres-lane proofs in `api::invites`, two in `buzz-db`, two E2E in `e2e_intelligent_org.rs`, one web smoke spec. `shapers.rs`/`apply.rs` untouched. |
 | R-13  | merged | [#46](https://github.com/hypha-dao/buzz-hypha/pull/46) | `6eeba98f` | `query_needs_action` gains org inbox sources: `39101` offered-to-me (`["p",…,"","offered"]`), `50100` needs-me (`["p",…,"","needs"]`), open `39102` where eligible or subject (offered seat), and `needs=shaper` drafts via `io_shapers` join (V10). Store proof `query_needs_action_includes_org_inbox_sources`; a `50100` with party only in `#n` stays out. Desktop Inbox rendering is D-2. |
@@ -574,6 +574,17 @@ absorb an item into an unrelated slice.
   shard number. The mock bridge still does not settle proposals or
   mint work items from commands; D-6 proves the loop as sequenced
   stage seeds + tap → signed kind/tags (not one reactive multi-step).
+- **`io_receipts` is R-10's, not R-7's.** V6 named the table as written by
+  R-7 when a `50100`/`50101` is stored; R-7 resolved receipts in place and
+  left no index. R-10 adds migration `0048` (R-6 took `0047` for
+  `io_scheduler_claims`), writes on `50100` e-tag / `50101` rows /
+  `50009` done marker, and the REQ exemption. `50102.commits` are git
+  shas, not event ids — they do not participate in `{ids}` receipt
+  read; say so in Protocol §6.8 when next edited.
+- **Receipt read does not backfill.** Citations stored before R-10's
+  writers landed are invisible to the exemption until re-emitted. Phase 0
+  drafts that cite room messages are none yet (plan: R-10 may slip to
+  HEAR); no migration backfill.
 
 ---
 

@@ -702,7 +702,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 46);
+        assert_eq!(migrations.len(), 48);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -2187,10 +2187,11 @@ mod postgres_tests {
         probes.drop().await;
     }
 
-    /// The `io_*` projection tables added by migration `0045_intelligent_org`
-    /// (Protocol §6.2). Kept in sync with `store::deletion::EXPECTED_SCOPED_TABLES`
+    /// The `io_*` projection tables added by migrations `0045_intelligent_org`,
+    /// `0047_io_scheduler_claims`, and `0048_io_receipts` (Protocol §6.2 /
+    /// §6.3 / §6.8). Kept in sync with `store::deletion::EXPECTED_SCOPED_TABLES`
     /// by `deletion_catalog_lists_every_intelligent_org_table`.
-    const INTELLIGENT_ORG_TABLES: [&str; 13] = [
+    const INTELLIGENT_ORG_TABLES: [&str; 14] = [
         "io_shapers",
         "io_direction",
         "io_work_items",
@@ -2204,6 +2205,7 @@ mod postgres_tests {
         "io_ledger",
         "io_hosted_agents",
         "io_scheduler_claims",
+        "io_receipts",
     ];
 
     #[test]

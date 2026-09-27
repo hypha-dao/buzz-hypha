@@ -1912,15 +1912,18 @@ CREATE INDEX idx_relay_operator_audit_target
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('relay_operator_audit', 'deployment-global append-only roster mutation audit trail; no community_id intentionally');
 
--- ── Intelligent organization projections (migration 0045) ────────────────────
+-- ── Intelligent organization projections (0045 + 0047 + 0048) ────────────────
 -- Protocol §6.2 (docs/intelligent-org/architecture/intelligent-org-protocol.md).
--- Twelve community-scoped sidecar tables: every row carries `community_id`,
+-- Fourteen community-scoped sidecar tables: every row carries `community_id`,
 -- every key leads with it, and every table is fence-attached below. The
 -- relay-signed state events (`39100–39105`) remain the wire truth; these rows
 -- are the executor's, scheduler's, and agent's query surface for the same
 -- state, keeping the canonical §4 content JSON next to the typed columns the
 -- relay filters on. `io_hosted_agents` is written by operator provisioning
--- only. Definitions must stay byte-identical to migrations/0045.
+-- only. `io_scheduler_claims` (0047) is the multi-pod lock for §6.3;
+-- `io_receipts` (0048) indexes event-id citations for §6.8 Receipt read.
+-- Projection table definitions must stay byte-identical to the migrations
+-- that introduced them.
 
 -- ── Shapers and rules (kind:39103) — one row per community ───────────────────
 CREATE TABLE io_shapers (
@@ -2212,6 +2215,19 @@ CREATE TABLE io_scheduler_claims (
 CREATE INDEX idx_io_scheduler_claims_claimed_at
     ON io_scheduler_claims (claimed_at);
 
+-- ── Receipt citations (migration 0048) — Protocol §6.8 Receipt read / V6 ─────
+CREATE TABLE io_receipts (
+    community_id        UUID NOT NULL REFERENCES communities(id),
+    cited_id            BYTEA NOT NULL CHECK (length(cited_id) = 32),
+    citing_id           BYTEA NOT NULL CHECK (length(citing_id) = 32),
+    -- How the citation was stored: e_tag | done_receipt | health_row.
+    source              TEXT NOT NULL CHECK (source IN ('e_tag', 'done_receipt', 'health_row')),
+    PRIMARY KEY (community_id, cited_id, citing_id, source)
+);
+
+CREATE INDEX idx_io_receipts_cited
+    ON io_receipts (community_id, cited_id);
+
 -- ── Universal community write fence ──────────────────────────────────────────
 SELECT attach_community_write_fence('io_direction');
 SELECT attach_community_write_fence('io_drafts');
@@ -2222,6 +2238,7 @@ SELECT attach_community_write_fence('io_ledger');
 SELECT attach_community_write_fence('io_profiles');
 SELECT attach_community_write_fence('io_progress');
 SELECT attach_community_write_fence('io_proposals');
+SELECT attach_community_write_fence('io_receipts');
 SELECT attach_community_write_fence('io_scheduler_claims');
 SELECT attach_community_write_fence('io_shapers');
 SELECT attach_community_write_fence('io_votes');
