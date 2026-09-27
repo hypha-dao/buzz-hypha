@@ -183,6 +183,7 @@ export default defineConfig({
         "**/org-my-work.spec.ts",
         "**/org-work.spec.ts",
         "**/org-about-skills.spec.ts",
+        "**/org-loop.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
