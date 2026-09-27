@@ -2,13 +2,14 @@
 //! (Protocol §4.2, §5.1, §5.3).
 //!
 //! A passed `project` opens a root in `open` (or `offered` to
-//! `suggested_dri`). Home — room, `30617` — is R-9a and is not written here.
-//! Children are created only by the parent's holder; only `offered_to`
-//! accepts or declines; only the holder marks done or releases; a Shaper
-//! (root) or the parent holder (child) sets due; the `dri` of a `done` item
-//! may reopen within seven days. Each command stores one event, emits the
-//! item's `39101` (and rewrites the parent so `children` stays current), and
-//! appends one ledger row, all on the `persist_command_event` transaction.
+//! `suggested_dri`) and creates its home room (R-9a; `home.repo` /
+//! `home.project` wait for R-9b). Children are created only by the parent's
+//! holder; only `offered_to` accepts or declines; only the holder marks done
+//! or releases; a Shaper (root) or the parent holder (child) sets due; the
+//! `dri` of a `done` item may reopen within seven days. Each command stores
+//! one event, emits the item's `39101` (and rewrites the parent so `children`
+//! stays current), and appends one ledger row, all on the
+//! `persist_command_event` transaction.
 
 use buzz_core::intelligent_org::{
     tag, ChildrenCounts, ClosedBy, DirectionSlug, EmptyContent, Executed, ProjectProposeContent,
@@ -19,6 +20,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use super::apply::Projection;
+use super::home::{self, home_channel_only};
 use super::proposals::Execution;
 use super::{
     authorize, begin, content_value, current_shapers, internal, object, parse_content,
@@ -283,10 +285,11 @@ fn return_open_child(
 }
 
 /// §5.3 `project`: create the root in `open`, or `offered` to
-/// `suggested_dri`. `approved_at` is the passing vote; `home` waits for R-9a.
-/// `opening_receipt` is the `50004` that opened the proposal — `created_from`
-/// on the root — supplied by `settle` because a D1 opener-pass has not
-/// written the `39102` yet.
+/// `suggested_dri`. `approved_at` is the passing vote. R-9a creates the
+/// home room in the same transaction and writes `home.channel`; `repo` /
+/// `project` wait for R-9b. `opening_receipt` is the `50004` that opened
+/// the proposal — `created_from` on the root — supplied by `settle`
+/// because a D1 opener-pass has not written the `39102` yet.
 pub(super) async fn execute_project(
     cmd: &Command<'_>,
     tx: &mut Transaction<'static, Postgres>,
@@ -314,13 +317,16 @@ pub(super) async fn execute_project(
     } else {
         WorkItemState::Open
     };
+    let room =
+        home::create_project_room(tx, cmd.tenant.community(), &payload.title, &cmd.actor_bytes)
+            .await?;
     let item = WorkItem {
         id: id.to_string(),
         parent: None,
         root: id.to_string(),
         depth: 0,
         path: vec![],
-        title: payload.title,
+        title: payload.title.clone(),
         brief: payload.brief,
         state,
         dri: None,
@@ -335,7 +341,7 @@ pub(super) async fn execute_project(
         done_receipt: None,
         closed_by: None,
         children: ChildrenCounts::default(),
-        home: None,
+        home: Some(home_channel_only(room)),
         branch: None,
         after: vec![],
         last_progress: None,
@@ -343,16 +349,29 @@ pub(super) async fn execute_project(
     Ok(Execution {
         executed: executed_work_item(&item.id),
         projections: vec![work_projection(item.clone(), cmd.receipt_hex())],
-        rows: vec![cmd.ledger(
-            "item_created",
-            object::WORK_ITEM,
-            &item.id,
-            serde_json::json!({
-                "proposal": proposal.id,
-                "state": state,
-                "offered_to": offered_to,
-            }),
-        )?],
+        rows: vec![
+            cmd.ledger(
+                "item_created",
+                object::WORK_ITEM,
+                &item.id,
+                serde_json::json!({
+                    "proposal": proposal.id,
+                    "state": state,
+                    "offered_to": offered_to,
+                }),
+            )?,
+            cmd.ledger(
+                "home_created",
+                object::WORK_ITEM,
+                &item.id,
+                serde_json::json!({
+                    "channel": room,
+                    "repo": null,
+                    "project": null,
+                }),
+            )?,
+        ],
+        room_created: Some(room),
     })
 }
 

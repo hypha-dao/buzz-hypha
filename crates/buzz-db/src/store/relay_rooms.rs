@@ -227,6 +227,112 @@ pub async fn sync_room_roster(
     Ok(changes)
 }
 
+/// Upsert the given roles into a project-home room without removing anyone.
+///
+/// Protocol §6.7: talk joiners stay; the sync only adds holder roles and
+/// lowers a former root admin (or an orphaned bot) to [`MemberRole::Member`].
+/// Idempotent: a roster already matching `desired` for those pubkeys, with
+/// no stray admins/bots to lower, returns no changes.
+pub async fn upsert_home_roles(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    desired: &[DesiredMember],
+    actor: &[u8],
+) -> Result<Vec<RosterChange>> {
+    check_pubkey(actor)?;
+    for member in desired {
+        check_pubkey(&member.pubkey)?;
+    }
+    acquire_channel_membership_lock_on(conn, community_id, channel_id).await?;
+
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM channels \
+         WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL)",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    if !exists {
+        return Err(DbError::ChannelNotFound(channel_id));
+    }
+
+    let current = list_active_members(conn, community_id, channel_id).await?;
+    let mut changes = Vec::new();
+
+    for wanted in desired {
+        let held = current
+            .iter()
+            .find(|m| m.pubkey == wanted.pubkey)
+            .map(|m| m.role.as_str());
+        if held == Some(wanted.role.as_str()) {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO channel_members (community_id, channel_id, pubkey, role, invited_by) \
+             VALUES ($1, $2, $3, $4::member_role, $5) \
+             ON CONFLICT (community_id, channel_id, pubkey) DO UPDATE SET \
+                removed_at = NULL, removed_by = NULL, role = EXCLUDED.role, \
+                invited_by = EXCLUDED.invited_by",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(&wanted.pubkey)
+        .bind(wanted.role.as_str())
+        .bind(actor)
+        .execute(&mut *conn)
+        .await?;
+        changes.push(RosterChange::Added {
+            pubkey: wanted.pubkey.clone(),
+            role: wanted.role,
+        });
+    }
+
+    // Lower former root admins and orphaned bots who are no longer holders'
+    // agents. Never soft-remove — history and talk stay readable.
+    let desired_admin: Vec<&[u8]> = desired
+        .iter()
+        .filter(|d| d.role == MemberRole::Admin)
+        .map(|d| d.pubkey.as_slice())
+        .collect();
+    let desired_bot: Vec<&[u8]> = desired
+        .iter()
+        .filter(|d| d.role == MemberRole::Bot)
+        .map(|d| d.pubkey.as_slice())
+        .collect();
+    for member in &current {
+        let should_lower = match member.role.as_str() {
+            "admin" => !desired_admin.contains(&member.pubkey.as_slice()),
+            "bot" => !desired_bot.contains(&member.pubkey.as_slice()),
+            _ => false,
+        };
+        if !should_lower {
+            continue;
+        }
+        // Already covered by a desired upsert to Member/Bot above.
+        if desired.iter().any(|d| d.pubkey == member.pubkey) {
+            continue;
+        }
+        sqlx::query(
+            "UPDATE channel_members SET role = 'member'::member_role, invited_by = $1 \
+             WHERE community_id = $2 AND channel_id = $3 AND pubkey = $4 AND removed_at IS NULL",
+        )
+        .bind(actor)
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(&member.pubkey)
+        .execute(&mut *conn)
+        .await?;
+        changes.push(RosterChange::Added {
+            pubkey: member.pubkey.clone(),
+            role: MemberRole::Member,
+        });
+    }
+
+    Ok(changes)
+}
+
 #[cfg(test)]
 mod postgres_tests {
     use super::*;

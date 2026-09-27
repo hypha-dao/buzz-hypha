@@ -170,7 +170,8 @@ async fn commit_transition(
         actor: &relay_bytes,
         now: secs(now),
     };
-    let applied = apply::apply(&state.db, &mut tx, &ctx, &projections, &[])
+    let mut ledger = Vec::new();
+    let applied = apply::apply(&state.db, &mut tx, &ctx, &projections, &mut ledger)
         .await
         .map_err(|e| format!("apply: {e:?}"))?;
     for entry in pending {

@@ -33,7 +33,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-6   | open | [#52](https://github.com/hypha-dao/buzz-hypha/pull/52) |           | `handlers/intelligent_org/scheduler.rs`: `io_scheduler` every five minutes (or `BUZZ_IO_SCHEDULER_INTERVAL_SECS`); offer renotify at half-window (D6: ledger `offer_renotified` + re-emit unchanged `39101`) and return past the window (`offer_expired`); roots enter `in_review` in the last fifth of `[approved_at, due_at]` (floor two days); close on `due_at` with `closed_by=rule` and live children `orphaned_by_close`; draft `expiration` → `39104 expired`; open proposals past `expires_at` → `expired` (detail names `opened_by`); seats in `39103.offered` past `offer_window_secs` drop by `(p, proposal)` (`shaper_offer_lapsed`). Migration `0047_io_scheduler_claims` — each transition is one transaction that claims first (V9); `actor = "relay"`. Clock hook: `sweep_community(now)` / `IO_SCHEDULER_NOW_OVERRIDE`. Three Postgres-lane proofs: `offer_renotify_and_expire_once_under_concurrent_sweeps`, `root_enters_review_and_closes_with_orphaned_children_moved_due_skips`, `draft_and_proposal_expire_and_seat_lapses_by_proposal`. |
 | R-7   | merged | [#41](https://github.com/hypha-dao/buzz-hypha/pull/41) | `57b8f6051` | `handlers/intelligent_org/drafts.rs`: `50100` ingest (shape, `needs`, community-wide receipt resolve, one open draft per `gap`, holder `39105`/`39101` evidence, `k` slugs, `open_limit`) → `39104` `open` (or `shadow` from birth); `50101` (item exists, `rows` resolve); `50103` (`39103.agent` only, no receipt check, ledger verb); draft settlement on any command carrying `["e", id, "", "draft"]` (`accepted` vs `amended`); `50012`; `50017`. `persist_write` is the shared write path so a draft tag and the command share one transaction, including R-5b's `50009`–`50011` / `50018`. `50102` / `50021` untouched. Nine Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-8   | merged | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) | `c5f842ba4` | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
-| R-9a  |        |    |           | R-9b is wave 6. |
+| R-9a  | open | [#49](https://github.com/hypha-dao/buzz-hypha/pull/49) |           | Room half of Protocol §6.7: on `project` pass, `create_room` (open stream, name = title slug, topic = title) + `39103.agent` as member + `home.channel` on the root `39101` (`repo`/`project` absent — R-9b) + ledger `home_created`; `emit_group_discovery_events` after commit. Roster sync on accept / release / `dri` via `upsert_home_roles` (additive: root holder → admin, child holder → member, attested agents → bot, never removes talk joiners; lowers former admin/bot to member) + `home_member_synced`. Archive-on-done waits on R-6. Postgres: `a_passed_project_opens_a_root_in_open_or_offered`, `project_home_roster_follows_accept_release_and_dri`; E2E asserts `home.channel` + open room. |
 | R-10  | open | [#51](https://github.com/hypha-dao/buzz-hypha/pull/51) |           | `{ids:[…]}` REQ exemption for receipt-cited events (Protocol §6.8 / V6): migration `0048_io_receipts`, `EventQuery.receipt_ids` OR'd into access-scope SQL, filled from `io_receipts` when the filter has `ids` and no `#h`; writers on `50100` e-receipt / `50101` rows / `50009` done marker. Postgres: `receipt_cited_id_bypasses_channel_access_scope`, `draft_e_receipt_indexes_io_receipts_for_receipt_read`; E2E: `r10_cited_message_is_readable_by_ids_but_not_by_h`. |
 | R-11  | merged | [#50](https://github.com/hypha-dao/buzz-hypha/pull/50) | `c6cc65f4` | `handlers/intelligent_org/profiles.rs`: `50021` → `39105` + `io_profiles` (version bump, kebab `k` tags, ledger `profile_set`); §4.7a limits; self-only (`pubkey` field / foreign `p` refused); `profile` draft `needs` must equal subject (R-7 ingest); NIP-43 remove flips `io_profiles.active` (rejoin restores); claim's `member_joined` stays on the store transaction (no `8000` needed — V7). Two Postgres-lane proofs through `ingest_event`, two E2E in `e2e_intelligent_org.rs`. |
 | R-12  | merged | [#12](https://github.com/hypha-dao/buzz-hypha/pull/12) | `bfa3de73a` | `POST /api/invites` admits a pubkey in the live `39103.shapers` (`Db::is_org_shaper`, one `io_shapers` read per request, no cache); `claim_relay_invite` appends `member_joined` (`actor` = claimant, `detail.via = "invite"`, `detail.minted_by` = the minter) on the claim's own transaction; `GET /api/join-policy` carries `org.transparency_notice` (`api::invites::ORG_TRANSPARENCY_NOTICE`, `Db::is_org_community`: an `io_hosted_agents` row or an `io_shapers` row) and `web/` renders it on `/invite/<code>` above the join controls, gating nothing. Two Postgres-lane proofs in `api::invites`, two in `buzz-db`, two E2E in `e2e_intelligent_org.rs`, one web smoke spec. `shapers.rs`/`apply.rs` untouched. |
@@ -407,9 +407,9 @@ absorb an item into an unrelated slice.
   = 0`, `agrees ≥ needed`), and the opener's `vote=agree` is ignored
   (not eligible). Worth a sentence in §5.3 so the empty-eligible case is
   not read as a bug.
-- **Home roster / `maintainers` sync on a passed `dri` is R-9a.** R-4b
-  rewrites the `39101` (`dri`, `accepted`, offer cleared) and writes
-  `item_accepted`; it does not touch the project room.
+- ~~**Home roster / `maintainers` sync on a passed `dri` is R-9a.**~~ Room
+  roster half done in R-9a (`home_member_synced` on accept / release /
+  `dri`); `maintainers` on `30617` is R-9b.
 - **D-0 has no command UI yet.** The Playwright proof for kind/tags binds
   the production `publishOrgCommand` path through
   `window.__BUZZ_E2E_ORG_COMMANDS__` (`useOrgCommandE2eBridge` on Overview,
@@ -453,7 +453,8 @@ absorb an item into an unrelated slice.
 - **C-3 Protocol §9 is steps 1–9 only.** The worked example's scheduler
   half (`in_review`, close-on-due, follow-up root) and the objectives
   redraw wait on R-6; the DRI-draft profile receipts in step 6 wait on
-  R-11. R-9a / R-10 / R-13 Proves are absent until those slices merge —
+  R-11. R-9a room Prove lands with this slice (`home.channel` on a passed
+  project); R-10 / R-13 Proves are absent until those slices merge —
   prefer covering already-merged R first, then extend this file.
 - **The 0032 roster fence had to learn the V5 exception.** A DM `39002`
   that omits `39103.agent` is rejected by `guard_channel_roster_snapshot`
@@ -556,11 +557,22 @@ absorb an item into an unrelated slice.
   release / reopen rewrite the parent the same way.
 - ~~**`50009`–`50011` / `50018` stay refused**
   (`invalid: kind {k} is not implemented yet`) until R-5b.~~ Struck in R-5b.
-- **Project home is still R-9a.** A passed `project` writes no room and
-  leaves `39101.home` absent.
+- ~~**Project home is still R-9a.**~~ Struck in R-9a: a passed `project`
+  creates the open room and writes `home.channel` (`repo`/`project` are
+  R-9b).
 - **D-3 Open room hides when `home.channel` is missing** rather than
   stubbing a room. The mock seeds one channel id so the tap is proveable;
-  a live community will not show the button until R-9a writes `home`.
+  a live community now gets `home.channel` from R-9a.
+- **R-9b still owns the repository half** — relay-signed `30617` /
+  `30621`, `maintainers`, `buzz-protect`, manifest seed, quota exemption,
+  push-hook record. Sovereign relays without object storage keep
+  `home.repo` / `home.project` absent.
+- **Archive-on-done for the project room** (Protocol §6.7: archived one
+  week after root `done` unless a Shaper reopens) waits on R-6's
+  scheduler; R-9a does not schedule it.
+- **Attested-agent → bot** is wired in `desired_home_roster` (users with
+  `agent_owner_pubkey` in the holder set) but has no dedicated Prove yet
+  — seed a NIP-OA owner in a follow-up or R-9b's Work-sync lane.
 - **D-3 item-page health is a second live REQ.** Protocol §6.5 lists
   `{kinds:[50101], "#i":[…]}` on the Work door; the Prototype map puts the
   card on the item page. D-3 consumed `useLiveDoorEvents` with that filter

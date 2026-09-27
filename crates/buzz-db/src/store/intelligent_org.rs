@@ -441,6 +441,28 @@ pub async fn list_children(
     rows.into_iter().map(work_item_row).collect()
 }
 
+/// Items under a root (including the root) that currently name a `dri`.
+/// Used by the project-home roster sync (§6.7): a holder keeps their room
+/// role through `done` until release clears `dri`.
+pub async fn list_dri_under_root(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    root_id: Uuid,
+) -> Result<Vec<WorkItemRow>> {
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        work_item_columns!(),
+        " FROM io_work_items \
+         WHERE community_id = $1 AND root_id = $2 AND dri IS NOT NULL \
+         ORDER BY depth, created_at, id"
+    ))
+    .bind(community_id.as_uuid())
+    .bind(root_id)
+    .fetch_all(conn)
+    .await?;
+    rows.into_iter().map(work_item_row).collect()
+}
+
 /// Items in `state` whose `due_at` is at or before `due_before` — the §6.3
 /// sweeps (offers past their window, roots entering review or closing).
 pub async fn list_work_items_due(
