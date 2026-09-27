@@ -70,9 +70,12 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_HEALTH,
   KIND_IO_PROFILE_SET,
+  KIND_IO_PROGRESS,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
+  KIND_IO_WORK_ITEM,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
   KIND_PERSONA,
@@ -145,6 +148,11 @@ export type MockOrgSeed = {
   agentHosted?: boolean;
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
+  /**
+   * Community-scoped org events served on history REQ (`39101`, `50101`,
+   * `50102`, `50001–50021`). D-3 seeds the Work tree and item-page trail.
+   */
+  events?: RelayEvent[];
 };
 
 type MockManagedAgentRuntimeSeed = {
@@ -368,8 +376,9 @@ type E2eConfig = {
      * Intelligent-org community state. When set, the mock relay serves one
      * relay-signed `kind:39103` (`d=shapers`) naming `agentPubkey` as the org
      * agent and, unless `seedAgentDm` is false, seeds the viewer's 1:1 DM with
-     * it plus its "Org agent" profile. Absent = the community was never
-     * bootstrapped: no `39103`, no org agent.
+     * it plus its "Org agent" profile. `events` are served on Work / item
+     * REQs (`39101`, `50101`, `50102`, `50001–50021`). Absent = the
+     * community was never bootstrapped: no `39103`, no org agent.
      */
     org?: MockOrgSeed;
     agentListDelayMs?: number;
@@ -3370,6 +3379,7 @@ const deferredSendMessageLiveEchoes: Array<{
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
+const mockOrgEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
 const mockSockets = new Map<number, MockSocket>();
@@ -3881,8 +3891,54 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
  * DM's `p` tags are `[member, agent]` and the agent's `kind:0` names it "Org
  * agent". Without `mock.org` nothing is seeded.
  */
+function isMockOrgWorkKind(kind: number): boolean {
+  return (
+    kind === KIND_IO_WORK_ITEM ||
+    kind === KIND_IO_HEALTH ||
+    kind === KIND_IO_PROGRESS ||
+    (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET)
+  );
+}
+
+function recordMockOrgEvent(event: RelayEvent) {
+  mockOrgEvents.push(event);
+}
+
+function eventMatchesMockOrgFilter(
+  event: RelayEvent,
+  filter: MockFilter,
+): boolean {
+  if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+  if (filter.ids && !filter.ids.includes(event.id)) return false;
+  if (
+    filter.authors &&
+    !filter.authors.some(
+      (author) => author.toLowerCase() === event.pubkey.toLowerCase(),
+    )
+  ) {
+    return false;
+  }
+  const filterRecord = filter as Record<string, string[] | undefined>;
+  for (const name of ["d", "e", "p", "i", "u", "s", "t"] as const) {
+    const wanted = filterRecord[`#${name}`];
+    if (!wanted || wanted.length === 0) continue;
+    const values = event.tags
+      .filter((tag) => tag[0] === name)
+      .map((tag) => tag[1]);
+    if (!wanted.some((value) => values.includes(value))) return false;
+  }
+  return true;
+}
+
 function initializeMockOrg(org: MockOrgSeed | undefined) {
+  mockOrgEvents.length = 0;
   if (!org) return;
+  for (const event of org.events ?? []) {
+    mockOrgEvents.push({
+      ...event,
+      tags: event.tags.map((tag) => [...tag]),
+    });
+  }
   const agent = mockOrgAgentPubkey(org);
   applyMockDisplayName(agent, ORG_AGENT_DISPLAY_NAME);
   mockAgentPubkeys.add(agent);
@@ -11045,6 +11101,19 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (filter.kinds?.some((kind) => isMockOrgWorkKind(kind))) {
+      const limit = filter.limit && filter.limit > 0 ? filter.limit : undefined;
+      let sent = 0;
+      for (const orgEvent of mockOrgEvents) {
+        if (!eventMatchesMockOrgFilter(orgEvent, filter)) continue;
+        sendWsText(socket.handler, ["EVENT", subId, orgEvent]);
+        sent += 1;
+        if (limit !== undefined && sent >= limit) break;
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     if (filter.kinds?.includes(KIND_EMOJI_SET)) {
       // Honor `authors` so `fetchOwnEmoji` (authors:[me]) sees only the
       // caller's set, while the union fetch (no authors) sees every member's —
@@ -11353,6 +11422,7 @@ function sendToMockSocket(args: {
       event.kind >= KIND_IO_SHAPERS_PROPOSE &&
       event.kind <= KIND_IO_PROFILE_SET
     ) {
+      recordMockOrgEvent(event);
       emitMockGlobalEvent(event);
       sendWsText(socket.handler, ["OK", event.id, true, ""]);
       return;

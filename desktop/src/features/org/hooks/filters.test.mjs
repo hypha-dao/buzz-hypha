@@ -5,6 +5,7 @@ import {
   IO_COMMAND_KINDS,
   myWorkFilters,
   overviewFilters,
+  profileFilters,
   workFilters,
   workItemFilters,
 } from "./filters.ts";
@@ -66,4 +67,9 @@ test("myWorkFilters is p/n/s plus 39103, and the shaper addendum", () => {
   const shaper = myWorkFilters(ME, true);
   assert.equal(shaper.length, 5);
   assert.deepEqual(shaper[4]["#n"], ["shaper"]);
+});
+
+test("profileFilters is the Protocol §6.5 About & skills REQ", () => {
+  const filters = profileFilters(ME);
+  assert.deepEqual(filters, [{ kinds: [39105], "#d": [ME], limit: 500 }]);
 });

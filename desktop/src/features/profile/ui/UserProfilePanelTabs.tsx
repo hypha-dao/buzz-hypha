@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
+import { OrgAboutSkillsSection } from "@/features/org/ui/OrgAboutSkillsSection";
 import type { ManagedAgent, RestartDiffEntry } from "@/shared/api/types";
 import {
   AUTO_RESTART_OFF_BLURB,
@@ -215,6 +216,7 @@ export function ProfileInfoTabContent({
   onOpenActivity,
   onEditAgent,
   pubkey,
+  isSelf,
   showActivityIngress,
   showInstructionBlock,
 }: {
@@ -236,6 +238,7 @@ export function ProfileInfoTabContent({
   onEditAgent: () => void;
   onOpenActivity: (channelId?: string | null) => void;
   pubkey: string | null;
+  isSelf: boolean;
   showActivityIngress: boolean;
   showInstructionBlock: boolean;
 }) {
@@ -258,6 +261,8 @@ export function ProfileInfoTabContent({
   const showLiveActivityEmbed =
     showActivityIngress && (feedScope.isLive || feedScope.hasFeedContent);
 
+  const aboutSkills = <OrgAboutSkillsSection isSelf={isSelf} pubkey={pubkey} />;
+
   if (
     !hasInfoFields &&
     !showArchiveAction &&
@@ -268,11 +273,12 @@ export function ProfileInfoTabContent({
     !showActivityIngress &&
     !showInstructionBlock
   ) {
-    return null;
+    return aboutSkills;
   }
 
   return (
     <div className="space-y-4" data-testid="user-profile-info-sections">
+      {aboutSkills}
       {showActivityIngress ? (
         showLiveActivityEmbed && activityAgent ? (
           <ProfileLiveActivityEmbed

@@ -41,3 +41,7 @@ mod transition_tests;
 #[cfg(test)]
 #[path = "../tests/eval_fixtures.rs"]
 mod eval_fixtures;
+
+#[cfg(test)]
+#[path = "../tests/eval_cases.rs"]
+mod eval_cases;
