@@ -1265,6 +1265,21 @@ pub async fn set_profile_active(
     Ok(result.rows_affected() == 1)
 }
 
+/// Same as [`set_profile_active`], taking a hex pubkey. No-op (returns
+/// `Ok(false)`) when the hex is not 32 bytes — membership rows can hold
+/// legacy values and must not fail the membership write for a bad key.
+pub async fn set_profile_active_hex(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    pubkey_hex: &str,
+    active: bool,
+) -> Result<bool> {
+    let Ok(bytes) = hex32(pubkey_hex) else {
+        return Ok(false);
+    };
+    set_profile_active(conn, community_id, &bytes, active).await
+}
+
 // ── io_ledger ─────────────────────────────────────────────────────────────────
 
 /// Actor of a rule-driven ledger row (§6.2).

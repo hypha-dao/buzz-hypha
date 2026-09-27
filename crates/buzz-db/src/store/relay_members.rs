@@ -13,6 +13,7 @@ use sqlx::{PgPool, Row as _};
 use uuid::Uuid;
 
 use crate::error::{DbError, Result};
+use crate::store::intelligent_org::set_profile_active_hex;
 use crate::{observability, replaceable, CommunityId, Db, RouteDecision, RoutePredicate};
 
 /// A single relay member record.
@@ -162,7 +163,12 @@ pub async fn add_relay_member(
     .bind(added_by)
     .execute(&mut *connection)
     .await?;
-    Ok(result.rows_affected() > 0)
+    let inserted = result.rows_affected() > 0;
+    if inserted {
+        // Protocol §5.4a: re-joining picks the prior `39105` back up.
+        let _ = set_profile_active_hex(&mut connection, community, pubkey, true).await?;
+    }
+    Ok(inserted)
 }
 
 /// Claims relay membership via an invite and atomically persists policy evidence.
@@ -203,6 +209,10 @@ pub async fn claim_relay_membership(
         .bind(version)
         .execute(&mut *tx)
         .await?;
+    }
+
+    if inserted {
+        let _ = set_profile_active_hex(&mut tx, community, pubkey, true).await?;
     }
 
     tx.commit().await?;
@@ -265,6 +275,8 @@ pub async fn remove_relay_member(
     .await?;
 
     if result.rows_affected() > 0 {
+        // Protocol §5.4a: leave the `39105` in place; mark the projection inactive.
+        let _ = set_profile_active_hex(&mut connection, community, pubkey, false).await?;
         return Ok(RemoveResult::Removed);
     }
 
@@ -314,6 +326,7 @@ pub async fn remove_relay_member_if_role(
     .await?;
 
     if result.rows_affected() > 0 {
+        let _ = set_profile_active_hex(&mut connection, community, pubkey, false).await?;
         return Ok(RemoveResult::Removed);
     }
 

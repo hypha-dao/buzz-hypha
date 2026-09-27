@@ -1187,6 +1187,41 @@ pub const PROFILE_SKILL_LABEL_MAX_CHARS: usize = 40;
 /// `open_limit`, when set, is within `1..=50`.
 pub const PROFILE_OPEN_LIMIT_RANGE: std::ops::RangeInclusive<u32> = 1..=50;
 
+/// Kebab-case of a skill label for the `39105` `k` tag (§4.7a).
+///
+/// Lowercases ASCII letters, keeps digits, turns runs of whitespace /
+/// `-` / `_` into a single `-`, and drops everything else. Empty input
+/// yields an empty string — the caller refuses that as a skill.
+pub fn skill_slug(label: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for c in label.chars() {
+        let mapped = if c.is_ascii_alphanumeric() {
+            Some(c.to_ascii_lowercase())
+        } else if c.is_whitespace() || c == '-' || c == '_' {
+            Some('-')
+        } else {
+            None
+        };
+        match mapped {
+            Some('-') if prev_dash || slug.is_empty() => {}
+            Some('-') => {
+                slug.push('-');
+                prev_dash = true;
+            }
+            Some(ch) => {
+                slug.push(ch);
+                prev_dash = false;
+            }
+            None => {}
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    slug
+}
+
 /// Content of `kind:39105` — one member's org profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OrgProfile {
@@ -1737,6 +1772,15 @@ mod tests {
             serde_json::to_value(ProfileSetContent::default()).unwrap(),
             json!({ "about": "", "skills": [] })
         );
+    }
+
+    #[test]
+    fn skill_slug_is_kebab_case_of_the_label() {
+        assert_eq!(skill_slug("grant writing"), "grant-writing");
+        assert_eq!(skill_slug("  Hosting_Events!! "), "hosting-events");
+        assert_eq!(skill_slug("rust"), "rust");
+        assert_eq!(skill_slug("---"), "");
+        assert_eq!(skill_slug(""), "");
     }
 
     #[test]

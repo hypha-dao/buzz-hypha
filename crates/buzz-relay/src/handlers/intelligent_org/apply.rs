@@ -24,12 +24,12 @@
 use buzz_core::channel::MemberRole;
 use buzz_core::event::StoredEvent;
 use buzz_core::intelligent_org::{
-    DirectionArtifact, DraftOutcome, Proposal, Shapers, WorkItem, WorkItemState,
+    DirectionArtifact, DraftOutcome, OrgProfile, Proposal, Shapers, WorkItem, WorkItemState,
 };
 use buzz_core::CommunityId;
 use buzz_db::intelligent_org::{
-    self as store, DirectionRow, DraftRow, HealthRatingRow, HealthRow, LedgerEntry, ProposalRow,
-    ShapersRow, VoteRow, WorkItemRow,
+    self as store, DirectionRow, DraftRow, HealthRatingRow, HealthRow, LedgerEntry, ProfileRow,
+    ProposalRow, ShapersRow, VoteRow, WorkItemRow,
 };
 use buzz_db::relay_rooms::{self, DesiredMember, RosterChange};
 use buzz_db::replaceable::{ParameterizedReplacePrecondition, ParameterizedReplaceStatus};
@@ -103,6 +103,8 @@ pub enum Projection {
     Health(HealthRow),
     /// A Shaper's blind band (`io_health_ratings`). No state event.
     HealthRating(HealthRatingRow),
+    /// A member's org profile (`39105`, `io_profiles`).
+    Profile(OrgProfile),
 }
 
 /// One vote the command cast, for its `io_votes` row: the `Vote` in the
@@ -129,6 +131,7 @@ impl Projection {
             Self::Direction(artifact) => state::direction(artifact),
             Self::WorkItem { item, receipt } => state::work_item(item, receipt),
             Self::Draft { outcome, .. } => state::draft_outcome(outcome),
+            Self::Profile(profile) => state::profile(profile),
             Self::Health(_) | Self::HealthRating(_) => Err(IngestError::Internal(
                 "error: health projection has no state event".into(),
             )),
@@ -368,6 +371,26 @@ async fn write_draft(
     Ok(())
 }
 
+async fn write_profile(
+    conn: &mut PgConnection,
+    ctx: &ApplyContext<'_>,
+    profile: &OrgProfile,
+    event_id: &[u8],
+    created_at: u64,
+) -> Result<(), IngestError> {
+    let row = ProfileRow {
+        content: profile.clone(),
+        // The signer is a live member (checked before apply); a rejoin that
+        // still held a row from a prior leave becomes active again here.
+        active: true,
+        event_id: event_id.to_vec(),
+        updated_at: store::ts(created_at).map_err(|e| internal("state created_at", e))?,
+    };
+    store::upsert_profile(conn, ctx.community, &row)
+        .await
+        .map_err(|e| internal("write io_profiles", e))
+}
+
 /// Write `projections` and `ledger` on `tx`. See the module docs for the
 /// order and the guarantees.
 pub async fn apply(
@@ -427,6 +450,9 @@ pub async fn apply(
             }
             Projection::Draft { outcome, insert } => {
                 write_draft(tx, ctx, outcome, insert.as_deref(), &event_id).await?;
+            }
+            Projection::Profile(profile) => {
+                write_profile(tx, ctx, profile, &event_id, created_at).await?;
             }
             Projection::Health(_) | Projection::HealthRating(_) => {}
         }

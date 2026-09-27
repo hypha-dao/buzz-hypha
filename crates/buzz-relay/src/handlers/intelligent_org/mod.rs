@@ -15,7 +15,7 @@
 //! - one handler per command: `shapers` for `50001`/`50019`/`50020` and the
 //!   `shapers` execution rows, `proposals` for `50002`/`50004`/`50015`/`50003`
 //!   and the `direction` / `dri` execution rows, `work` for `project`
-//!   execution and `50005`–`50011` / `50018`.
+//!   execution and `50005`–`50011` / `50018`, `profiles` for `50021`.
 //!
 //! Client `EVENT`s of `39100–39105` never reach here: ingest rejects them as
 //! `restricted: relay-only kind` before verification.
@@ -28,6 +28,10 @@ mod drafts;
 mod drafts_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
+mod profiles;
+#[cfg(test)]
+#[path = "profiles_postgres_tests.rs"]
+mod profiles_postgres_tests;
 mod proposals;
 mod shapers;
 pub mod state;
@@ -40,9 +44,10 @@ use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE,
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
     KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE,
-    KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE,
-    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROFILE_SET,
+    KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -90,6 +95,7 @@ pub async fn handle_command(
         KIND_IO_SHAPER_STEP_DOWN => shapers::step_down(&cmd).await,
         KIND_IO_DRAFT_DECIDE => drafts::decide(&cmd).await,
         KIND_IO_HEALTH_RATE => drafts::health_rate(&cmd).await,
+        KIND_IO_PROFILE_SET => profiles::set(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
@@ -218,6 +224,8 @@ pub(crate) mod object {
     pub const WORK_ITEM: &str = "work_item";
     /// A draft; `object_id` is the `50100` hex.
     pub const DRAFT: &str = "draft";
+    /// A member's org profile; `object_id` is their pubkey.
+    pub const PROFILE: &str = "profile";
 }
 
 pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
