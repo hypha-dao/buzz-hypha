@@ -1,0 +1,479 @@
+{
+  "suite": "projects-to-tickets",
+  "job": "J2",
+  "cases": [
+    {
+      "id": "j2-weekday-hall-gate-first",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5" },
+      "seed": { "org": "river", "locale": "en", "sequence": "weekday-hall", "snapshot": "before" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Council licence — the gate — drafted now.",
+            "needs": "Lea",
+            "covers": "the council licence for weekday use",
+            "gate": true,
+            "requires": ["council-licensing"],
+            "suggested_holder": "Rafi",
+            "matched": { "skills": ["council-licensing"] },
+            "draft_now": ["licence", "insurance"],
+            "held": ["rota", "opening"],
+            "payload": {
+              "parent": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5",
+              "title": "Council licence for weekday use",
+              "brief": "Apply for the weekday-use licence. Hours and capacity it grants will set the rota.",
+              "due_at": 1785488400,
+              "requires": ["council-licensing"],
+              "suggested_holder": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+              "unfilled": null,
+              "covers": "the council licence for weekday use",
+              "after": [],
+              "gate": true,
+              "coverage": [
+                { "piece": "the council licence for weekday use", "covered_by": null, "order": 1, "after": [], "held": null },
+                { "piece": "the hall insurance", "covered_by": null, "order": 2, "after": [], "held": null },
+                { "piece": "a weekday rota", "covered_by": null, "order": 3, "after": ["licence"], "held": "after the council licence for weekday use" },
+                { "piece": "the opening night", "covered_by": null, "order": 4, "after": ["licence"], "held": "after the council licence for weekday use" }
+              ],
+              "matched": { "skills": ["council-licensing"], "about": null, "items": [] }
+            }
+          },
+          {
+            "kind": "ticket",
+            "intent": "Hall insurance — independent of the licence — drafted now.",
+            "needs": "Lea",
+            "covers": "the hall insurance",
+            "gate": false,
+            "requires": ["permits-and-insurance"],
+            "suggested_holder": "Rafi"
+          }
+        ],
+        "must_not": [
+          { "why": "no licence, no opening", "title": "Opening night" },
+          { "why": "the licence conditions may change the rota", "title": "Weekday rota" }
+        ]
+      },
+      "why_gold": "No licence, no opening — and the licence conditions (hours, capacity) may change the rota, so the rota waits too. Insurance depends on the address and the days, not the licence, so it starts now. Two drafts, not four. Gold order and why_gold are the E-1 weekday-hall sequence; this case is the J2 trigger on that snapshot."
+    },
+    {
+      "id": "j2-weekday-hall-next-wave-granted",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "child_done_unblocks", "item": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5" },
+      "seed": { "org": "river", "locale": "en", "sequence": "weekday-hall", "snapshot": "outcome_a" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Weekday rota after the licence, brief respects 22:00.",
+            "needs": "Lea",
+            "covers": "a weekday rota",
+            "after": ["86d8cb08-5776-41c4-9232-5c6634d9fa89"],
+            "must_mention": ["22:00"],
+            "requires": ["printing"],
+            "suggested_holder": "Jun"
+          },
+          {
+            "kind": "ticket",
+            "intent": "Opening night after the licence, inside 22:00.",
+            "needs": "Lea",
+            "covers": "the opening night",
+            "after": ["86d8cb08-5776-41c4-9232-5c6634d9fa89"],
+            "must_mention": ["22:00"]
+          }
+        ],
+        "must_not": [
+          { "why": "licence is done", "title": "Council licence for weekday use" },
+          { "why": "insurance is live", "title": "Hall insurance" }
+        ]
+      },
+      "why_gold": "The gate answered: weekdays until 22:00. Both held pieces can start, each after the licence, each inside those hours. Insurance is live and the licence is done; neither is drafted again."
+    },
+    {
+      "id": "j2-weekday-hall-outcome-changes-plan",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "child_done_unblocks", "item": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5" },
+      "seed": { "org": "river", "locale": "en", "sequence": "weekday-hall", "snapshot": "outcome_b" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Re-apply for a daytime licence (09:00–17:00) — a new gate.",
+            "needs": "Lea",
+            "gate": true,
+            "requires": ["council-licensing"],
+            "suggested_holder": "Rafi",
+            "must_mention": ["09:00", "17:00"]
+          }
+        ],
+        "must_not": [
+          { "why": "evenings were refused", "title": "Weekday rota" },
+          { "why": "no opening night before a licence exists", "title": "Opening night" }
+        ]
+      },
+      "why_gold": "The refusal changes the plan, not just the timing. An evening rota and an opening night no longer follow. The next piece is a re-scoped gate — the daytime application — and the old held pieces stay held behind it."
+    },
+    {
+      "id": "j2-iberia-site-gate-only",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item": "f2a7d2fa-f094-4ae5-af2d-0fc0513d2446" },
+      "seed": { "org": "energy", "locale": "en", "sequence": "iberia-pilot", "snapshot": "before" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Pick the pilot site — the only draft now.",
+            "needs": "Pedro",
+            "covers": "pick the pilot site",
+            "gate": true,
+            "draft_now": ["site"],
+            "held": ["landowner", "inverters", "install", "commission"],
+            "requires": ["municipal-relations"]
+          }
+        ],
+        "must_not": [
+          { "why": "inverter count depends on the roof", "title": "Order the inverters" },
+          { "why": "six-piece batch fails sequence fit" }
+        ]
+      },
+      "why_gold": "The site is the gate: the landowner is whoever owns the chosen roof, the inverter count is the roof's size, the DSO connection is the roof's feeder. One draft now. A five-piece batch orders inverters for a roof nobody has picked."
+    },
+    {
+      "id": "j2-hall-electrics-unfilled",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item": "588b60cc-7197-4f30-b272-f64ddc567065" },
+      "seed": { "org": "river", "locale": "en", "sequence": "hall-electrics", "snapshot": "before" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Get the electrics certified; nobody here holds the ticket.",
+            "needs": "Noor",
+            "covers": "get the electrics certified",
+            "gate": true,
+            "requires": ["electrical-certification"],
+            "suggested_holder": null,
+            "unfilled": "nobody here has electrical certification"
+          }
+        ],
+        "must_not": [
+          { "why": "rewire waits on the report", "title": "Rewire" },
+          { "why": "inspection is of finished work", "title": "Council inspection" }
+        ]
+      },
+      "why_gold": "The report is the scope. Until an electrician has certified — or failed — the wiring, nobody knows whether the rewiring is one circuit or the whole hall. One draft, and it names what River lacks. Energy's Tomas case is the same piece with a holder."
+    },
+    {
+      "id": "j2-energy-electrics-tomas",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "A child brief under EMS that needs electrical-certification — Tomas has it, under limit."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Same electrics-certification piece; suggest Tomas with matched.skills.",
+            "needs": "Surya",
+            "requires": ["electrical-certification"],
+            "suggested_holder": "Tomas",
+            "matched": { "skills": ["electrical-certification"] }
+          }
+        ]
+      },
+      "why_gold": "Who-is-needed energy: electrical-certification is met by exactly Tomas. The same piece that is unfilled on River names him here. Skill over availability still holds — he has two open items and is under his limit of 3."
+    },
+    {
+      "id": "j2-requires-over-availability",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item_key": "ems/keep-the-ameland-ems-running-on-call" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "A split under the on-call ticket that requires on-call-operations. Rowan is at limit; Surya is free and skilled. A third person is free and unskilled."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Suggest Surya — skilled and under limit — not the free unskilled name, not Rowan.",
+            "needs": "Rowan",
+            "requires": ["on-call-operations"],
+            "suggested_holder": "Surya",
+            "matched": { "skills": ["on-call-operations"] }
+          }
+        ],
+        "must_not": [
+          { "why": "Rowan is at open_limit" },
+          { "why": "a free person without the skill fails requires-over-availability" }
+        ]
+      },
+      "why_gold": "Two candidates under a naive availability sort: one skilled with two open items (Surya), one with no skill and none. Requires is read first. The skilled one is suggested. The judge fails the free-but-unskilled name."
+    },
+    {
+      "id": "j2-no-invented-order",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "item_accepted", "item_key": "growers/print-the-grower-welcome-sheet" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Brief names three posters for three noticeboards — no real dependency."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Three independent poster pieces; no after, no held.",
+            "needs": "Noor",
+            "covers": "three posters"
+          }
+        ],
+        "must_not": [
+          { "why": "inventing an order to look thorough fails sequence fit as much as missing one does" }
+        ]
+      },
+      "why_gold": "Three posters for three boards can start together. coverage has no after and no held. A fake gate ('design the set, then print') is the thorough-looking failure this case exists to catch."
+    },
+    {
+      "id": "j2-andalusia-wrong-brief-order",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "item_accepted" },
+      "seed": { "org": "energy", "locale": "en", "sequence": "andalusia", "snapshot": "before" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "Junta reading is the gate even if a brief listed merge first; translation is already live.",
+            "needs": "Diego",
+            "gate": true,
+            "draft_now": [],
+            "held": ["annex", "merge"]
+          }
+        ]
+      },
+      "why_gold": "The Andalusia tree already has the translation live. The Junta's reading is the gate for the annex and the merge. Following a brief that listed 'merge, then read' would fail right-next-thing. coverage orders them correctly and why says why."
+    },
+    {
+      "id": "j2-brief-already-covered",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "item_accepted", "item_key": "stall" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "covers, setup, and prices already have live children" }
+        ]
+      },
+      "why_gold": "The stall brief's named pieces already have children. Re-accepting the root, or a Monday scan, must not re-draft them."
+    },
+    {
+      "id": "j2-ems-one-sentence-no-pieces",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "item_accepted", "item_key": "ems/keep-the-ameland-ems-running-on-call" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "'Keep the EMS running' is one sentence with no named pieces. Splitting it into monitoring / rota / escalation invents work the brief did not ask for."
+    },
+    {
+      "id": "j2-talk-speaker-does-not-hold",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "talk_split",
+        "speaker": "Priya",
+        "room": "saturday",
+        "message": "Jun, could you print the Saturday cover rota?",
+        "item_key": "stall/find-two-neighbours-who-can-cover-a-saturday"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "Priya does not hold covers; Lea does" }
+        ]
+      },
+      "why_gold": "Talk-derived drafts share this suite. The speaker must hold the item they are splitting. Priya asking from the stall room is a nudge to Lea, not a ticket under covers."
+    },
+    {
+      "id": "j2-discarded-parent-unchanged",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan", "item_key": "growers" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "A welcome-sheet reprint draft was declined last week; growers brief unchanged.",
+        "declined_gap": "ticket:growers/print-the-grower-welcome-sheet#reprint"
+      },
+      "gold": { "silence": true },
+      "why_gold": "A declined child key stays down while the parent brief is the same. The scan must not nag."
+    },
+    {
+      "id": "j2-ticket-met-by-itself",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "item_accepted", "item_key": "currency/write-the-one-page-rules" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "The one-page rules ticket is the piece. Accepting it does not open subtickets for 'write the title' and 'write the body'."
+    },
+    {
+      "id": "j2-child-done-unblocks-nothing",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "child_done_unblocks", "item": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5" },
+      "seed": { "org": "river", "locale": "en", "sequence": "weekday-hall", "snapshot": "gate" },
+      "imagine": {
+        "note": "Insurance (the independent piece) goes done. The licence gate is still open."
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "rota and opening stay held behind the licence, not the insurance" }
+        ]
+      },
+      "why_gold": "A child done that unblocks nothing — an independent piece — produces no re-run output. The held pieces stay held."
+    },
+    {
+      "id": "j2-sibling-holds-under-other-name",
+      "job": "J2",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "item_accepted", "item_key": "stall/write-the-saturday-setup-so-someone-else-could-run-it" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Setup brief names 'the Saturday price list'; prices already holds 'agree grower prices for the season'."
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "a sibling already holds the shared piece under another name" }
+        ]
+      },
+      "why_gold": "Coverage must catch the sibling. Two tickets for the price list — one under setup, one under prices — is the duplicate the judge fails."
+    },
+    {
+      "id": "j2-circular-order-publishes-nothing",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "item_accepted" },
+      "seed": { "org": "energy", "locale": "en", "sequence": "iberia-pilot", "snapshot": "before" },
+      "imagine": {
+        "note": "A bad model plan that sets site after install and install after site."
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "gate 15 sequence fails a circular batch; nothing is published" }
+        ]
+      },
+      "why_gold": "A circular coverage list is a hard fail, not a draft with a warning. The harness records this as silence: the judge drops the batch."
+    },
+    {
+      "id": "j2-eight-pieces-not-eight-leaves",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "item_accepted", "item_key": "playbook" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "Playbook brief named eight countries' templates at once."
+      },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "eight leaf drafts at once fails the size rubric; group or pick one level" }
+        ]
+      },
+      "why_gold": "At most one level down and at most seven pieces. Eight country templates is a grouping ('legal templates per country') or a pick, not eight cards. This gold treats a raw eight-leaf batch as a fail (silence after the judge)."
+    },
+    {
+      "id": "j2-cold-empty-tree-no-parent",
+      "job": "J2",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Cold has no accepted item. J2 does not invent a tree under a project that does not exist; that is J1's job."
+    },
+    {
+      "id": "j2-dutch-law-unfilled",
+      "job": "J2",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "item_accepted", "item_key": "playbook/legal-templates-per-country/netherlands-energiecooperatie-template" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "ticket",
+            "intent": "A split that needs dutch-cooperative-law; unfilled — nobody in Energy has it.",
+            "needs": "Marta",
+            "requires": ["dutch-cooperative-law"],
+            "suggested_holder": null,
+            "unfilled": "nobody here has dutch cooperative law"
+          }
+        ]
+      },
+      "why_gold": "Who-is-needed energy: dutch-cooperative-law is met by nobody. The draft still goes to the holder of the parent (the legal-templates DRI) with unfilled naming the gap. Inventing a lawyer from about-text is unmatched skill."
+    }
+  ]
+}

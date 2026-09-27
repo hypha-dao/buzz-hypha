@@ -1,0 +1,229 @@
+{
+  "suite": "done-from-talk",
+  "job": "J8",
+  "cases": [
+    {
+      "id": "j8-holder-says-done",
+      "job": "J8",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Jun",
+        "room": "saturday",
+        "message": "Prices for the season are agreed — done.",
+        "item_key": "stall/agree-grower-prices-for-the-season"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "io_done": {
+          "item": "64d68844-f3c5-4880-853b-ecf59a752214",
+          "receipt_is_message": true
+        }
+      },
+      "why_gold": "The holder saying done, item recognisable, kind 9, fresh, not a transcript, no open child → io_done with the message as receipt. Ledger actor is Jun, via agent."
+    },
+    {
+      "id": "j8b-non-holder-done-card",
+      "job": "J8b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Priya",
+        "room": "saturday",
+        "message": "Jun's prices are done.",
+        "item_key": "stall/agree-grower-prices-for-the-season"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "done",
+            "intent": "Done card to Jun, not an io_done from Priya's mouth.",
+            "needs": "Jun",
+            "payload": {
+              "item": "64d68844-f3c5-4880-853b-ecf59a752214",
+              "why": "heard on a call",
+              "heard": "0000000000000000000000000000000000000000000000000000000000000001"
+            }
+          }
+        ]
+      },
+      "why_gold": "A non-holder's done_claim is J8b: a 50100 kind=done to the holder, or a nudge. Never §5.5."
+    },
+    {
+      "id": "j8-no-receipt-tag",
+      "job": "J8",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Surya",
+        "room": "home-ems",
+        "message": "Battery v2 is done."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "The agent-built 50009 omitted the e/receipt tag." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 1: exactly one e tag with marker receipt. Without it the relay refuses. Gold is nothing published."
+    },
+    {
+      "id": "j8-author-not-dri",
+      "job": "J8",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Sam",
+        "room": "saturday",
+        "message": "Covers is done.",
+        "item_key": "stall/find-two-neighbours-who-can-cover-a-saturday"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 2: the message author is the item's dri. Sam holds the stall, not covers. J8 does not fire; J8b may card Lea — this J8 case is silence on io_done."
+    },
+    {
+      "id": "j8-stale-message",
+      "job": "J8",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Tomas",
+        "room": "e-tech",
+        "message": "The DST fixture is in. Done."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "The message is 25 hours old." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 3: younger than 24 hours. Stale is not a signature."
+    },
+    {
+      "id": "j8-receipt-already-used",
+      "job": "J8",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Jun",
+        "room": "saturday",
+        "message": "Prices are done."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "This message id was already used as a done_receipt." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 3: not already used as a receipt. Replay is refused."
+    },
+    {
+      "id": "j8-transcript-tag",
+      "job": "J8",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Surya",
+        "room": "home-ems",
+        "message": "Load test is done."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "The kind:9 carries a transcript tag from huddle STT." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 4: a transcript line is never a signature. J8b may send a done card; J8 does not."
+    },
+    {
+      "id": "j8-huddle-channel-as-transcript",
+      "job": "J8",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Lea",
+        "room": "saturday",
+        "message": "Covers is done."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "The message came from a huddle channel; until STT tags exist, treat it as a transcript." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 4 last sentence: until the desktop tags STT, any huddle-channel message is a transcript. No io_done."
+    },
+    {
+      "id": "j8-open-child",
+      "job": "J8",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Sam",
+        "room": "saturday",
+        "message": "The stall is done.",
+        "item_key": "stall"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 5: the item has no open child. The stall still has children. Rule 3 of the tree as usual."
+    },
+    {
+      "id": "j8-wrong-kind",
+      "job": "J8",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Surya",
+        "room": "home-ems",
+        "message": "done"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "The cited event is kind 1, not 9 or 40002." },
+      "gold": { "silence": true },
+      "why_gold": "§5.5 rule 2: the message is kind 9 or 40002. Anything else is not a receipt."
+    },
+    {
+      "id": "j8b-ambiguous-item",
+      "job": "J8b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Pedro",
+        "room": "e-pilots",
+        "message": "It's done."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "An ambiguous item — 'it' in a room with many live tickets — is nothing, not a guess. J8b may nudge; it must not close a random child."
+    },
+    {
+      "id": "j8-agent-pubkey-not-39103",
+      "job": "J8",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_done_claim",
+        "speaker": "Ada",
+        "room": "shapers",
+        "message": "The café is done."
+      },
+      "seed": { "org": "cold", "locale": "en" },
+      "imagine": { "note": "39103.agent is empty; the exception does not exist." },
+      "gold": { "silence": true },
+      "why_gold": "If 39103.agent is empty the §5.5 exception does not exist. Every io_done from a non-dri is restricted. Cold also has no item to close."
+    }
+  ]
+}

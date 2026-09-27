@@ -14,11 +14,16 @@
 //! - **Who is needed** — `who-is-needed/<org>.json`: per requirement, who in
 //!   the seed meets it and the answer the holder suggestion must give.
 //!
+//! Evaluation **cases** (Development plan E-2) live next to the fixtures, under
+//! `tests/eval/cases/`. They are human-authored gold, not generated. See
+//! [`cases`].
+//!
 //! [`decode`] turns any fixture event into the `buzz_core::intelligent_org`
 //! type for its kind. Protocol §4 tag checks live in [`crate::inbound`]
 //! and run from [`crate::state::OrgState::apply`]; this module loads files
 //! and calls through.
 
+pub mod cases;
 mod decode;
 
 use std::collections::BTreeMap;
@@ -32,6 +37,10 @@ use thiserror::Error;
 use crate::inbound::ApplyError;
 use crate::state::OrgState;
 
+pub use cases::{
+    cases_dir, load_all_suites, load_suite, load_vacuous_titles, parse_case_gold, EvalCase, Gold,
+    Polarity, SuiteFile, MODEL_OUTPUT_JOBS, ORG_AGENT_JOBS, SUITE_FILES,
+};
 pub use decode::{decode, roundtrip, CommandContent, Decoded};
 
 /// Where the fixtures live: `<crate>/tests/eval/fixtures`.
