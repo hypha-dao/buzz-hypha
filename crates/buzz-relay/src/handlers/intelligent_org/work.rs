@@ -18,11 +18,11 @@ use buzz_db::intelligent_org::{self as store, LedgerEntry, WorkItemRow};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use super::apply::{apply, ApplyContext, Projection};
+use super::apply::Projection;
 use super::proposals::Execution;
 use super::{
-    authorize, begin, commit, content_value, current_shapers, internal, object, parse_content,
-    pubkey_tag, timestamp_tag, uuid_tag, wall_clock, Command, Persisted,
+    authorize, begin, content_value, current_shapers, internal, object, parse_content,
+    persist_write, pubkey_tag, timestamp_tag, uuid_tag, Command, Persisted,
 };
 use crate::handlers::ingest::{IngestError, IngestResult};
 
@@ -112,21 +112,12 @@ fn with_child_delta(
 
 async fn persist(
     cmd: &Command<'_>,
-    mut tx: Transaction<'static, Postgres>,
+    tx: Transaction<'static, Postgres>,
     projections: Vec<Projection>,
     rows: Vec<LedgerEntry>,
     message: String,
 ) -> Result<IngestResult, IngestError> {
-    let ctx = ApplyContext {
-        community: cmd.tenant.community(),
-        relay: &cmd.state.relay_keypair,
-        actor: &cmd.actor_bytes,
-        now: wall_clock(),
-    };
-    let applied = apply(&cmd.state.db, &mut tx, &ctx, &projections, &rows).await?;
-    commit(tx).await?;
-    super::finish(cmd, applied, None).await;
-    Ok(cmd.accepted(message))
+    persist_write(cmd, tx, projections, rows, message, None).await
 }
 
 async fn load_row(

@@ -35,21 +35,21 @@ use super::shapers::SHAPERS_ROOM_NAME;
 use crate::handlers::ingest::{ingest_event, HttpAuthMethod, IngestAuth, IngestError};
 use crate::state::AppState;
 
-struct Harness {
-    state: Arc<AppState>,
-    pool: PgPool,
-    tenant: TenantContext,
-    owner: Keys,
-    agent: Keys,
+pub(super) struct Harness {
+    pub(super) state: Arc<AppState>,
+    pub(super) pool: PgPool,
+    pub(super) tenant: TenantContext,
+    pub(super) owner: Keys,
+    pub(super) agent: Keys,
 }
 
 impl Harness {
-    fn community(&self) -> CommunityId {
+    pub(super) fn community(&self) -> CommunityId {
         self.tenant.community()
     }
 
     /// Sign `kind` with `tags`/`content` and push it through ingest as `keys`.
-    async fn send(
+    pub(super) async fn send(
         &self,
         keys: &Keys,
         kind: u32,
@@ -60,7 +60,7 @@ impl Harness {
         self.ingest(keys, event).await
     }
 
-    async fn ingest(&self, keys: &Keys, event: Event) -> Result<String, IngestError> {
+    pub(super) async fn ingest(&self, keys: &Keys, event: Event) -> Result<String, IngestError> {
         let auth = IngestAuth::Http {
             pubkey: keys.public_key(),
             scopes: vec![Scope::MessagesWrite, Scope::ChannelsWrite],
@@ -74,7 +74,7 @@ impl Harness {
             })
     }
 
-    async fn bootstrap(&self) -> BootstrapReply {
+    pub(super) async fn bootstrap(&self) -> BootstrapReply {
         let owner_hex = self.owner.public_key().to_hex();
         let message = self
             .send(
@@ -92,7 +92,7 @@ impl Harness {
         }
     }
 
-    async fn shapers_content(&self) -> Option<Shapers> {
+    pub(super) async fn shapers_content(&self) -> Option<Shapers> {
         let mut conn = self.pool.acquire().await.expect("acquire");
         store::get_shapers(&mut conn, self.community())
             .await
@@ -101,7 +101,10 @@ impl Harness {
     }
 
     /// The live `39103`: `(id hex, content, p tags)`.
-    async fn live_state(&self, kind: u32) -> Vec<(String, serde_json::Value, Vec<String>)> {
+    pub(super) async fn live_state(
+        &self,
+        kind: u32,
+    ) -> Vec<(String, serde_json::Value, Vec<String>)> {
         let rows = sqlx::query(
             "SELECT id, content, tags FROM events \
              WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL ORDER BY created_at",
@@ -132,7 +135,7 @@ impl Harness {
             .collect()
     }
 
-    async fn event_stored(&self, id: &nostr::EventId) -> bool {
+    pub(super) async fn event_stored(&self, id: &nostr::EventId) -> bool {
         sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM events WHERE community_id = $1 AND id = $2)",
         )
@@ -143,7 +146,7 @@ impl Harness {
         .expect("event existence")
     }
 
-    async fn ledger_verbs(&self) -> Vec<String> {
+    pub(super) async fn ledger_verbs(&self) -> Vec<String> {
         sqlx::query_scalar::<_, String>(
             "SELECT verb FROM io_ledger WHERE community_id = $1 ORDER BY id",
         )
@@ -184,7 +187,7 @@ impl Harness {
     }
 
     /// Give `keys` a plain relay membership (NIP-43 member, not owner).
-    async fn member(&self, keys: &Keys) {
+    pub(super) async fn member(&self, keys: &Keys) {
         self.state
             .db
             .add_relay_member(
@@ -343,7 +346,7 @@ impl Harness {
     }
 
     /// `io_project_propose` as `keys`.
-    async fn project(
+    pub(super) async fn project(
         &self,
         keys: &Keys,
         content: &str,
@@ -451,7 +454,7 @@ impl Harness {
         id
     }
 
-    async fn work_items(&self) -> Vec<WorkItem> {
+    pub(super) async fn work_items(&self) -> Vec<WorkItem> {
         let rows = sqlx::query(
             "SELECT content FROM io_work_items \
              WHERE community_id = $1 ORDER BY created_at, id",
@@ -466,7 +469,7 @@ impl Harness {
     }
 
     /// Pass a `project` as `keys` (D1 opener-vote) and return the new root.
-    async fn pass_project(&self, keys: &Keys, content: &str) -> (String, WorkItem) {
+    pub(super) async fn pass_project(&self, keys: &Keys, content: &str) -> (String, WorkItem) {
         let before: HashSet<String> = self.work_items().await.into_iter().map(|i| i.id).collect();
         let reply = self
             .project(keys, content, true)
@@ -500,7 +503,7 @@ impl Harness {
         Ok(serde_json::from_str(&message).expect("ticket reply is json"))
     }
 
-    async fn offer_item(
+    pub(super) async fn offer_item(
         &self,
         keys: &Keys,
         item: &str,
@@ -518,7 +521,11 @@ impl Harness {
             .unwrap_or_else(|e| panic!("offer reply is json: {e}: {message:?}")))
     }
 
-    async fn accept_item(&self, keys: &Keys, item: &str) -> Result<serde_json::Value, IngestError> {
+    pub(super) async fn accept_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+    ) -> Result<serde_json::Value, IngestError> {
         let message = self
             .send(keys, KIND_IO_ACCEPT, vec![tag(["i", item])], "{}")
             .await?;
@@ -628,7 +635,7 @@ impl Harness {
         .expect("backdate done_at");
     }
 
-    async fn work_item(&self, id: &str) -> Option<WorkItem> {
+    pub(super) async fn work_item(&self, id: &str) -> Option<WorkItem> {
         let mut conn = self.pool.acquire().await.expect("acquire");
         store::get_work_item(
             &mut conn,
@@ -681,12 +688,12 @@ impl Harness {
     }
 }
 
-struct BootstrapReply {
-    proposal: String,
-    room: Uuid,
+pub(super) struct BootstrapReply {
+    pub(super) proposal: String,
+    pub(super) room: Uuid,
 }
 
-fn tag<const N: usize>(parts: [&str; N]) -> Tag {
+pub(super) fn tag<const N: usize>(parts: [&str; N]) -> Tag {
     Tag::parse(parts).expect("tag")
 }
 
@@ -694,7 +701,7 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
 /// the sender in its own `p` tag, and nostr's builder drops that by default.
 /// `created_at` ticks so two identical commands in the same second (a
 /// re-offer after decline) are not a NIP-01 replay.
-fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+pub(super) fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
     static TICK: AtomicU64 = AtomicU64::new(0);
     let created_at = Timestamp::from(
         Timestamp::now()
@@ -709,7 +716,7 @@ fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
         .expect("sign")
 }
 
-fn rejected<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
+pub(super) fn rejected<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
     match result {
         Err(IngestError::Rejected(message)) => message,
         other => panic!("expected a rejection, got {other:?}"),
@@ -725,7 +732,7 @@ fn internal<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
 
 /// A relay whose Postgres is real and whose Redis is unreachable, with a
 /// fresh community that has an owner and a live hosted agent key.
-async fn harness() -> Harness {
+pub(super) async fn harness() -> Harness {
     let mut config = crate::config::Config::from_env().expect("default config loads");
     config.require_relay_membership = false;
     config.redis_url = "redis://127.0.0.1:1".to_string();

@@ -25,10 +25,10 @@ use serde::Deserialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use super::apply::{apply, ApplyContext, CastVote, Projection};
+use super::apply::{CastVote, Projection};
 use super::{
-    authorize, begin, commit, content_value, current_shapers, internal, object, parse_content,
-    pubkey_tag, shapers, tag_value, uuid_tag, version_tag, wall_clock, Command, Persisted,
+    authorize, begin, content_value, current_shapers, internal, object, parse_content,
+    persist_write, pubkey_tag, shapers, tag_value, uuid_tag, version_tag, Command, Persisted,
 };
 use crate::handlers::ingest::{IngestError, IngestResult};
 
@@ -513,16 +513,15 @@ async fn settle(
             cast,
         },
     );
-    let ctx = ApplyContext {
-        community: cmd.tenant.community(),
-        relay: &cmd.state.relay_keypair,
-        actor: &cmd.actor_bytes,
-        now: wall_clock(),
-    };
-    let applied = apply(&cmd.state.db, &mut tx, &ctx, &projections, &rows).await?;
-    commit(tx).await?;
-    super::finish(cmd, applied, None).await;
-    Ok(cmd.accepted(serde_json::json!({ "proposal": id, "status": status }).to_string()))
+    persist_write(
+        cmd,
+        tx,
+        projections,
+        rows,
+        serde_json::json!({ "proposal": id, "status": status }).to_string(),
+        None,
+    )
+    .await
 }
 
 /// The §5.3 execution table, by kind. A kind whose execution has not landed

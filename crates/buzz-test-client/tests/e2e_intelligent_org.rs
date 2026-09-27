@@ -4,7 +4,9 @@
 //! execution — the R-4b lines — `50002` / `50004`-opening / `50015`,
 //! `50003` on those kinds, and `direction` / `dri` execution — the R-5a
 //! lines — `project` execution and `50005`–`50008` — the R-5b lines —
-//! `50009`–`50011` / `50018` (done / release / set-due / reopen) — the R-8 lines —
+//! `50009`–`50011` / `50018` (done / release / set-due / reopen) — the R-7
+//! lines — `50100` / `50101` / `50103` ingest, draft settlement, `50012`,
+//! `50017` — the R-8 lines —
 //! bootstrap backfill of `39103.agent` and the `shapers/agent`
 //! membership move — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through
@@ -36,12 +38,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use buzz_core::kind::{
-    KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE,
-    KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE,
-    KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
-    KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
-    KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
-    KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
+    KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE, KIND_IO_DIRECTION,
+    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
+    KIND_IO_DRAFT_OUTCOME, KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
+    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use reqwest::StatusCode;
@@ -2469,4 +2472,307 @@ async fn bootstrap_backfills_existing_rooms_and_shapers_agent_moves_every_row() 
         assert!(members.contains(&new_hex), "the new key is in every room");
         assert!(!members.contains(&hosted), "the old key is in no room");
     }
+}
+
+// ── R-7: drafts, reads, and settlement ───────────────────────────────────────
+
+const R7_PROJECT: &str = r#"{
+  "title":"Hall","brief":"A weekday hall","objective_ref":null,
+  "due_at":1800000000,"suggested_dri":null,"why":"one line","gaps":[]
+}"#;
+
+const R7_PROJECT_EDITED: &str = r#"{
+  "title":"Hall v2","brief":"A weekday hall","objective_ref":null,
+  "due_at":1800000000,"suggested_dri":null,"why":"one line","gaps":[]
+}"#;
+
+fn r7_draft(keys: &Keys, needs: &str, gap: &str, receipt: &str, content: &str) -> Event {
+    let mut tags = vec![
+        tag(["n", needs]),
+        tag(["t", "project"]),
+        tag(["move", "1"]),
+        tag(["origin", "gap"]),
+        tag(["gap", gap]),
+        tag(["e", receipt, "", "receipt"]),
+    ];
+    if needs != "shaper" {
+        tags.push(tag(["p", needs, "", "needs"]));
+    }
+    signed(keys, KIND_IO_DRAFT, tags, content)
+}
+
+impl Community {
+    async fn shapers_event_id(&self) -> String {
+        self.shapers_state().await.expect("39103")["id"]
+            .as_str()
+            .expect("id")
+            .to_owned()
+    }
+
+    async fn draft_outcome(&self, draft: &str) -> Value {
+        let events = self
+            .query(
+                &self.owner,
+                json!({ "kinds": [KIND_IO_DRAFT_OUTCOME], "#d": [draft] }),
+            )
+            .await;
+        assert_eq!(events.len(), 1, "one 39104 for {draft}");
+        content(&events[0])
+    }
+
+    async fn draft_row_status(&self, draft_hex: &str) -> String {
+        let id = hex::decode(draft_hex).expect("draft hex");
+        sqlx::query_scalar::<_, String>(
+            "SELECT status FROM io_drafts WHERE community_id = $1 AND event_id = $2",
+        )
+        .bind(self.id)
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("io_drafts status")
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn r7_unresolved_receipt_and_second_open_draft_and_non_agent_reads() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let needs = c.owner.public_key().to_hex();
+    let fake = "ab".repeat(32);
+    c.submit_rejected(
+        &c.agent,
+        &r7_draft(&c.agent, &needs, "gap-missing", &fake, R7_PROJECT),
+        "invalid: unresolved receipt",
+    )
+    .await;
+
+    let receipt = c.shapers_event_id().await;
+    c.submit_ok(
+        &c.agent,
+        &r7_draft(&c.agent, &needs, "gap-once", &receipt, R7_PROJECT),
+    )
+    .await;
+    c.submit_rejected(
+        &c.agent,
+        &r7_draft(&c.agent, &needs, "gap-once", &receipt, R7_PROJECT),
+        "invalid: an open draft already exists for this gap",
+    )
+    .await;
+
+    let (_, item) = c
+        .pass_project(&c.owner, r#"{"title":"H","brief":"b","due_at":1800000000}"#)
+        .await;
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_HEALTH,
+            vec![
+                tag(["i", &item.to_string()]),
+                tag(["week", "2026-W38"]),
+                tag(["band", "healthy"]),
+            ],
+            &format!(
+                r#"{{"item":"{item}","week":"2026-W38","pct":0.9,"band":"healthy","factors":[],"sentences":[],"formula":"health-weights@1"}}"#
+            ),
+        ),
+        "restricted: not the org agent",
+    )
+    .await;
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_AGENT_NOTE,
+            vec![tag(["t", "draft_dropped"]), tag(["move", "1"]), tag(["gap", "x"])],
+            r#"{"note":"draft_dropped","move":1,"gap":"x","reason":"nag","kind":"ticket","needs":"shaper","trace":null}"#,
+        ),
+        "restricted: not the org agent",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn r7_settlement_wrong_party_equal_and_amended() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let stranger = Keys::generate();
+    c.seed_member(&stranger, "member").await;
+    let needs = c.owner.public_key().to_hex();
+    let receipt = c.shapers_event_id().await;
+
+    let wrong = r7_draft(&c.agent, &needs, "gap-needs", &receipt, R7_PROJECT);
+    c.submit_ok(&c.agent, &wrong).await;
+    c.submit_rejected(
+        &stranger,
+        &signed(
+            &stranger,
+            KIND_IO_PROJECT_PROPOSE,
+            vec![
+                tag(["vote", "agree"]),
+                tag(["e", &wrong.id.to_hex(), "", "draft"]),
+            ],
+            R7_PROJECT,
+        ),
+        "restricted: not the draft's needs party",
+    )
+    .await;
+    assert_eq!(c.draft_row_status(&wrong.id.to_hex()).await, "open");
+
+    let equal = r7_draft(&c.agent, &needs, "gap-eq", &receipt, R7_PROJECT);
+    c.submit_ok(&c.agent, &equal).await;
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROJECT_PROPOSE,
+            vec![
+                tag(["vote", "agree"]),
+                tag(["e", &equal.id.to_hex(), "", "draft"]),
+            ],
+            R7_PROJECT,
+        ),
+    )
+    .await;
+    assert_eq!(
+        c.draft_outcome(&equal.id.to_hex()).await["status"],
+        "accepted"
+    );
+
+    let different = r7_draft(&c.agent, &needs, "gap-diff", &receipt, R7_PROJECT);
+    c.submit_ok(&c.agent, &different).await;
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_PROJECT_PROPOSE,
+            vec![
+                tag(["vote", "agree"]),
+                tag(["e", &different.id.to_hex(), "", "draft"]),
+            ],
+            R7_PROJECT_EDITED,
+        ),
+    )
+    .await;
+    assert_eq!(
+        c.draft_outcome(&different.id.to_hex()).await["status"],
+        "amended"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn r7_draft_decide_and_health_rate() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+    let member = Keys::generate();
+    c.seed_member(&member, "member").await;
+    let needs = c.owner.public_key().to_hex();
+    let receipt = c.shapers_event_id().await;
+
+    let decline = r7_draft(&c.agent, &needs, "gap-dec", &receipt, R7_PROJECT);
+    c.submit_ok(&c.agent, &decline).await;
+    c.submit_rejected(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_DRAFT_DECIDE,
+            vec![
+                tag(["e", &decline.id.to_hex()]),
+                tag(["outcome", "decline"]),
+            ],
+            "{}",
+        ),
+        "invalid: decline needs a reason",
+    )
+    .await;
+    c.submit_rejected(
+        &member,
+        &signed(
+            &member,
+            KIND_IO_DRAFT_DECIDE,
+            vec![
+                tag(["e", &decline.id.to_hex()]),
+                tag(["outcome", "decline"]),
+                tag(["reason", "not_now"]),
+            ],
+            "{}",
+        ),
+        "restricted: not the draft's needs party",
+    )
+    .await;
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_DRAFT_DECIDE,
+            vec![
+                tag(["e", &decline.id.to_hex()]),
+                tag(["outcome", "decline"]),
+                tag(["reason", "not_now"]),
+            ],
+            "{}",
+        ),
+    )
+    .await;
+    assert_eq!(
+        c.draft_outcome(&decline.id.to_hex()).await["status"],
+        "declined"
+    );
+
+    let accept = r7_draft(&c.agent, &needs, "gap-acc", &receipt, R7_PROJECT);
+    c.submit_ok(&c.agent, &accept).await;
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_DRAFT_DECIDE,
+            vec![tag(["e", &accept.id.to_hex()]), tag(["outcome", "accept"])],
+            "{}",
+        ),
+    )
+    .await;
+    assert_eq!(
+        c.draft_outcome(&accept.id.to_hex()).await["status"],
+        "accepted"
+    );
+
+    let (_, item) = c
+        .pass_project(
+            &c.owner,
+            r#"{"title":"Rate me","brief":"b","due_at":1800000000}"#,
+        )
+        .await;
+    c.submit_rejected(
+        &member,
+        &signed(
+            &member,
+            KIND_IO_HEALTH_RATE,
+            vec![
+                tag(["i", &item.to_string()]),
+                tag(["week", "2026-W38"]),
+                tag(["band", "wobbly"]),
+            ],
+            "{}",
+        ),
+        "restricted: not a Shaper",
+    )
+    .await;
+    c.submit_ok(
+        &c.owner,
+        &signed(
+            &c.owner,
+            KIND_IO_HEALTH_RATE,
+            vec![
+                tag(["i", &item.to_string()]),
+                tag(["week", "2026-W38"]),
+                tag(["band", "wobbly"]),
+            ],
+            "{}",
+        ),
+    )
+    .await;
+    assert!(c.ledger_verbs().await.contains(&"health_rated".to_owned()));
 }
