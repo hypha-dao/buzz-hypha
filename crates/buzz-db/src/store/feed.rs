@@ -2,7 +2,10 @@
 //!
 //! Aggregates three categories of data:
 //! - **Mentions**: Events where the user's pubkey appears in a `p` tag.
-//! - **Needs Action**: Approval requests (kind 46010) and reminders (kind 40007) tagged to the user.
+//! - **Needs Action**: Approval requests (kind 46010) and reminders (kind 40007)
+//!   tagged to the user, plus the intelligent-org inbox sources (Protocol §6.5):
+//!   `39101` offered to me, `50100` that needs me (or `shaper` for Shapers), and
+//!   open `39102` where I am eligible or the offered seat.
 //! - **Activity**: Recent events from channels the user can access.
 //!
 //! ## Performance characteristics
@@ -16,8 +19,10 @@
 //!
 //! **Phase 2 implemented**: the `event_mentions` table is populated by
 //! [`crate::insert_mentions`] on every event insert.  `query_mentions` and
-//! `query_needs_action` now use `INNER JOIN event_mentions` instead of
-//! scanning tags JSON.
+//! the mention-joined arms of `query_needs_action` use `INNER JOIN event_mentions`
+//! instead of scanning tags JSON. Org events reach that index through a `p` tag
+//! for the party (V10); `needs = shaper` drafts have no fixed pubkey, so that
+//! arm joins the reader against `io_shapers` instead.
 //!
 //! All feed queries enforce a hard `LIMIT` cap of `FEED_MAX_LIMIT` rows to bound
 //! the result-set size and prevent runaway memory usage.
@@ -34,11 +39,15 @@ use sqlx::postgres::PgRow;
 use sqlx::{PgPool, QueryBuilder};
 use uuid::Uuid;
 
+use buzz_core::intelligent_org::tag::{
+    MARKER_ELIGIBLE, MARKER_NEEDS, MARKER_OFFERED, MARKER_SUBJECT,
+};
 use buzz_core::kind::{
     KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_GIT_ISSUE, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
     KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_JOB_PROGRESS, KIND_JOB_REQUEST, KIND_JOB_RESULT, KIND_STREAM_MESSAGE,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEXT_NOTE, KIND_WORKFLOW_APPROVAL_REQUESTED,
+    KIND_IO_DRAFT, KIND_IO_PROPOSAL, KIND_IO_WORK_ITEM, KIND_JOB_PROGRESS, KIND_JOB_REQUEST,
+    KIND_JOB_RESULT, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER,
+    KIND_TEXT_NOTE, KIND_WORKFLOW_APPROVAL_REQUESTED,
 };
 use buzz_core::{CommunityId, StoredEvent};
 
@@ -172,6 +181,24 @@ pub(crate) async fn query_mentions_on(
     collect_stored_events(rows)
 }
 
+fn push_needs_action_channel_and_since(
+    qb: &mut QueryBuilder<sqlx::Postgres>,
+    accessible_channel_ids: &[Uuid],
+    since: Option<DateTime<Utc>>,
+    created_at_col: &str,
+) {
+    push_visible_channel_filter(qb, "e.channel_id", accessible_channel_ids);
+    if let Some(s) = since {
+        qb.push(format!(" AND {created_at_col} >= ")).push_bind(s);
+    }
+}
+
+/// JSONB containment for a four-element `p` tag with a Protocol marker
+/// (`offered` / `needs` / `eligible` / `subject`).
+fn p_marker_containment(pubkey_hex: &str, marker: &str) -> serde_json::Value {
+    serde_json::json!([["p", pubkey_hex, "", marker]])
+}
+
 fn build_needs_action_query(
     community: CommunityId,
     pubkey_bytes: &[u8],
@@ -181,25 +208,65 @@ fn build_needs_action_query(
 ) -> QueryBuilder<sqlx::Postgres> {
     let limit = limit.min(FEED_MAX_LIMIT);
     let pubkey_hex = hex::encode(pubkey_bytes);
+    let community_uuid = *community.as_uuid();
 
+    // Two arms:
+    // 1. Mention-joined: approvals/reminders, offered 39101, needs-me 50100,
+    //    open 39102 where the reader is eligible or the offered seat (V10 —
+    //    each of those events carries a `p` for the party).
+    // 2. Shaper drafts: `needs = shaper` has no fixed pubkey, so join the
+    //    reader against `io_shapers` instead of `event_mentions`.
     let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(format!(
-        "SELECT {EVENT_COLS} FROM events e \
+        "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id FROM (\
+         SELECT {EVENT_COLS}, m.event_created_at AS sort_at FROM events e \
          INNER JOIN event_mentions m ON e.community_id = m.community_id AND e.id = m.event_id \
          WHERE e.community_id = "
     ));
-    qb.push_bind(*community.as_uuid());
-    qb.push(" AND m.community_id = ")
-        .push_bind(*community.as_uuid());
-    qb.push(" AND m.pubkey_hex = ").push_bind(pubkey_hex);
+    qb.push_bind(community_uuid);
+    qb.push(" AND m.community_id = ").push_bind(community_uuid);
+    qb.push(" AND m.pubkey_hex = ")
+        .push_bind(pubkey_hex.clone());
     qb.push(" AND e.deleted_at IS NULL");
+    qb.push(" AND (");
     qb.push(format!(
-        " AND e.kind IN ({KIND_WORKFLOW_APPROVAL_REQUESTED}, {KIND_STREAM_REMINDER})"
+        "e.kind IN ({KIND_WORKFLOW_APPROVAL_REQUESTED}, {KIND_STREAM_REMINDER})"
     ));
-    push_visible_channel_filter(&mut qb, "e.channel_id", accessible_channel_ids);
-    if let Some(s) = since {
-        qb.push(" AND m.event_created_at >= ").push_bind(s);
-    }
-    qb.push(" ORDER BY m.event_created_at DESC LIMIT ")
+    qb.push(format!(" OR (e.kind = {KIND_IO_WORK_ITEM} AND e.tags @> "));
+    qb.push_bind(p_marker_containment(&pubkey_hex, MARKER_OFFERED));
+    qb.push(")");
+    qb.push(format!(" OR (e.kind = {KIND_IO_DRAFT} AND e.tags @> "));
+    qb.push_bind(p_marker_containment(&pubkey_hex, MARKER_NEEDS));
+    qb.push(")");
+    qb.push(format!(" OR (e.kind = {KIND_IO_PROPOSAL} AND e.tags @> "));
+    qb.push_bind(serde_json::json!([["s", "open"]]));
+    qb.push(" AND (e.tags @> ")
+        .push_bind(p_marker_containment(&pubkey_hex, MARKER_ELIGIBLE));
+    qb.push(" OR e.tags @> ")
+        .push_bind(p_marker_containment(&pubkey_hex, MARKER_SUBJECT));
+    qb.push("))");
+    qb.push(")");
+    push_needs_action_channel_and_since(
+        &mut qb,
+        accessible_channel_ids,
+        since,
+        "m.event_created_at",
+    );
+
+    qb.push(" UNION ALL ");
+    qb.push(format!(
+        "SELECT {EVENT_COLS}, e.created_at AS sort_at FROM events e \
+         INNER JOIN io_shapers s ON s.community_id = e.community_id \
+         WHERE e.community_id = "
+    ));
+    qb.push_bind(community_uuid);
+    qb.push(" AND e.deleted_at IS NULL");
+    qb.push(format!(" AND e.kind = {KIND_IO_DRAFT} AND e.tags @> "));
+    qb.push_bind(serde_json::json!([["n", "shaper"]]));
+    qb.push(" AND ").push_bind(pubkey_bytes.to_vec());
+    qb.push(" = ANY (s.shapers)");
+    push_needs_action_channel_and_since(&mut qb, accessible_channel_ids, since, "e.created_at");
+
+    qb.push(") AS needs_action_feed ORDER BY sort_at DESC LIMIT ")
         .push_bind(limit);
     qb
 }
@@ -207,12 +274,17 @@ fn build_needs_action_query(
 /// Find events that require action from the given pubkey:
 /// - [`KIND_WORKFLOW_APPROVAL_REQUESTED`] (workflow approval requested, tagged with user pubkey)
 /// - [`KIND_STREAM_REMINDER`] (reminder, tagged with user pubkey)
+/// - [`KIND_IO_WORK_ITEM`] (`39101`) offered to the user (`["p", …, "", "offered"]`)
+/// - [`KIND_IO_DRAFT`] (`50100`) that needs the user (`["p", …, "", "needs"]`), or
+///   `needs = shaper` when the user is in the live `io_shapers` row
+/// - open [`KIND_IO_PROPOSAL`] (`39102`) where the user is eligible or the offered seat
 ///
 /// Only returns community-global events and events from channels the user has access to
 /// (`accessible_channel_ids`). This prevents surfacing approval requests from channels
 /// the user was removed from.
 /// **Performance**: community-leading indexed lookup via `event_mentions` join on
-/// `(community_id, pubkey_hex, event_kind, event_created_at DESC)`.
+/// `(community_id, pubkey_hex, event_kind, event_created_at DESC)` for the tagged
+/// arms; the shaper-draft arm joins `io_shapers` (one row per community).
 /// `limit` is capped at [`FEED_MAX_LIMIT`] regardless of the value passed by the caller.
 pub async fn query_needs_action(
     pool: &PgPool,
@@ -735,6 +807,203 @@ mod postgres_tests {
         );
     }
 
+    async fn seed_io_shapers(pool: &PgPool, community: CommunityId, shaper_hex: &str) {
+        let bytes = hex::decode(shaper_hex).expect("hex pubkey");
+        sqlx::query(
+            "INSERT INTO io_shapers \
+                (community_id, founder, shapers, agent_hosted, content, event_id) \
+             VALUES ($1, $2, $3, true, $4, $5) \
+             ON CONFLICT (community_id) DO UPDATE SET \
+                shapers = EXCLUDED.shapers, content = EXCLUDED.content",
+        )
+        .bind(community.as_uuid())
+        .bind(&bytes)
+        .bind(vec![bytes.clone()])
+        .bind(serde_json::json!({ "shapers": [shaper_hex] }))
+        .bind(vec![0u8; 32])
+        .execute(pool)
+        .await
+        .expect("seed io_shapers");
+    }
+
+    /// R-13: `query_needs_action` surfaces offered `39101`, needs-me `50100`,
+    /// open `39102` (eligible / subject), and `needs=shaper` drafts for Shapers;
+    /// a `50100` whose party is only in `n` (no `p`) stays out (V10).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn query_needs_action_includes_org_inbox_sources() {
+        let pool = setup_pool().await;
+        let community = CommunityId::from_uuid(make_test_community(&pool).await);
+        let me = "a1".repeat(32);
+        let other = "b2".repeat(32);
+        let me_bytes = hex::decode(&me).expect("hex");
+        let marker = |pk: &str, m: &str| Tag::parse(["p", pk, "", m]).unwrap();
+
+        let offered = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_WORK_ITEM,
+            r#"{"title":"offered to me"}"#,
+            None,
+            vec![
+                Tag::parse(["s", "offered"]).unwrap(),
+                marker(&me, "offered"),
+            ],
+        )
+        .await;
+        let held = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_WORK_ITEM,
+            r#"{"title":"i already hold this"}"#,
+            None,
+            vec![
+                Tag::parse(["s", "accepted"]).unwrap(),
+                Tag::parse(["p", me.as_str()]).unwrap(),
+            ],
+        )
+        .await;
+        let draft_for_me = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_DRAFT,
+            r#"{"title":"needs me"}"#,
+            None,
+            vec![
+                Tag::parse(["n", me.as_str()]).unwrap(),
+                Tag::parse(["t", "ticket"]).unwrap(),
+                marker(&me, "needs"),
+            ],
+        )
+        .await;
+        let draft_n_only = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_DRAFT,
+            r#"{"title":"needs in n but no p"}"#,
+            None,
+            vec![
+                Tag::parse(["n", me.as_str()]).unwrap(),
+                Tag::parse(["t", "ticket"]).unwrap(),
+            ],
+        )
+        .await;
+        let open_eligible = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_PROPOSAL,
+            r#"{"why":"eligible voter"}"#,
+            None,
+            vec![Tag::parse(["s", "open"]).unwrap(), marker(&me, "eligible")],
+        )
+        .await;
+        let open_subject = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_PROPOSAL,
+            r#"{"why":"offered seat"}"#,
+            None,
+            vec![Tag::parse(["s", "open"]).unwrap(), marker(&me, "subject")],
+        )
+        .await;
+        let passed = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_PROPOSAL,
+            r#"{"why":"already decided"}"#,
+            None,
+            vec![
+                Tag::parse(["s", "passed"]).unwrap(),
+                marker(&me, "eligible"),
+            ],
+        )
+        .await;
+        let for_other = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_DRAFT,
+            r#"{"title":"needs someone else"}"#,
+            None,
+            vec![
+                Tag::parse(["n", other.as_str()]).unwrap(),
+                marker(&other, "needs"),
+            ],
+        )
+        .await;
+
+        seed_io_shapers(&pool, community, &me).await;
+        let shaper_draft = store_feed_event(
+            &pool,
+            community,
+            KIND_IO_DRAFT,
+            r#"{"title":"needs a shaper"}"#,
+            None,
+            vec![
+                Tag::parse(["n", "shaper"]).unwrap(),
+                Tag::parse(["t", "project"]).unwrap(),
+            ],
+        )
+        .await;
+
+        let stranger_community = CommunityId::from_uuid(make_test_community(&pool).await);
+        seed_io_shapers(&pool, stranger_community, &other).await;
+        let _ = store_feed_event(
+            &pool,
+            stranger_community,
+            KIND_IO_DRAFT,
+            r#"{"title":"shaper draft elsewhere"}"#,
+            None,
+            vec![Tag::parse(["n", "shaper"]).unwrap()],
+        )
+        .await;
+
+        let rows = query_needs_action(&pool, community, &me_bytes, &[], None, 50)
+            .await
+            .expect("query needs_action");
+        let ids: Vec<_> = rows.iter().map(|r| r.event.id).collect();
+
+        assert!(ids.contains(&offered.id), "offered 39101 must appear");
+        assert!(
+            !ids.contains(&held.id),
+            "held 39101 (plain p, no offered marker) must not appear"
+        );
+        assert!(ids.contains(&draft_for_me.id), "needs-me 50100 must appear");
+        assert!(
+            !ids.contains(&draft_n_only.id),
+            "50100 with needs in n but no p tag must not appear (V10)"
+        );
+        assert!(
+            ids.contains(&open_eligible.id),
+            "open 39102 where eligible must appear"
+        );
+        assert!(
+            ids.contains(&open_subject.id),
+            "open 39102 where offered seat (subject) must appear"
+        );
+        assert!(!ids.contains(&passed.id), "passed 39102 must not appear");
+        assert!(
+            !ids.contains(&for_other.id),
+            "draft for another pubkey must not appear"
+        );
+        assert!(
+            ids.contains(&shaper_draft.id),
+            "needs=shaper draft must appear for a live Shaper"
+        );
+
+        let other_bytes = hex::decode(&other).expect("hex");
+        let other_rows = query_needs_action(&pool, community, &other_bytes, &[], None, 50)
+            .await
+            .expect("query as non-shaper");
+        assert!(
+            other_rows.iter().all(|r| r.event.id != shaper_draft.id),
+            "needs=shaper draft must not appear for a non-Shaper"
+        );
+        assert!(
+            other_rows.iter().any(|r| r.event.id == for_other.id),
+            "other still sees their own needs-me draft"
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn query_activity_is_scoped_and_empty_channels_are_global_only() {
@@ -910,9 +1179,14 @@ mod postgres_tests {
     }
 
     #[test]
-    fn needs_action_query_includes_approval_and_reminder_kinds() {
-        use buzz_core::kind::{KIND_STREAM_REMINDER, KIND_WORKFLOW_APPROVAL_REQUESTED};
-        let needs_action_kinds: &[u32] = &[KIND_WORKFLOW_APPROVAL_REQUESTED, KIND_STREAM_REMINDER];
+    fn needs_action_query_includes_approval_reminder_and_org_kinds() {
+        let needs_action_kinds: &[u32] = &[
+            KIND_WORKFLOW_APPROVAL_REQUESTED,
+            KIND_STREAM_REMINDER,
+            KIND_IO_WORK_ITEM,
+            KIND_IO_DRAFT,
+            KIND_IO_PROPOSAL,
+        ];
 
         assert!(
             needs_action_kinds.contains(&KIND_WORKFLOW_APPROVAL_REQUESTED),
@@ -921,6 +1195,18 @@ mod postgres_tests {
         assert!(
             needs_action_kinds.contains(&KIND_STREAM_REMINDER),
             "reminder kind must be in needs_action"
+        );
+        assert!(
+            needs_action_kinds.contains(&KIND_IO_WORK_ITEM),
+            "offered work items must be in needs_action"
+        );
+        assert!(
+            needs_action_kinds.contains(&KIND_IO_DRAFT),
+            "drafts that need the reader must be in needs_action"
+        );
+        assert!(
+            needs_action_kinds.contains(&KIND_IO_PROPOSAL),
+            "open proposals must be in needs_action"
         );
     }
 
@@ -987,12 +1273,13 @@ mod postgres_tests {
 
     #[test]
     fn needs_action_kinds_do_not_overlap_with_activity_kinds() {
-        use buzz_core::kind::{
-            KIND_FORUM_POST, KIND_JOB_PROGRESS, KIND_JOB_REQUEST, KIND_JOB_RESULT,
-            KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER,
+        let needs_action_kinds: &[u32] = &[
             KIND_WORKFLOW_APPROVAL_REQUESTED,
-        };
-        let needs_action_kinds: &[u32] = &[KIND_WORKFLOW_APPROVAL_REQUESTED, KIND_STREAM_REMINDER];
+            KIND_STREAM_REMINDER,
+            KIND_IO_WORK_ITEM,
+            KIND_IO_DRAFT,
+            KIND_IO_PROPOSAL,
+        ];
         let activity_kinds: &[u32] = &[
             KIND_STREAM_MESSAGE,
             KIND_STREAM_MESSAGE_V2,
@@ -1128,6 +1415,20 @@ mod postgres_tests {
         assert!(
             sql.contains("AND m.community_id = "),
             "needs_action feed must also bind event_mentions.community_id: {sql}"
+        );
+        assert!(
+            sql.contains("INNER JOIN io_shapers s ON s.community_id = e.community_id"),
+            "needs_action must join io_shapers for needs=shaper drafts: {sql}"
+        );
+        assert!(
+            sql.contains("UNION ALL"),
+            "needs_action must union the mention and shaper arms: {sql}"
+        );
+        assert!(
+            sql.contains(&KIND_IO_WORK_ITEM.to_string())
+                && sql.contains(&KIND_IO_DRAFT.to_string())
+                && sql.contains(&KIND_IO_PROPOSAL.to_string()),
+            "needs_action must include the org inbox kinds: {sql}"
         );
     }
 
