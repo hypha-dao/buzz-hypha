@@ -29,9 +29,9 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-4a  | merged | [#13](https://github.com/hypha-dao/buzz-hypha/pull/13) | `2b33bd6af` | `handlers/intelligent_org/proposals.rs` (open with frozen `eligible`/`needed`, D1 opener vote, `50003`, tally, execution dispatch, one `apply` per settle); `shapers.rs` opens add / remove / rules / agent and executes them against the live `39103` (`shaper_offered`, `shaper_removed`, `rules_changed`, `agent_changed`); `authorize::{open_shapers, agent_candidate, rules_content, vote}`; `apply` writes `io_votes` from the `39102` projection; `store::get_proposal_opening_receipt`. Money and join kinds refused with the fixed reasons. Seven Postgres-lane proofs through `ingest_event`, five E2E through `POST /events`; the R-3 offered-seat SQL seed now goes through a real passed add. `direction`/`dri`/`project` votes that would pass are refused `invalid: execution of … not implemented yet` until R-4b/R-5a. |
 | R-4b  | merged | [#23](https://github.com/hypha-dao/buzz-hypha/pull/23) | `761f01393` | `50002` / `50004`-opening / `50015` and `50003` on those kinds; `direction` / `dri` execution through `apply` (`39100` v`base+1` + `prev`, `39101` accepted + offer withdrawn). Project execution still refused until R-5a. Three Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-5a  | merged | [#28](https://github.com/hypha-dao/buzz-hypha/pull/28) | `db1019300` | `project` execution + `50005`–`50008` (create / offer / accept / decline). Root opens `open` or `offered` to `suggested_dri`; `approved_at` set; no home (R-9a). §5.1 create/offer/accept/decline invariants: holder-only children, only `offered_to` accepts/declines, money fields refused, `after` as live-or-done siblings, `objective_ref` against the live `39100` line, children counters (parent `39101` rewritten). `50009`–`50011` / `50018` still refused. R-4b DRI proofs now open roots through a passed `project`. |
-| R-5b  |        |    |           | |
+| R-5b  | merged | [#37](https://github.com/hypha-dao/buzz-hypha/pull/37) | `b0259fed0` | `50009`–`50011` / `50018` (done / release / set-due / reopen). Holder-only done; done refused with open children; release clears the holder and offers live children to the parent holder (or `open` for a root); set-due is a Shaper on a root / the parent holder on a child; `io_reopen` within 7 days of `io_work_items.done_at`. Parent `39101` rewritten so `children` stays on the live event. One command + one ledger row; live `39101` count does not grow (replace, not add). Two Postgres-lane proofs through `ingest_event` and two E2E through `POST /events`: `only_the_holder_marks_done_and_open_children_are_refused`, `release_returns_children_and_set_due_follows_authority`. |
 | R-6   |        |    |           | |
-| R-7   |        |    |           | |
+| R-7   | open | [#41](https://github.com/hypha-dao/buzz-hypha/pull/41) |           | `handlers/intelligent_org/drafts.rs`: `50100` ingest (shape, `needs`, community-wide receipt resolve, one open draft per `gap`, holder `39105`/`39101` evidence, `k` slugs, `open_limit`) → `39104` `open` (or `shadow` from birth); `50101` (item exists, `rows` resolve); `50103` (`39103.agent` only, no receipt check, ledger verb); draft settlement on any command carrying `["e", id, "", "draft"]` (`accepted` vs `amended`); `50012`; `50017`. `persist_write` is the shared write path so a draft tag and the command share one transaction, including R-5b's `50009`–`50011` / `50018`. `50102` / `50021` untouched. Nine Postgres-lane proofs through `ingest_event`, three E2E through `POST /events`. |
 | R-8   | open | [#29](https://github.com/hypha-dao/buzz-hypha/pull/29) |           | `39103.agent` is a real `channel_members` row on 9007 / `create_channel` / `create_channel_with_id` / `create_room` / `41010`, backfilled in `shapers::bootstrap` in the same transaction (`agent_membership_synced why=bootstrap`), and moved by `shapers/agent` (`why=agent_changed`). DM identity excludes the agent at the V5 seams (41011 hash, DM 39000/39002 `p`, 41010 `participants`); the 2–9 cap counts humans; `participant_hash` is untouched; `[member]`-only 41010 is the agent DM. `AGENT_ROOM_ROLE` stays `member`. Protocol §6.8 matches: `channel_members` is membership truth; DM `39000`/`39002` are identity; only a channel `39002` lists the agent. Migration `0046` teaches the 0032 roster fence the V5 exception. Four Postgres-lane proofs, three `e2e_nostr_interop` / `e2e_relay` identity proofs, one `e2e_intelligent_org` backfill+move proof. |
 | R-9a  |        |    |           | R-9b is wave 6. |
 | R-10  |        |    |           | |
@@ -52,10 +52,15 @@ waits on the relay being live. Rows appear here as those early slices land.
 | ----- | ------ | -- | --------- | ----- |
 | D-0   | merged | [#27](https://github.com/hypha-dao/buzz-hypha/pull/27) | `f010ffc32` | Desktop only. `org` preview feature (V14); routes `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render empty states; sidebar group; live REQ hooks per Protocol §6.5 with backfill/live overlap; `commands.ts` + `useOrgCommands` (C-1 tags, `sign_event` → EVENT). Reuses D-5 `orgAgent` / `useOrgAgent`. Bodies are D-1 / D-2 / D-3. |
 | D-1   | open | [#34](https://github.com/hypha-dao/buzz-hypha/pull/34) | | Overview door. Four direction cards from `39100` (version + confirmer) and empty slots; direction form → `50002` with `base` = current version; Shapers card from `39103` (members, rules, agent host) with **Add a Shaper** / **Step down** / **Change the rules**; Add a Shaper → `50001 op=add`; who-holds-what from root `39101`s; tally card (Shapers only) from `{kinds:[50103], "#t":["tally"]}`. Direction page `/org/direction/$slug` is the Protocol §6.5 read. `hooks/filters.ts` and `commands.ts` untouched. |
+| D-3   | open | [#35](https://github.com/hypha-dao/buzz-hypha/pull/35) |           | Desktop only. Work door tree from `39101` (roots + one level; deeper on the item page); item page — brief, holder, dates, breadcrumb, children with state chips and the parent `39101` children counters (R-5a leftover), trail `{kinds:[50001–50021], "#i":[id]}` newest first, **Open room** from `home.channel` (hidden when absent — R-9a), health card from the latest `50101` with rows on hover/focus. Mark done / Release / Set due publish `50009` / `50010` / `50011` through `useOrgCommands` (relay execution is R-5b). Playwright: `org-work.spec.ts`. |
+| D-4   | open | [#36](https://github.com/hypha-dao/buzz-hypha/pull/36) |           | Desktop only. About & skills section on the existing profile panel: self → form → `buildIoProfileSet` / `50021` (whole profile: about, skill chips, `open_limit`); other members read-only. Reads `{kinds:[39105], "#d":[pubkey]}` via `useOrgProfile`. Playwright `org-about-skills.spec.ts`. Relay `50021` → `39105` remains R-11. |
+cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-overview
 | D-5   | merged | [#15](https://github.com/hypha-dao/buzz-hypha/pull/15) | `6163bad20` | Desktop only. `BUILT_IN_PERSONAS` and `BUILT_IN_TEAMS` are empty; Fizz/Honey/Pollen live on as `SAMPLE_PERSONAS` (migration lookups only) and a carried-over Block store demotes them to custom personas on load; the Welcome Team is retired. `features/org/{orgAgent,useOrgAgent}.ts` read `39103.agent` (live REQ + reconnect invalidation): the door hides it, the sidebar pins its DM first in every sort mode. Work sync is a disabled `Templates` card. Welcome kickoff degrades to a plain channel when the starter personas are absent. Mock bridge: `mock.org` serves `39103` and seeds the agent DM. |
 | E-1   | merged | [#16](https://github.com/hypha-dao/buzz-hypha/pull/16) | `85b597c66` | `crates/buzz-org-agent` (stub: `fixtures` loader + decoder, no agent yet) and `tests/eval/fixtures/`: `orgs/{river,energy,cold}/seed.json` (+ `seed.pt.json`, `seed.es.json`, `manifest.json`, `health-gold.json`), four sequences (`weekday-hall`, `hall-electrics`, `iberia-pilot`, `andalusia`: before / gate / outcome-a / outcome-b deltas + `sequence.json`), `who-is-needed/{river,energy}.json`; all generated from `data.ts` by `tests/eval/fixtures/generate.mjs` (Node, no deps; `prototypes/org-preview` stays outside pnpm). `just org-fixtures-check` + CI job `Intelligent-Org Fixtures` prove the checked-in files match; `cargo test -p buzz-org-agent` (in `just test-unit`) verifies, decodes, and round-trips every event through `buzz-core::intelligent_org` with the Protocol §4 tag set. |
 | A-0   | merged | [#21](https://github.com/hypha-dao/buzz-hypha/pull/21) | `c3847668e` | `pub mod llm`; `CompleteOverrides { temperature: Option<f32>, tool_choice: Option<String> }` on `Llm::complete_with`. `Llm::complete` is that path with both `None` — today's request (no `temperature`; OpenAI-family `tool_choice: "auto"` when tools are present). A `Some` is written onto the JSON body as a number / string. |
 | A-1   | merged | [#30](https://github.com/hypha-dao/buzz-hypha/pull/30) | `6251d748f` | `crates/buzz-org-agent` skeleton and ruler: `OrgState` + `apply` + the § 5.2 table; Protocol §4 tag checks live in `inbound` (the E-1 decoder calls through); fixture loader is `#[cfg(any(test, feature = "fixtures"))]`; `RelayLink` / outbox / `ModelClient` (`BuzzAgentModel` via `Llm::complete_with`, `Recorded`); `judge` (15 gates incl. `sequence`); `route`; `publish` `Permitted` chokepoint (`50009` only from `jobs_impl::done_from_talk`); `FakeRelay`; harness loader over E-1; `run` / `dry-run` / `replay` / `doctor`. Nothing drafts. |
+| E-2   | open | [#39](https://github.com/hypha-dao/buzz-hypha/pull/39) | | Gold cases for the four move suites and Eval § 5 (J1b, J3d, J6, J7, J8/J8b, J9, J10, J11) over River, Energy, cold; each with `why_gold`; sequence (gate first, next wave, outcome changes the plan, no invented order) and who-is-needed (`requires`, `unfilled`, skill over availability) in the first cut; vacuous-title list; model-judge prompt v1; κ procedure in `tests/eval/README.md`. Human-authored under `tests/eval/cases/` — `generate.mjs` does not emit them. 155 cases; negatives ≥ half per suite. Ready for human review of gold cases. |
+| O-1   | open   | [#38](https://github.com/hypha-dao/buzz-hypha/pull/38) |           | `scripts/org-agent-provision.sh <community>`: mint into the operator store, `kind:0` name `"Org agent"`, NIP-43 add via `buzz-admin add-member`, `io_hosted_agents` via `buzz-admin org hosted-agent set` (`Db::set_hosted_agent`), launch `buzz-org-agent run`. Second run is idempotent. Named prove: `just org-agent-provision-check` / `scripts/test-org-agent-provision.sh`. |
 
 ### Waves 5–8
 
@@ -407,8 +412,10 @@ absorb an item into an unrelated slice.
 - **D-0 has no command UI yet.** The Playwright proof for kind/tags binds
   the production `publishOrgCommand` path through
   `window.__BUZZ_E2E_ORG_COMMANDS__` (`useOrgCommandE2eBridge` on Overview,
-  e2e builds only). D-1 / D-2 / D-3 should keep asserting on that same
+  e2e builds only). D-1 / D-2 should keep asserting on that same
   `sign_event` capture; drop the window hook once a real tap exists.
+  D-3's Mark done is a real tap (`org-mark-done` → `buildIoDone` →
+  `__BUZZ_E2E_SIGNED_EVENTS__`).
 - **My Work REQs `39103` in addition to the Protocol §6.5 set** so the
   hook can apply the Shaper `#n=shaper` addendum once the newest
   `d=shapers` names the viewer. D-5 already watches `39103.agent`; a later
@@ -459,7 +466,17 @@ absorb an item into an unrelated slice.
   a brief that never produced a `50100`.
 - **`50009` from talk is the chokepoint only.** `jobs_impl::done_from_talk`
   signs when `IO_DONE_FROM_TALK_ENABLED` is set; the Protocol §5.5
-  check-list is A-2+.
+  check-list is A-2+. R-5b accepts `50009` only from the item's `dri`
+  (`restricted: not the holder` for anyone else, including `39103.agent`).
+- **Protocol §6.2 does not list a ledger verb for `io_reopen`.** R-5b
+  writes `item_reopened` (one row, `object_type=work_item`). Add it to
+  the verb catalog when the Protocol is next edited; do not invent a
+  second name.
+- **`io_work_items.done_at` is the reopen clock.** R-2a created the
+  column; `apply` now sets it on the first write into `done` and clears
+  it on every path that leaves `done` (reopen, and any later rewrite of
+  a live item). The 7-day window reads that column, not the command's
+  `created_at`.
 - **Overview's tally REQ is page-local.** Protocol §6.5 Overview is
   `{kinds:[39100]}` / `{kinds:[39103]}` / `{kinds:[39101], "#t":["project"]}`
   — that is D-0's `overviewFilters`, and D-1 left it alone. The plan-row
@@ -481,15 +498,63 @@ absorb an item into an unrelated slice.
   `39101` / `50101` / `50102` / `50001–50021`. The second merger should
   union the kind sets on one store, not pick one handler. D-1 does not
   rewrite D-3's Work files; D-3 does not rewrite Overview.
+- **O-1 writes `kind:0` through `replace_addressable_event`, not `POST /events`.**
+  The event is in the community store and `/query` / SQL see it; the
+  ingest `kind:0` → `users` table sync (`side_effects`) does not run.
+  Clients that read the profile event are fine. If a surface only reads
+  `users.display_name`, it will miss the name until something republishes
+  through ingest. A-2 / the live `RelayIo` publish path can close this.
+- **O-1 NIP-43 add is `buzz-admin add-member` (13534 roster), not a client
+  `kind:9030`.** Same operator seam V4 already named; `publish_nip43_delta`
+  stays in-process-only (buzz-admin module doc). Design's "as the owner
+  would" is the membership row + live list, not a new HTTP API.
+- **E-2 gold uses `imagine` overlays** for lines and profile skills the
+  E-1 seeds do not hold (the hall-roof grant, a brand-money rejection,
+  Rafi's `grant-writing`, a new second-island line with no shortlist).
+  A-2 should turn the ones it runs into sequence-style deltas rather than
+  re-describing them in prompts. The first-cut sequence and who-is-needed
+  cases already bind the E-1 snapshots (`weekday-hall`, `iberia-pilot`,
+  `hall-electrics`, `who-is-needed/{river,energy}.json`).
+- **`DriDraft.suggested` is required** on the wire (Protocol §4.3) while
+  Eval J1b gold allows `suggested_holder: null` with `unfilled`. E-2
+  records the nobody-fits case at intent level and does not invent a
+  payload that the schema cannot parse. A later schema/Protocol sentence
+  — not this slice — should name that shape.
+- **The mock bridge does not serve `39105`.** D-4's form REQs
+  `{kinds:[39105], "#d":[pubkey]}` and the mock EOSEs empty (same
+  no-`#h` fallback D-0 already uses for other org kinds). The Save prove
+  binds the captured `50021`; a seeded `39105` for the read-only chips
+  waits on R-11 or a small `mock.org.profiles` seed.
+- **What you hold / Recent decisions stay off the profile.** Prototype
+  map § My Profile lists `39101`/`39102` `#p` as cheap once D-3 exists;
+  D-4 did not add those REQs.
+- **A `profile` card that settles through `io_profile_set` is D-2's.**
+  `buildIoProfileSet` (optional `draftId`) is already exported from
+  `commands.ts`; D-4 does not build the card.
+- **Adding `org-about-skills.spec.ts` re-cuts the Playwright smoke
+  shards** the same way D-0 / D-5 did. Judge shards by which specs
+  failed, not by shard number.
 - **A child create / offer / accept / decline rewrites the parent's
   `39101`** so `children` stays on the live event the Work door will read.
   §5.1 rule 7 says one `39101` per command; the live head count still
-  grows by one item (the parent is replaced, not added). R-5b's done /
-  release should keep the same parent rewrite.
-- **`50009`–`50011` / `50018` stay refused**
-  (`invalid: kind {k} is not implemented yet`) until R-5b.
+  grows by one item (the parent is replaced, not added). ~~R-5b's done /
+  release should keep the same parent rewrite.~~ Done in R-5b: child done /
+  release / reopen rewrite the parent the same way.
+- ~~**`50009`–`50011` / `50018` stay refused**
+  (`invalid: kind {k} is not implemented yet`) until R-5b.~~ Struck in R-5b.
 - **Project home is still R-9a.** A passed `project` writes no room and
   leaves `39101.home` absent.
+- **D-3 Open room hides when `home.channel` is missing** rather than
+  stubbing a room. The mock seeds one channel id so the tap is proveable;
+  a live community will not show the button until R-9a writes `home`.
+- **D-3 item-page health is a second live REQ.** Protocol §6.5 lists
+  `{kinds:[50101], "#i":[…]}` on the Work door; the Prototype map puts the
+  card on the item page. D-3 consumed `useLiveDoorEvents` with that filter
+  rather than rewriting `workItemFilters`. A later tidy can add `50101` to
+  the item-page set if the Protocol row is updated to match the map.
+- **Adding `org-work.spec.ts` re-cuts the Playwright smoke shards** the
+  same way D-0 / D-5 did. Judge shards by which specs failed, not by
+  shard number.
 
 ---
 
@@ -588,7 +653,7 @@ chromium --with-deps` once per host:
 cd desktop && pnpm check && pnpm typecheck && pnpm test         # biome, tsc, ~6.5k node tests
 just desktop-tauri-fmt-check && just desktop-tauri-clippy
 just desktop-tauri-test                                         # cargo test --workspace in desktop/src-tauri
-cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-overview
+cd desktop && pnpm build:e2e && pnpm exec playwright test --project=smoke org-agent-defaults org-work org-about-skills
 cd desktop && pnpm test:e2e:smoke                               # whole smoke project, ~90 min on 4 cores
 ```
 

@@ -11,8 +11,9 @@
 //! only route and write.
 
 use buzz_core::intelligent_org::{
-    DecisionRule, DirectionArtifact, DirectionProposeContent, DirectionSlug, OfferedSeat, Proposal,
-    ProposalStatus, RulesContent, Shapers, ShapersOp, WorkItem, WorkItemState,
+    tag, DecisionRule, DeclineReason, DirectionArtifact, DirectionProposeContent, DirectionSlug,
+    DraftDecision, OfferedSeat, Proposal, ProposalStatus, RulesContent, Shapers, ShapersOp,
+    WorkItem, WorkItemState,
 };
 
 use crate::handlers::ingest::IngestError;
@@ -320,6 +321,84 @@ pub fn offer(
     }
 }
 
+/// Seven days — `io_reopen` after a done (§3.2, §5.5).
+pub const REOPEN_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
+
+fn is_live(state: WorkItemState) -> bool {
+    !matches!(state, WorkItemState::Done)
+}
+
+/// `io_done` (§3.2, §5.1 rule 3): the holder, and no live child.
+pub fn done(item: &WorkItem, actor: &str, children: &[WorkItem]) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if !is_holder(item, actor) {
+        return Err(restricted("not the holder"));
+    }
+    if children.iter().any(|child| is_live(child.state)) {
+        return Err(invalid("open children"));
+    }
+    Ok(())
+}
+
+/// `io_release` (§3.2, §5.1 rule 4): the holder.
+pub fn release(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if is_holder(item, actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the holder"))
+    }
+}
+
+/// `io_set_due` (§3.2): a Shaper for a root; the parent holder for a child.
+pub fn set_due(
+    item: &WorkItem,
+    parent: Option<&WorkItem>,
+    shapers: &Shapers,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Done {
+        return Err(invalid("item is done"));
+    }
+    if item.parent.is_none() {
+        require_shaper(shapers, actor)
+    } else {
+        let parent = parent.ok_or_else(|| invalid("unknown parent"))?;
+        if is_holder(parent, actor) {
+            Ok(())
+        } else {
+            Err(restricted("not the holder"))
+        }
+    }
+}
+
+/// `io_reopen` (§3.2): the `dri` of a `done` item, within seven days of
+/// `done_at`.
+pub fn reopen(
+    item: &WorkItem,
+    actor: &str,
+    done_at: Option<u64>,
+    now: u64,
+) -> Result<(), IngestError> {
+    if item.state != WorkItemState::Done {
+        return Err(invalid("item is not done"));
+    }
+    if item.dri.as_deref() != Some(actor) {
+        return Err(restricted("not the holder"));
+    }
+    let Some(done_at) = done_at else {
+        return Err(invalid("the reopen window has closed"));
+    };
+    if now >= done_at.saturating_add(REOPEN_WINDOW_SECS) {
+        return Err(invalid("the reopen window has closed"));
+    }
+    Ok(())
+}
+
 /// `io_accept` / `io_decline` (§5.1 rule 2): only `offered_to`, and only
 /// while the item is `offered`.
 pub fn accept_or_decline(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
@@ -385,6 +464,83 @@ pub fn accept_seat<'a>(
         return Err(invalid("the offer has lapsed"));
     }
     Ok(seat)
+}
+
+/// `50101` / `50103` (and the §5.5 exception): only `39103.agent`.
+pub fn require_agent(agent: Option<&str>, actor: &str) -> Result<(), IngestError> {
+    if agent == Some(actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the org agent"))
+    }
+}
+
+/// `50100`: the org agent, or a NIP-43 member (§3.3).
+pub fn require_member_or_agent(
+    is_member: bool,
+    agent: Option<&str>,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if agent == Some(actor) {
+        return Ok(());
+    }
+    require_member(is_member)
+}
+
+/// The command's author is the draft's `needs` party: that pubkey, or any
+/// Shaper when `needs = shaper` (§3.2).
+pub fn draft_needs_party(
+    needs: &str,
+    actor: &str,
+    actor_is_shaper: bool,
+) -> Result<(), IngestError> {
+    let ok = if needs == tag::NEEDS_SHAPER {
+        actor_is_shaper
+    } else {
+        needs == actor
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(restricted("not the draft's needs party"))
+    }
+}
+
+/// `io_draft_decide` (§5.4): a decline must carry a reason (the `io_drafts`
+/// CHECK and the Protocol's standalone decline tap).
+pub fn draft_decide(
+    outcome: DraftDecision,
+    reason: Option<DeclineReason>,
+) -> Result<(), IngestError> {
+    if outcome == DraftDecision::Decline && reason.is_none() {
+        Err(invalid("decline needs a reason"))
+    } else {
+        Ok(())
+    }
+}
+
+/// A `profile` draft may only be addressed to the pubkey it describes (§5.4a).
+pub fn profile_draft_needs(needs: &str, subject: &str) -> Result<(), IngestError> {
+    if needs == subject {
+        Ok(())
+    } else {
+        Err(invalid("profile draft not addressed to its subject"))
+    }
+}
+
+/// ISO week on `50101` / `50017`: `YYYY-Www`, week in `1..=53`.
+pub fn iso_week(week: &str) -> Result<(), IngestError> {
+    let bytes = week.as_bytes();
+    let well_formed = bytes.len() == 8
+        && bytes[..4].iter().all(u8::is_ascii_digit)
+        && &bytes[4..6] == b"-W"
+        && bytes[6..].iter().all(u8::is_ascii_digit)
+        && matches!(week[6..].parse::<u8>(), Ok(1..=53));
+    if well_formed {
+        Ok(())
+    } else {
+        Err(invalid("week must be an ISO week like 2026-W38"))
+    }
 }
 
 #[cfg(test)]
@@ -916,6 +1072,132 @@ mod tests {
         assert_eq!(
             message(accept_or_decline(&offered, &pk(3))),
             "invalid: item is not offered"
+        );
+    }
+
+    #[test]
+    fn done_release_due_and_reopen_follow_the_holder_and_the_window() {
+        let two = shapers(&[1, 2], &[]);
+        let mut held = item(WorkItemState::Accepted, Some(pk(1)), None);
+        held.id = "root".into();
+        held.root = "root".into();
+        assert!(done(&held, &pk(1), &[]).is_ok());
+        assert_eq!(
+            message(done(&held, &pk(2), &[])),
+            "restricted: not the holder"
+        );
+        let mut open_child = item(WorkItemState::Open, None, Some("root"));
+        open_child.id = "child".into();
+        assert_eq!(
+            message(done(&held, &pk(1), &[open_child.clone()])),
+            "invalid: open children"
+        );
+        open_child.state = WorkItemState::Done;
+        assert!(done(&held, &pk(1), &[open_child]).is_ok());
+
+        assert!(release(&held, &pk(1)).is_ok());
+        assert_eq!(
+            message(release(&held, &pk(2))),
+            "restricted: not the holder"
+        );
+
+        assert!(set_due(&held, None, &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(set_due(&held, None, &two, &pk(9))),
+            "restricted: not a Shaper"
+        );
+        let parent = item(WorkItemState::Accepted, Some(pk(1)), None);
+        let child = item(WorkItemState::Accepted, Some(pk(3)), Some("root"));
+        assert!(set_due(&child, Some(&parent), &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(set_due(&child, Some(&parent), &two, &pk(3))),
+            "restricted: not the holder",
+            "the child's own holder cannot set due"
+        );
+
+        let mut closed = held.clone();
+        closed.state = WorkItemState::Done;
+        closed.closed_by = Some(buzz_core::intelligent_org::ClosedBy::Dri);
+        assert_eq!(message(done(&closed, &pk(1), &[])), "invalid: item is done");
+        assert_eq!(message(release(&closed, &pk(1))), "invalid: item is done");
+        assert_eq!(
+            message(set_due(&closed, None, &two, &pk(1))),
+            "invalid: item is done"
+        );
+        assert!(reopen(&closed, &pk(1), Some(1_000), 1_000).is_ok());
+        assert_eq!(
+            message(reopen(&closed, &pk(2), Some(1_000), 1_000)),
+            "restricted: not the holder"
+        );
+        assert_eq!(
+            message(reopen(&held, &pk(1), Some(1_000), 1_000)),
+            "invalid: item is not done"
+        );
+        assert_eq!(
+            message(reopen(
+                &closed,
+                &pk(1),
+                Some(1_000),
+                1_000 + REOPEN_WINDOW_SECS
+            )),
+            "invalid: the reopen window has closed"
+        );
+        assert_eq!(
+            message(reopen(&closed, &pk(1), None, 1_000)),
+            "invalid: the reopen window has closed"
+        );
+    }
+
+    #[test]
+    fn agent_and_needs_party_and_draft_decide_and_iso_week() {
+        assert!(require_agent(Some(&pk(1)), &pk(1)).is_ok());
+        assert_eq!(
+            message(require_agent(Some(&pk(1)), &pk(2))),
+            "restricted: not the org agent"
+        );
+        assert_eq!(
+            message(require_agent(None, &pk(1))),
+            "restricted: not the org agent"
+        );
+        assert!(require_member_or_agent(true, None, &pk(1)).is_ok());
+        assert!(require_member_or_agent(false, Some(&pk(1)), &pk(1)).is_ok());
+        assert_eq!(
+            message(require_member_or_agent(false, Some(&pk(1)), &pk(2))),
+            "restricted: not a member"
+        );
+
+        assert!(draft_needs_party(&pk(1), &pk(1), false).is_ok());
+        assert_eq!(
+            message(draft_needs_party(&pk(1), &pk(2), true)),
+            "restricted: not the draft's needs party"
+        );
+        assert!(draft_needs_party(tag::NEEDS_SHAPER, &pk(1), true).is_ok());
+        assert_eq!(
+            message(draft_needs_party(tag::NEEDS_SHAPER, &pk(1), false)),
+            "restricted: not the draft's needs party"
+        );
+
+        assert!(draft_decide(DraftDecision::Accept, None).is_ok());
+        assert_eq!(
+            message(draft_decide(DraftDecision::Decline, None)),
+            "invalid: decline needs a reason"
+        );
+        assert!(draft_decide(DraftDecision::Decline, Some(DeclineReason::NotNow)).is_ok());
+        assert!(profile_draft_needs(&pk(1), &pk(1)).is_ok());
+        assert_eq!(
+            message(profile_draft_needs(&pk(2), &pk(1))),
+            "invalid: profile draft not addressed to its subject"
+        );
+
+        assert!(iso_week("2026-W38").is_ok());
+        assert!(iso_week("2026-W01").is_ok());
+        assert_eq!(
+            message(iso_week("2026-W00")),
+            "invalid: week must be an ISO week like 2026-W38"
+        );
+        assert_eq!(
+            message(iso_week("2026-38")),
+            "invalid: week must be an ISO week like 2026-W38"
         );
     }
 }

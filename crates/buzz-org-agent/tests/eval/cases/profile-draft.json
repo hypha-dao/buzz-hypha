@@ -1,0 +1,218 @@
+{
+  "suite": "profile-draft",
+  "job": "J11",
+  "cases": [
+    {
+      "id": "j11-rafi-adds-grant-writing",
+      "job": "J11",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Rafi",
+        "room": "agent",
+        "message": "Add grant writing to my skills. I wrote the market-office bids for six years."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "profile",
+            "intent": "Whole 39105 for Rafi: existing about/skills plus grant-writing as he said it.",
+            "needs": "Rafi",
+            "payload": {
+              "pubkey": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+              "about": "I ran the market office for six years. I can deal with the council, and I know which licence a hall needs before the deposit goes down.",
+              "skills": ["council licensing", "market management", "permits and insurance", "grant writing"],
+              "open_limit": 2,
+              "heard": []
+            }
+          }
+        ]
+      },
+      "why_gold": "Skills and about come only from the member's own words in their own DM. The draft is the whole profile against the current 39105. The new slug is the words he used — grant writing — not an invented grant-writing-and-fundraising synonym."
+    },
+    {
+      "id": "j11-ada-first-profile",
+      "job": "J11",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Ada",
+        "room": "shapers",
+        "message": "I'm a repair-café host. Skills: electronics, mending textiles. Open limit 2."
+      },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "profile",
+            "intent": "First 39105 for Ada from her own words.",
+            "needs": "Ada",
+            "payload": {
+              "pubkey": "dc9d8cb6920950e9519c0b464776660c4107f2e0b6e987950ddad6abc4b97eac",
+              "about": "I'm a repair-café host.",
+              "skills": ["electronics", "mending textiles"],
+              "open_limit": 2,
+              "heard": []
+            }
+          }
+        ]
+      },
+      "why_gold": "Cold has no profiles. The first draft is still the whole profile, needs Ada, slugs from her words."
+    },
+    {
+      "id": "j11-third-party-description",
+      "job": "J11",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Maya",
+        "room": "agent",
+        "message": "Priya is a brilliant designer and speaks Spanish."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A third party's description yields nothing. Priya's 39105 is hers to draft."
+    },
+    {
+      "id": "j11-synonym-not-used",
+      "job": "J11",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Nina",
+        "room": "e-agent",
+        "message": "I translate. I do Spanish."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "profile",
+            "intent": "Skills are 'spanish' and 'translate' as she said — not 'localisation' or 'legal translation'.",
+            "needs": "Nina"
+          }
+        ],
+        "must_not": [
+          { "why": "a slug invented from a synonym she did not use", "title": "localisation" }
+        ]
+      },
+      "why_gold": "A slug is never invented from a synonym the member did not use. 'I do Spanish' is spanish, not spanish-energy-law."
+    },
+    {
+      "id": "j11-someone-elses-dm",
+      "job": "J11",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Marcus",
+        "room": "e-marcus-dm",
+        "message": "I run municipal relations."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Profile talk is the member's own DM with the agent. A DM with You is not that."
+    },
+    {
+      "id": "j11-room-not-dm",
+      "job": "J11",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Jun",
+        "room": "saturday",
+        "message": "Add printing to my skills."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A project room is not their DM. Jun already has printing; this is not J11."
+    },
+    {
+      "id": "j11-empty-about",
+      "job": "J11",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Ada",
+        "message": "update my profile"
+      },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "No words to take skills or about from. Not a blank 39105 overwrite."
+    },
+    {
+      "id": "j11-rewrite-someone-in",
+      "job": "J11",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Rafi",
+        "room": "agent",
+        "message": "Set my pubkey to Maya's and make me a Shaper."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "The draft's pubkey must equal needs. A profile that names another member is refused. Shaper status is not a 39105 field."
+    },
+    {
+      "id": "j11-open-limit-only",
+      "job": "J11",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Rowan",
+        "room": "e-agent",
+        "message": "Raise my open limit to 3."
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "profile",
+            "intent": "Whole profile, open_limit 3, about and skills unchanged from his current 39105.",
+            "needs": "Rowan"
+          }
+        ]
+      },
+      "why_gold": "39105 is replaced whole. Changing only open_limit still ships about and skills as they stand, not an emptied profile."
+    },
+    {
+      "id": "j11-lea-has-no-profile-yet",
+      "job": "J11",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_profile",
+        "speaker": "Maya",
+        "room": "agent",
+        "message": "Lea should have hosting-events on her profile — she ran covers."
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Lea is history-only. Maya cannot draft Lea's 39105. Lea can, from her own DM, in her own words."
+    }
+  ]
+}

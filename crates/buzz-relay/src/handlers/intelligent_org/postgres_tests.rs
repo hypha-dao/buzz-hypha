@@ -35,21 +35,21 @@ use super::shapers::SHAPERS_ROOM_NAME;
 use crate::handlers::ingest::{ingest_event, HttpAuthMethod, IngestAuth, IngestError};
 use crate::state::AppState;
 
-struct Harness {
-    state: Arc<AppState>,
-    pool: PgPool,
-    tenant: TenantContext,
-    owner: Keys,
-    agent: Keys,
+pub(super) struct Harness {
+    pub(super) state: Arc<AppState>,
+    pub(super) pool: PgPool,
+    pub(super) tenant: TenantContext,
+    pub(super) owner: Keys,
+    pub(super) agent: Keys,
 }
 
 impl Harness {
-    fn community(&self) -> CommunityId {
+    pub(super) fn community(&self) -> CommunityId {
         self.tenant.community()
     }
 
     /// Sign `kind` with `tags`/`content` and push it through ingest as `keys`.
-    async fn send(
+    pub(super) async fn send(
         &self,
         keys: &Keys,
         kind: u32,
@@ -60,7 +60,7 @@ impl Harness {
         self.ingest(keys, event).await
     }
 
-    async fn ingest(&self, keys: &Keys, event: Event) -> Result<String, IngestError> {
+    pub(super) async fn ingest(&self, keys: &Keys, event: Event) -> Result<String, IngestError> {
         let auth = IngestAuth::Http {
             pubkey: keys.public_key(),
             scopes: vec![Scope::MessagesWrite, Scope::ChannelsWrite],
@@ -74,7 +74,7 @@ impl Harness {
             })
     }
 
-    async fn bootstrap(&self) -> BootstrapReply {
+    pub(super) async fn bootstrap(&self) -> BootstrapReply {
         let owner_hex = self.owner.public_key().to_hex();
         let message = self
             .send(
@@ -92,7 +92,7 @@ impl Harness {
         }
     }
 
-    async fn shapers_content(&self) -> Option<Shapers> {
+    pub(super) async fn shapers_content(&self) -> Option<Shapers> {
         let mut conn = self.pool.acquire().await.expect("acquire");
         store::get_shapers(&mut conn, self.community())
             .await
@@ -101,7 +101,10 @@ impl Harness {
     }
 
     /// The live `39103`: `(id hex, content, p tags)`.
-    async fn live_state(&self, kind: u32) -> Vec<(String, serde_json::Value, Vec<String>)> {
+    pub(super) async fn live_state(
+        &self,
+        kind: u32,
+    ) -> Vec<(String, serde_json::Value, Vec<String>)> {
         let rows = sqlx::query(
             "SELECT id, content, tags FROM events \
              WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL ORDER BY created_at",
@@ -132,7 +135,7 @@ impl Harness {
             .collect()
     }
 
-    async fn event_stored(&self, id: &nostr::EventId) -> bool {
+    pub(super) async fn event_stored(&self, id: &nostr::EventId) -> bool {
         sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM events WHERE community_id = $1 AND id = $2)",
         )
@@ -143,7 +146,7 @@ impl Harness {
         .expect("event existence")
     }
 
-    async fn ledger_verbs(&self) -> Vec<String> {
+    pub(super) async fn ledger_verbs(&self) -> Vec<String> {
         sqlx::query_scalar::<_, String>(
             "SELECT verb FROM io_ledger WHERE community_id = $1 ORDER BY id",
         )
@@ -184,7 +187,7 @@ impl Harness {
     }
 
     /// Give `keys` a plain relay membership (NIP-43 member, not owner).
-    async fn member(&self, keys: &Keys) {
+    pub(super) async fn member(&self, keys: &Keys) {
         self.state
             .db
             .add_relay_member(
@@ -343,7 +346,7 @@ impl Harness {
     }
 
     /// `io_project_propose` as `keys`.
-    async fn project(
+    pub(super) async fn project(
         &self,
         keys: &Keys,
         content: &str,
@@ -451,7 +454,7 @@ impl Harness {
         id
     }
 
-    async fn work_items(&self) -> Vec<WorkItem> {
+    pub(super) async fn work_items(&self) -> Vec<WorkItem> {
         let rows = sqlx::query(
             "SELECT content FROM io_work_items \
              WHERE community_id = $1 ORDER BY created_at, id",
@@ -466,7 +469,7 @@ impl Harness {
     }
 
     /// Pass a `project` as `keys` (D1 opener-vote) and return the new root.
-    async fn pass_project(&self, keys: &Keys, content: &str) -> (String, WorkItem) {
+    pub(super) async fn pass_project(&self, keys: &Keys, content: &str) -> (String, WorkItem) {
         let before: HashSet<String> = self.work_items().await.into_iter().map(|i| i.id).collect();
         let reply = self
             .project(keys, content, true)
@@ -500,7 +503,7 @@ impl Harness {
         Ok(serde_json::from_str(&message).expect("ticket reply is json"))
     }
 
-    async fn offer_item(
+    pub(super) async fn offer_item(
         &self,
         keys: &Keys,
         item: &str,
@@ -518,7 +521,11 @@ impl Harness {
             .unwrap_or_else(|e| panic!("offer reply is json: {e}: {message:?}")))
     }
 
-    async fn accept_item(&self, keys: &Keys, item: &str) -> Result<serde_json::Value, IngestError> {
+    pub(super) async fn accept_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+    ) -> Result<serde_json::Value, IngestError> {
         let message = self
             .send(keys, KIND_IO_ACCEPT, vec![tag(["i", item])], "{}")
             .await?;
@@ -536,7 +543,99 @@ impl Harness {
         Ok(serde_json::from_str(&message).expect("decline reply is json"))
     }
 
-    async fn work_item(&self, id: &str) -> Option<WorkItem> {
+    async fn done_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+        content: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(keys, KIND_IO_DONE, vec![tag(["i", item])], content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("done reply is json"))
+    }
+
+    async fn release_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+        content: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(keys, KIND_IO_RELEASE, vec![tag(["i", item])], content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("release reply is json"))
+    }
+
+    async fn set_due_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+        due_at: u64,
+        content: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(
+                keys,
+                KIND_IO_SET_DUE,
+                vec![tag(["i", item]), tag(["due", &due_at.to_string()])],
+                content,
+            )
+            .await?;
+        Ok(serde_json::from_str(&message).expect("set-due reply is json"))
+    }
+
+    async fn reopen_item(
+        &self,
+        keys: &Keys,
+        item: &str,
+        content: &str,
+    ) -> Result<serde_json::Value, IngestError> {
+        let message = self
+            .send(keys, KIND_IO_REOPEN, vec![tag(["i", item])], content)
+            .await?;
+        Ok(serde_json::from_str(&message).expect("reopen reply is json"))
+    }
+
+    async fn live_work_count(&self) -> usize {
+        self.live_state(KIND_IO_WORK_ITEM).await.len()
+    }
+
+    async fn events_of(&self, kind: u32) -> i64 {
+        sqlx::query_scalar(
+            "SELECT COUNT(*)::bigint FROM events \
+             WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL",
+        )
+        .bind(self.community().as_uuid())
+        .bind(kind as i32)
+        .fetch_one(&self.pool)
+        .await
+        .expect("count events")
+    }
+
+    async fn work_done_at(&self, id: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+        sqlx::query_scalar("SELECT done_at FROM io_work_items WHERE community_id = $1 AND id = $2")
+            .bind(self.community().as_uuid())
+            .bind(Uuid::parse_str(id).expect("item uuid"))
+            .fetch_one(&self.pool)
+            .await
+            .expect("read done_at")
+    }
+
+    async fn backdate_done_at(&self, id: &str, days: i64) {
+        sqlx::query(
+            "UPDATE io_work_items SET done_at = now() - ($3 * interval '1 day') \
+             WHERE community_id = $1 AND id = $2",
+        )
+        .bind(self.community().as_uuid())
+        .bind(Uuid::parse_str(id).expect("item uuid"))
+        .bind(days)
+        .execute(&self.pool)
+        .await
+        .expect("backdate done_at");
+    }
+
+    pub(super) async fn work_item(&self, id: &str) -> Option<WorkItem> {
         let mut conn = self.pool.acquire().await.expect("acquire");
         store::get_work_item(
             &mut conn,
@@ -589,12 +688,12 @@ impl Harness {
     }
 }
 
-struct BootstrapReply {
-    proposal: String,
-    room: Uuid,
+pub(super) struct BootstrapReply {
+    pub(super) proposal: String,
+    pub(super) room: Uuid,
 }
 
-fn tag<const N: usize>(parts: [&str; N]) -> Tag {
+pub(super) fn tag<const N: usize>(parts: [&str; N]) -> Tag {
     Tag::parse(parts).expect("tag")
 }
 
@@ -602,7 +701,7 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
 /// the sender in its own `p` tag, and nostr's builder drops that by default.
 /// `created_at` ticks so two identical commands in the same second (a
 /// re-offer after decline) are not a NIP-01 replay.
-fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+pub(super) fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
     static TICK: AtomicU64 = AtomicU64::new(0);
     let created_at = Timestamp::from(
         Timestamp::now()
@@ -617,7 +716,7 @@ fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
         .expect("sign")
 }
 
-fn rejected<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
+pub(super) fn rejected<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
     match result {
         Err(IngestError::Rejected(message)) => message,
         other => panic!("expected a rejection, got {other:?}"),
@@ -633,7 +732,7 @@ fn internal<T: std::fmt::Debug>(result: Result<T, IngestError>) -> String {
 
 /// A relay whose Postgres is real and whose Redis is unreachable, with a
 /// fresh community that has an owner and a live hosted agent key.
-async fn harness() -> Harness {
+pub(super) async fn harness() -> Harness {
     let mut config = crate::config::Config::from_env().expect("default config loads");
     config.require_relay_membership = false;
     config.redis_url = "redis://127.0.0.1:1".to_string();
@@ -2448,7 +2547,7 @@ async fn only_the_holder_creates_children_and_after_must_be_a_sibling() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn only_offered_to_accepts_or_declines_and_later_work_kinds_stay_refused() {
+async fn only_offered_to_accepts_or_declines() {
     let h = harness().await;
     h.bootstrap().await;
     let member = Keys::generate();
@@ -2510,22 +2609,272 @@ async fn only_offered_to_accepts_or_declines_and_later_work_kinds_stay_refused()
     assert!(held.offered_to.is_none());
     assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_accepted"]);
     assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 1);
+}
 
-    for kind in [
-        KIND_IO_DONE,
-        KIND_IO_RELEASE,
-        KIND_IO_SET_DUE,
-        KIND_IO_REOPEN,
-    ] {
-        let command = signed(&member, kind, vec![tag(["i", &root.id])], "{}");
-        let id = command.id;
-        assert_eq!(
-            rejected(h.ingest(&member, command).await),
-            format!("invalid: kind {kind} is not implemented yet"),
-            "kind {kind}"
-        );
-        assert!(!h.event_stored(&id).await, "kind {kind} is not stored");
-    }
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn only_the_holder_marks_done_and_open_children_are_refused() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let other = Keys::generate();
+    h.member(&other).await;
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("offer root");
+    h.accept_item(&member, &root.id)
+        .await
+        .expect("member holds the root");
+
+    assert_eq!(
+        rejected(h.done_item(&other, &root.id, "{}").await),
+        "restricted: not the holder"
+    );
+    assert_eq!(
+        rejected(h.done_item(&member, &root.id, r#"{"amount":"1"}"#).await),
+        "invalid: money fields are not allowed"
+    );
+
+    let created = h
+        .ticket(
+            &member,
+            &root.id,
+            Some(&member_hex),
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+        )
+        .await
+        .expect("child");
+    let permit = created["item"].as_str().expect("item").to_owned();
+    assert_eq!(
+        rejected(h.done_item(&member, &root.id, "{}").await),
+        "invalid: open children"
+    );
+    h.accept_item(&member, &permit)
+        .await
+        .expect("member holds the child");
+    assert_eq!(
+        rejected(h.done_item(&member, &root.id, "{}").await),
+        "invalid: open children"
+    );
+
+    let live_before = h.live_work_count().await;
+    let ledger_before = h.ledger_verbs().await.len();
+    let commands_before = h.events_of(KIND_IO_DONE).await;
+    h.done_item(&member, &permit, "{}")
+        .await
+        .expect("holder marks the child done");
+    let child = h.work_item(&permit).await.expect("done child");
+    assert_eq!(child.state, WorkItemState::Done);
+    assert_eq!(
+        child.closed_by,
+        Some(buzz_core::intelligent_org::ClosedBy::Dri)
+    );
+    assert!(child.done_receipt.is_some());
+    assert_eq!(child.dri.as_deref(), Some(member_hex.as_str()));
+    assert!(h.work_done_at(&permit).await.is_some());
+    let parent = h.work_item(&root.id).await.expect("parent");
+    assert_eq!(parent.children.open, 0);
+    assert_eq!(parent.children.done, 1);
+    assert_eq!(
+        h.live_work_count().await,
+        live_before,
+        "parent 39101 replaced"
+    );
+    assert_eq!(h.events_of(KIND_IO_DONE).await, commands_before + 1);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_done"]);
+
+    let live_before = h.live_work_count().await;
+    let ledger_before = h.ledger_verbs().await.len();
+    h.done_item(&member, &root.id, "{}")
+        .await
+        .expect("last child closed, root may done");
+    let root_done = h.work_item(&root.id).await.expect("done root");
+    assert_eq!(root_done.state, WorkItemState::Done);
+    assert_eq!(h.live_work_count().await, live_before);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_done"]);
+
+    assert_eq!(
+        rejected(h.reopen_item(&other, &root.id, "{}").await),
+        "restricted: not the holder"
+    );
+    h.backdate_done_at(&root.id, 8).await;
+    assert_eq!(
+        rejected(h.reopen_item(&member, &root.id, "{}").await),
+        "invalid: the reopen window has closed"
+    );
+    h.backdate_done_at(&root.id, 1).await;
+    let live_before = h.live_work_count().await;
+    let ledger_before = h.ledger_verbs().await.len();
+    h.reopen_item(&member, &root.id, r#"{"why":"too soon"}"#)
+        .await
+        .expect("reopen within 7 days");
+    let reopened = h.work_item(&root.id).await.expect("reopened");
+    assert_eq!(reopened.state, WorkItemState::Accepted);
+    assert_eq!(reopened.dri.as_deref(), Some(member_hex.as_str()));
+    assert!(reopened.closed_by.is_none());
+    assert!(reopened.done_receipt.is_none());
+    assert!(h.work_done_at(&root.id).await.is_none());
+    assert_eq!(h.live_work_count().await, live_before);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_reopened"]);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn release_returns_children_and_set_due_follows_authority() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let other = Keys::generate();
+    let other_hex = other.public_key().to_hex();
+    h.member(&other).await;
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("offer root");
+    h.accept_item(&member, &root.id)
+        .await
+        .expect("member holds the root");
+
+    let mid = h
+        .ticket(
+            &member,
+            &root.id,
+            Some(&member_hex),
+            r#"{"title":"Covers","brief":"Split it","due_at":1800000001}"#,
+        )
+        .await
+        .expect("mid")["item"]
+        .as_str()
+        .expect("item")
+        .to_owned();
+    h.accept_item(&member, &mid)
+        .await
+        .expect("member holds the mid ticket");
+    let open_child = h
+        .ticket(
+            &member,
+            &mid,
+            None,
+            r#"{"title":"Print","brief":"Open piece","due_at":1800000002}"#,
+        )
+        .await
+        .expect("open child")["item"]
+        .as_str()
+        .expect("item")
+        .to_owned();
+    let held_child = h
+        .ticket(
+            &member,
+            &mid,
+            Some(&other_hex),
+            r#"{"title":"Rota","brief":"Held piece","due_at":1800000003}"#,
+        )
+        .await
+        .expect("held child")["item"]
+        .as_str()
+        .expect("item")
+        .to_owned();
+    h.accept_item(&other, &held_child)
+        .await
+        .expect("other holds the rota");
+
+    let parent = h.work_item(&mid).await.expect("mid before release");
+    assert_eq!(parent.children.open, 1);
+    assert_eq!(parent.children.accepted, 1);
+
+    assert_eq!(
+        rejected(h.release_item(&other, &mid, "{}").await),
+        "restricted: not the holder"
+    );
+    assert_eq!(
+        rejected(h.release_item(&member, &mid, r#"{"budget":"1"}"#).await),
+        "invalid: money fields are not allowed"
+    );
+
+    let live_before = h.live_work_count().await;
+    let ledger_before = h.ledger_verbs().await.len();
+    let commands_before = h.events_of(KIND_IO_RELEASE).await;
+    h.release_item(&member, &mid, r#"{"why":"handing back"}"#)
+        .await
+        .expect("holder releases");
+    let released = h.work_item(&mid).await.expect("released mid");
+    assert_eq!(released.state, WorkItemState::Open);
+    assert!(released.dri.is_none());
+    assert_eq!(released.children.open, 0);
+    assert_eq!(released.children.offered, 2);
+    assert_eq!(released.children.accepted, 0);
+    let print = h.work_item(&open_child).await.expect("print");
+    assert_eq!(print.state, WorkItemState::Offered);
+    assert_eq!(print.offered_to.as_deref(), Some(member_hex.as_str()));
+    assert!(print.dri.is_none());
+    let rota = h.work_item(&held_child).await.expect("rota");
+    assert_eq!(rota.state, WorkItemState::Offered);
+    assert_eq!(rota.offered_to.as_deref(), Some(member_hex.as_str()));
+    assert!(rota.dri.is_none());
+    let root_after = h.work_item(&root.id).await.expect("root counters");
+    assert_eq!(root_after.children.accepted, 0);
+    assert_eq!(root_after.children.open, 1);
+    assert_eq!(
+        h.live_work_count().await,
+        live_before,
+        "parent 39101 replaced"
+    );
+    assert_eq!(h.events_of(KIND_IO_RELEASE).await, commands_before + 1);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_released"]);
+
+    assert_eq!(
+        rejected(h.set_due_item(&other, &root.id, 1_900_000_000, "{}").await),
+        "restricted: not a Shaper"
+    );
+    assert_eq!(
+        rejected(h.set_due_item(&other, &mid, 1_900_000_000, "{}").await),
+        "restricted: not the holder"
+    );
+    let live_before = h.live_work_count().await;
+    let ledger_before = h.ledger_verbs().await.len();
+    h.set_due_item(
+        &h.owner,
+        &root.id,
+        1_900_000_000,
+        r#"{"why":"keep it open"}"#,
+    )
+    .await
+    .expect("shaper sets due on a root");
+    let root_due = h.work_item(&root.id).await.expect("root due");
+    assert_eq!(root_due.due_at, 1_900_000_000);
+    assert_eq!(root_due.state, WorkItemState::Accepted);
+    assert_eq!(h.live_work_count().await, live_before);
+    assert_eq!(h.ledger_verbs().await[ledger_before..], ["due_changed"]);
+
+    h.set_due_item(&member, &mid, 1_800_000_500, "{}")
+        .await
+        .expect("parent holder sets due on a child");
+    assert_eq!(
+        h.work_item(&mid).await.expect("mid due").due_at,
+        1_800_000_500
+    );
+    assert_eq!(
+        rejected(
+            h.set_due_item(&other, &mid, 1, r#"{"currency":"EUR"}"#)
+                .await
+        ),
+        "invalid: money fields are not allowed"
+    );
 }
 
 // ── R-8: the agent everywhere ────────────────────────────────────────────────

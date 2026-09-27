@@ -1,0 +1,280 @@
+{
+  "suite": "project-health",
+  "job": "J4",
+  "cases": [
+    {
+      "id": "j4-river-growers-wobbly",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "growers" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "wobbly",
+          "item": "8467c51a-9b3c-47f3-9543-ae8db57b6f1e",
+          "must_cover": ["welcome sheet has no DRI"],
+          "fails": ["healthy on done-count alone"]
+        }
+      },
+      "why_gold": "E-1 health-gold for growers is wobbly: two growers lined up, the welcome sheet has had no DRI for weeks. The formula's holder factor outweighs done ratio. Gold band is the checked-in 50101, not a new invention."
+    },
+    {
+      "id": "j4-river-currency-healthy",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "currency" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "healthy",
+          "item": "98c92399-9220-4934-81dd-53a53ba23dd8",
+          "must_cover": ["cash box taking RIVER is held"]
+        }
+      },
+      "why_gold": "Currency is on track: vouchers, rules, float done; the last piece has a name and a date. E-1 gold band healthy."
+    },
+    {
+      "id": "j4-energy-ems-healthy-names-open",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "healthy",
+          "item": "7b38d703-e2d9-414c-8a30-1f4a90b16305",
+          "must_cover": ["load test has no DRI"],
+          "fails": ["everything is done"]
+        }
+      },
+      "why_gold": "Many small children done, the load test open. Band can still be healthy; the text must name the open item. Done-count-alone 'shipping' fails."
+    },
+    {
+      "id": "j4-energy-iberia-wobbly",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "iberia" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "wobbly",
+          "item": "09053164-d772-4645-a956-d7bff8910a71",
+          "must_cover": ["EECF application waiting"]
+        }
+      },
+      "why_gold": "E-1 gold: Coopérnico signed, the grant application waiting on a proposal. Wobbly, not struggling — work is moving, one piece is stuck."
+    },
+    {
+      "id": "j4-energy-islands-healthy",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "islands" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "healthy",
+          "item": "48983c6b-3954-4027-ad73-9c8a2680f40b",
+          "must_cover": ["Ameland sandbox cycle done"]
+        }
+      },
+      "why_gold": "Closed well on the Ameland half; the second-island piece is not due until September. Healthy."
+    },
+    {
+      "id": "j4-energy-playbook-wobbly",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "friday_tick", "item_key": "playbook" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "wobbly",
+          "item": "6cb3554e-a2d3-4501-b7e5-a2a8eeb8b87e",
+          "must_cover": ["two countries have no holder"]
+        }
+      },
+      "why_gold": "Video done, Portugal in; Spain and the FAQ unheld. Wobbly. The last sentence names the holder factor."
+    },
+    {
+      "id": "j4-too-early-two-days",
+      "job": "J4",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "friday_tick" },
+      "seed": { "org": "cold", "locale": "en" },
+      "imagine": { "note": "Ada accepted the café root two days ago; no children yet." },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "healthy",
+          "item": "cold-cafe",
+          "too_early": true,
+          "must_cover": ["too early to read"],
+          "fails": ["struggling"]
+        }
+      },
+      "why_gold": "A project with no children, two days old, is 'too early to read', not struggling. Done-ratio against elapsed time is a trap on day two."
+    },
+    {
+      "id": "j4-done-but-read-moved-back",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "ledger_change", "item_key": "islands" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "Everything under islands is done; the objective's read moved backwards." },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "wobbly",
+          "item": "48983c6b-3954-4027-ad73-9c8a2680f40b",
+          "must_cover": ["objective read moved backwards"],
+          "fails": ["healthy on done-count alone"]
+        }
+      },
+      "why_gold": "Everything done but the objective's read moved backwards → the text names it; band does not read healthy on done-count alone."
+    },
+    {
+      "id": "j4-cold-no-live-root",
+      "job": "J4",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tick" },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "No live root, no health read. J4 does not invent a band for an org that has only direction."
+    },
+    {
+      "id": "j4-not-friday",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan", "item_key": "stall" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Monday is J1/J2. Friday is J4. A Monday tick must not emit a 50101."
+    },
+    {
+      "id": "j4-ticket-not-root",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "ledger_change", "item_key": "stall/agree-grower-prices-for-the-season" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Health is a root read. A child ledger change debounces a re-read of the stall root (a different trigger), not a 50101 on the prices ticket."
+    },
+    {
+      "id": "j4-already-wrote-this-week",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tick", "item_key": "growers" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "A 50101 for growers week 2026-W22 already exists (the E-1 health-gold)." },
+      "gold": { "silence": true },
+      "why_gold": "Same week, same ledger → no second read. Stability is same band across five runs, not five events."
+    },
+    {
+      "id": "j4-debounce-second-change",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "ledger_change", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "A second ledger change arrives inside the debounce window." },
+      "gold": { "silence": true },
+      "why_gold": "Org agent § 6.2: ledger changes on a live root are debounced. The second change coalesces; it does not publish."
+    },
+    {
+      "id": "j4-closed-root-no-weekly",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tick", "item_key": "islands/ameland-tokenised-credits-pilot" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "The Ameland pilot is done." },
+      "gold": { "silence": true },
+      "why_gold": "Friday reads live roots. A closed well project is the last 50101 it already has, not a weekly drip of 'healthy' after the close."
+    },
+    {
+      "id": "j4-stuck-offer-not-higher",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "ledger_change", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "Add a stuck offer on the fair-split review. Monotonicity: band must not move up." },
+      "gold": {
+        "silence": false,
+        "health": {
+          "band": "healthy",
+          "item": "7b38d703-e2d9-414c-8a30-1f4a90b16305",
+          "must_cover": ["stuck offer"],
+          "fails": ["band higher than the previous healthy read"]
+        }
+      },
+      "why_gold": "Eval monotonicity: add a stuck offer → band not higher. EMS starts healthy; this change must not promote it. The text names the offer."
+    },
+    {
+      "id": "j4-no-activity-two-weeks",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "clock_advance" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "Clock advanced two weeks with no ledger activity; this event is the advance, not Friday." },
+      "gold": { "silence": true },
+      "why_gold": "Advancing the clock is not itself a Friday tick. The next Friday will read 'no activity' and must not score higher; this trigger is quiet."
+    },
+    {
+      "id": "j4-shaper-rate-is-not-a-read",
+      "job": "J4",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "health_rate", "item_key": "growers" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A Shaper's io_health_rate is L4 calibration, not a trigger for a new 50101. J4 writes on Friday and on a debounced ledger change."
+    },
+    {
+      "id": "j4-tally-is-j5-not-j4",
+      "job": "J4",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "friday_tally" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "J5 writes the 50103 tally after J4, with no model. This suite's job is the 50101. A tally trigger must not emit health prose."
+    }
+  ]
+}

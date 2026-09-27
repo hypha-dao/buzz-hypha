@@ -23,10 +23,13 @@
 
 use buzz_core::channel::MemberRole;
 use buzz_core::event::StoredEvent;
-use buzz_core::intelligent_org::{DirectionArtifact, Proposal, Shapers, WorkItem};
+use buzz_core::intelligent_org::{
+    DirectionArtifact, DraftOutcome, Proposal, Shapers, WorkItem, WorkItemState,
+};
 use buzz_core::CommunityId;
 use buzz_db::intelligent_org::{
-    self as store, DirectionRow, LedgerEntry, ProposalRow, ShapersRow, VoteRow, WorkItemRow,
+    self as store, DirectionRow, DraftRow, HealthRatingRow, HealthRow, LedgerEntry, ProposalRow,
+    ShapersRow, VoteRow, WorkItemRow,
 };
 use buzz_db::relay_rooms::{self, DesiredMember, RosterChange};
 use buzz_db::replaceable::{ParameterizedReplacePrecondition, ParameterizedReplaceStatus};
@@ -88,6 +91,18 @@ pub enum Projection {
         /// The command id, hex.
         receipt: String,
     },
+    /// A draft outcome (`39104`, `io_drafts`). `insert` is the new `50100`
+    /// row; settlement only updates the outcome of an existing row.
+    Draft {
+        /// Canonical §4.6 content — also the `39104`.
+        outcome: DraftOutcome,
+        /// The `io_drafts` insert for a new `50100`; `None` when settling.
+        insert: Option<Box<DraftRow>>,
+    },
+    /// A health read (`io_health`). No state event.
+    Health(HealthRow),
+    /// A Shaper's blind band (`io_health_ratings`). No state event.
+    HealthRating(HealthRatingRow),
 }
 
 /// One vote the command cast, for its `io_votes` row: the `Vote` in the
@@ -113,6 +128,10 @@ impl Projection {
             } => state::proposal(proposal, subject.as_deref(), item.as_deref(), receipt),
             Self::Direction(artifact) => state::direction(artifact),
             Self::WorkItem { item, receipt } => state::work_item(item, receipt),
+            Self::Draft { outcome, .. } => state::draft_outcome(outcome),
+            Self::Health(_) | Self::HealthRating(_) => Err(IngestError::Internal(
+                "error: health projection has no state event".into(),
+            )),
         }
     }
 }
@@ -284,11 +303,21 @@ async fn write_work_item(
         .await
         .map_err(|e| internal("read io_work_items", e))?;
     let updated_at = store::ts(created_at).map_err(|e| internal("state created_at", e))?;
+    // `done_at` is the reopen clock (§3.2): set on the first write into
+    // `done`, kept across later rewrites of a closed item, cleared the
+    // moment the item leaves `done`.
+    let done_at = match item.state {
+        WorkItemState::Done => existing
+            .as_ref()
+            .and_then(|row| row.done_at)
+            .or(Some(updated_at)),
+        _ => None,
+    };
     let row = WorkItemRow {
         content: item.clone(),
         event_id: event_id.to_vec(),
         last_progress_at: existing.as_ref().and_then(|row| row.last_progress_at),
-        done_at: existing.as_ref().and_then(|row| row.done_at),
+        done_at,
         created_at: existing
             .as_ref()
             .map(|row| row.created_at)
@@ -298,6 +327,45 @@ async fn write_work_item(
     store::upsert_work_item(conn, ctx.community, &row)
         .await
         .map_err(|e| internal("write io_work_items", e))
+}
+
+fn unique_violation(error: &DbError) -> bool {
+    matches!(
+        error,
+        DbError::Sqlx(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505")
+    )
+}
+
+async fn write_draft(
+    conn: &mut PgConnection,
+    ctx: &ApplyContext<'_>,
+    outcome: &DraftOutcome,
+    insert: Option<&DraftRow>,
+    event_id: &[u8],
+) -> Result<(), IngestError> {
+    if let Some(row) = insert {
+        store::insert_draft(conn, ctx.community, row)
+            .await
+            .map_err(|e| {
+                if unique_violation(&e) {
+                    IngestError::Rejected(
+                        "invalid: an open draft already exists for this gap".into(),
+                    )
+                } else {
+                    internal("write io_drafts", e)
+                }
+            })?;
+    }
+    let wrote = store::set_draft_outcome(conn, ctx.community, outcome, event_id)
+        .await
+        .map_err(|e| internal("write io_drafts outcome", e))?;
+    if !wrote {
+        return Err(IngestError::Internal(format!(
+            "error: draft {} has no io_drafts row to settle",
+            outcome.draft
+        )));
+    }
+    Ok(())
 }
 
 /// Write `projections` and `ledger` on `tx`. See the module docs for the
@@ -313,6 +381,22 @@ pub async fn apply(
     let mut applied = Applied::default();
 
     for projection in projections {
+        match projection {
+            Projection::Health(row) => {
+                store::insert_health(tx, ctx.community, row)
+                    .await
+                    .map_err(|e| internal("write io_health", e))?;
+                continue;
+            }
+            Projection::HealthRating(row) => {
+                store::upsert_health_rating(tx, ctx.community, row)
+                    .await
+                    .map_err(|e| internal("write io_health_ratings", e))?;
+                continue;
+            }
+            _ => {}
+        }
+
         let draft = projection.draft()?;
         let head = store::state_head_created_at(
             tx,
@@ -341,6 +425,10 @@ pub async fn apply(
             Projection::WorkItem { item, .. } => {
                 write_work_item(tx, ctx, item, &event_id, created_at).await?;
             }
+            Projection::Draft { outcome, insert } => {
+                write_draft(tx, ctx, outcome, insert.as_deref(), &event_id).await?;
+            }
+            Projection::Health(_) | Projection::HealthRating(_) => {}
         }
 
         let stored = db
