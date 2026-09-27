@@ -70,9 +70,12 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_AGENT_NOTE,
+  KIND_IO_DIRECTION,
   KIND_IO_HEALTH,
   KIND_IO_PROFILE_SET,
   KIND_IO_PROGRESS,
+  KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
   KIND_IO_WORK_ITEM,
@@ -149,8 +152,10 @@ export type MockOrgSeed = {
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
   /**
-   * Community-scoped org events served on history REQ (`39101`, `50101`,
-   * `50102`, `50001–50021`). D-3 seeds the Work tree and item-page trail.
+   * Community-scoped org events served on history REQ. D-1 seeds `39100`,
+   * root `39101`, passed `39102`, `50103` tally; D-3 seeds the Work tree and
+   * item-page trail (`39101`, `50101`, `50102`, `50001–50021`). `39103` is
+   * still generated from this seed.
    */
   events?: RelayEvent[];
 };
@@ -3893,7 +3898,10 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
  */
 function isMockOrgWorkKind(kind: number): boolean {
   return (
+    kind === KIND_IO_DIRECTION ||
     kind === KIND_IO_WORK_ITEM ||
+    kind === KIND_IO_PROPOSAL ||
+    kind === KIND_IO_AGENT_NOTE ||
     kind === KIND_IO_HEALTH ||
     kind === KIND_IO_PROGRESS ||
     (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET)
