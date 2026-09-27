@@ -93,7 +93,7 @@ build-release:
     cargo build --workspace --release
 
 # Run repo lint, formatting, and repository policy checks
-check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check org-kinds-check org-fixtures-check
+check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check org-kinds-check org-fixtures-check org-staging-check
 
 # Intelligent-org kind parity across kind.rs / kinds.ts / nostr_models.dart,
 # plus the retired-tag-name guard over org-facing sources (Development plan R-1).
@@ -113,6 +113,17 @@ org-fixtures-check:
 # kind:0 "Org agent" + second-run idempotency + secret not printed.
 org-agent-provision-check:
     ./scripts/test-org-agent-provision.sh
+
+# Intelligent-org O-2: in-repo staging-deploy prep (migrations, org gate
+# default-on, runbook). No network. Live prove is org-staging-smoke.
+org-staging-check:
+    node --test scripts/check-org-staging-prep.test.mjs
+    ./scripts/check-org-staging-prep.sh
+
+# Intelligent-org O-2 live smoke against a real relay. Requires
+# BUZZ_RELAY_URL + BUZZ_PRIVATE_KEY (exit 2 = credentials/access blocked).
+org-staging-smoke:
+    ./scripts/org-staging-smoke.sh
 
 # Regenerate the intelligent-org evaluation fixtures in place.
 org-fixtures:

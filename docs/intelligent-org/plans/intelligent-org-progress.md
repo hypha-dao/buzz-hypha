@@ -61,6 +61,7 @@ waits on the relay being live. Rows appear here as those early slices land.
 | A-1   | merged | [#30](https://github.com/hypha-dao/buzz-hypha/pull/30) | `6251d748f` | `crates/buzz-org-agent` skeleton and ruler: `OrgState` + `apply` + the § 5.2 table; Protocol §4 tag checks live in `inbound` (the E-1 decoder calls through); fixture loader is `#[cfg(any(test, feature = "fixtures"))]`; `RelayLink` / outbox / `ModelClient` (`BuzzAgentModel` via `Llm::complete_with`, `Recorded`); `judge` (15 gates incl. `sequence`); `route`; `publish` `Permitted` chokepoint (`50009` only from `jobs_impl::done_from_talk`); `FakeRelay`; harness loader over E-1; `run` / `dry-run` / `replay` / `doctor`. Nothing drafts. |
 | E-2   | merged | [#39](https://github.com/hypha-dao/buzz-hypha/pull/39) | `87b8697a8` | Gold cases for the four move suites and Eval § 5 (J1b, J3d, J6, J7, J8/J8b, J9, J10, J11) over River, Energy, cold; each with `why_gold`; sequence (gate first, next wave, outcome changes the plan, no invented order) and who-is-needed (`requires`, `unfilled`, skill over availability) in the first cut; vacuous-title list; model-judge prompt v1; κ procedure in `tests/eval/README.md`. Human-authored under `tests/eval/cases/` — `generate.mjs` does not emit them. 155 cases; negatives ≥ half per suite. Ready for human review of gold cases. |
 | O-1   | merged | [#38](https://github.com/hypha-dao/buzz-hypha/pull/38) | `fdc0c7053` | `scripts/org-agent-provision.sh <community>`: mint into the operator store, `kind:0` name `"Org agent"`, NIP-43 add via `buzz-admin add-member`, `io_hosted_agents` via `buzz-admin org hosted-agent set` (`Db::set_hosted_agent`), launch `buzz-org-agent run`. Second run is idempotent. Named prove: `just org-agent-provision-check` / `scripts/test-org-agent-provision.sh`. |
+| O-2   | blocked |    |           | In-repo prep only: `org.defaultEnabled: true` (team dogfood), `just org-staging-check` / `scripts/check-org-staging-prep.sh`, live smoke `just org-staging-smoke` (exit 2 when credentials missing), operator runbook [`intelligent-org-o2-staging-deploy.md`](./intelligent-org-o2-staging-deploy.md). **Not deployed:** no image path from `hypha-dao/buzz-hypha` into staging (`Staging dev relay image` is `block/buzz`-only), no cluster/registry credentials, staging HTTP behind Cloudflare Access, dogfood owner key / community host not in agent env. Flip to `merged` only after `org-staging-smoke` is green on the real community. |
 
 ### Waves 5–8
 
@@ -508,6 +509,15 @@ absorb an item into an unrelated slice.
   `kind:9030`.** Same operator seam V4 already named; `publish_nip43_delta`
   stays in-process-only (buzz-admin module doc). Design's "as the owner
   would" is the membership row + live list, not a new HTTP API.
+- **O-2 staging deploy is blocked on operator access, not on missing
+  code.** In-repo prep (`org.defaultEnabled`, `just org-staging-check`,
+  smoke script, runbook) lands with the O-2 PR; the live prove
+  (`buzz org bootstrap` + `39103` on the dogfood community) waits on a
+  staging image that includes this fork's R-wave, Cloudflare Access /
+  cluster credentials, and the community owner key. See
+  [`intelligent-org-o2-staging-deploy.md`](./intelligent-org-o2-staging-deploy.md).
+  Do not fake a deploy or mark O-2 `merged` until `just org-staging-smoke`
+  is green.
 - **E-2 gold uses `imagine` overlays** for lines and profile skills the
   E-1 seeds do not hold (the hall-roof grant, a brand-money rejection,
   Rafi's `grant-writing`, a new second-island line with no shortlist).
@@ -661,6 +671,15 @@ cd desktop && pnpm test:e2e:smoke                               # whole smoke pr
 still exits 0; that is the CI behaviour too. Always build with `pnpm
 build:e2e`, never `pnpm run build`, before running specs by hand (AGENTS.md
 § Writing E2E Screenshot Specs).
+
+**O-2 staging prep / smoke** (no cluster from CI; credentials are operator).
+Runbook: [`intelligent-org-o2-staging-deploy.md`](./intelligent-org-o2-staging-deploy.md).
+
+```bash
+just org-staging-check                                         # migrations + org gate + runbook
+# with BUZZ_RELAY_URL + BUZZ_PRIVATE_KEY (and network that clears Access):
+just org-staging-smoke                                         # bootstrap + 39103; exit 2 = blocked
+```
 
 **Migration edits before merge**: the local `buzz` database records each
 applied migration's checksum. If you change an unmerged migration file after
