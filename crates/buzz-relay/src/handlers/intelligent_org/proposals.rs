@@ -59,6 +59,9 @@ pub(super) struct Execution {
     pub projections: Vec<Projection>,
     /// Ledger rows the execution adds after `proposal_passed`.
     pub rows: Vec<LedgerEntry>,
+    /// A room created in this transaction (project home); discovery fan-out
+    /// after commit. `None` for every kind except `project` (R-9a).
+    pub room_created: Option<Uuid>,
 }
 
 /// Build the open proposal: `eligible` is every Shaper except the subject,
@@ -460,6 +463,7 @@ async fn settle(
     receipt: String,
 ) -> Result<IngestResult, IngestError> {
     let mut projections = Vec::new();
+    let mut room_created = None;
     let agrees = proposal
         .votes
         .iter()
@@ -483,6 +487,7 @@ async fn settle(
             )?);
             rows.extend(execution.rows);
             projections.extend(execution.projections);
+            room_created = execution.room_created;
         }
         Some(ProposalStatus::Rejected) => {
             proposal.status = ProposalStatus::Rejected;
@@ -519,7 +524,7 @@ async fn settle(
         projections,
         rows,
         serde_json::json!({ "proposal": id, "status": status }).to_string(),
-        None,
+        room_created,
     )
     .await
 }
@@ -652,6 +657,7 @@ async fn execute_direction(
                 "slug": slug_wire(payload.slug),
             }),
         )?],
+        room_created: None,
     })
 }
 
@@ -695,6 +701,7 @@ async fn execute_dri(
                 "why": "dri",
             }),
         )?],
+        room_created: None,
     })
 }
 

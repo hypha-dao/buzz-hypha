@@ -498,6 +498,7 @@ pub(super) async fn execute(
         executed: executed_shapers(),
         projections,
         rows,
+        room_created: None,
     })
 }
 

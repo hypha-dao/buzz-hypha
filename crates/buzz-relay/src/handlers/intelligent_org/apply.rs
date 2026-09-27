@@ -11,6 +11,8 @@
 //! 2. writes the typed projection row that mirrors it — for `39103` that
 //!    includes making the `#shapers` roster equal to `shapers ∪ {agent}`
 //!    (§6.4), so a roster that disagrees with the Shaper set cannot commit;
+//!    for a root `39101` with `home`, that includes keeping the project
+//!    room's holder roles equal to the tree (§6.7, R-9a);
 //!    for `39102` that includes the `io_votes` row of every vote the command
 //!    cast, so a vote the table holds is always one the `39102` holds;
 //! 3. stores the state event as the coordinate's live head;
@@ -300,7 +302,8 @@ async fn write_work_item(
     item: &WorkItem,
     event_id: &[u8],
     created_at: u64,
-) -> Result<(), IngestError> {
+    ledger: &mut Vec<LedgerEntry>,
+) -> Result<Vec<(Uuid, RosterChange)>, IngestError> {
     let id = Uuid::parse_str(&item.id).map_err(|e| internal("work item id", e))?;
     let existing = store::get_work_item(conn, ctx.community, id)
         .await
@@ -329,7 +332,25 @@ async fn write_work_item(
     };
     store::upsert_work_item(conn, ctx.community, &row)
         .await
-        .map_err(|e| internal("write io_work_items", e))
+        .map_err(|e| internal("write io_work_items", e))?;
+
+    // R-9a: keep the project home roster equal to the tree (§6.7).
+    let root = if item.parent.is_none() {
+        item.clone()
+    } else {
+        let root_id = Uuid::parse_str(&item.root).map_err(|e| internal("item root", e))?;
+        match store::get_work_item(conn, ctx.community, root_id)
+            .await
+            .map_err(|e| internal("read root for home sync", e))?
+        {
+            Some(row) => row.content,
+            None => return Ok(vec![]),
+        }
+    };
+    if root.home.is_none() {
+        return Ok(vec![]);
+    }
+    super::home::sync_home_roster(conn, ctx, &root, event_id, ledger).await
 }
 
 fn unique_violation(error: &DbError) -> bool {
@@ -392,13 +413,14 @@ async fn write_profile(
 }
 
 /// Write `projections` and `ledger` on `tx`. See the module docs for the
-/// order and the guarantees.
+/// order and the guarantees. Home roster sync (R-9a) may append
+/// `home_member_synced` rows to `ledger` before they are inserted.
 pub async fn apply(
     db: &Db,
     tx: &mut Transaction<'static, Postgres>,
     ctx: &ApplyContext<'_>,
     projections: &[Projection],
-    ledger: &[LedgerEntry],
+    ledger: &mut Vec<LedgerEntry>,
 ) -> Result<Applied, IngestError> {
     let relay_pubkey = ctx.relay.public_key().to_bytes();
     let mut applied = Applied::default();
@@ -446,7 +468,8 @@ pub async fn apply(
                 write_direction(tx, ctx, artifact, &event_id).await?;
             }
             Projection::WorkItem { item, .. } => {
-                write_work_item(tx, ctx, item, &event_id, created_at).await?;
+                let changes = write_work_item(tx, ctx, item, &event_id, created_at, ledger).await?;
+                applied.roster.extend(changes);
             }
             Projection::Draft { outcome, insert } => {
                 write_draft(tx, ctx, outcome, insert.as_deref(), &event_id).await?;
@@ -477,7 +500,7 @@ pub async fn apply(
         applied.state_events.push(stored.event);
     }
 
-    for entry in ledger {
+    for entry in ledger.iter() {
         store::insert_ledger(tx, ctx.community, entry)
             .await
             .map_err(|e| internal("write io_ledger", e))?;

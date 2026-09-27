@@ -26,6 +26,7 @@ mod drafts;
 #[cfg(test)]
 #[path = "drafts_postgres_tests.rs"]
 mod drafts_postgres_tests;
+mod home;
 #[cfg(test)]
 mod postgres_tests;
 mod profiles;
@@ -308,7 +309,7 @@ async fn persist_write_inner(
         actor: &cmd.actor_bytes,
         now: wall_clock(),
     };
-    let applied = apply::apply(&cmd.state.db, &mut tx, &ctx, &projections, &rows).await?;
+    let applied = apply::apply(&cmd.state.db, &mut tx, &ctx, &projections, &mut rows).await?;
     commit(tx).await?;
     finish(cmd, applied, room_created).await;
     Ok(cmd.accepted(message))

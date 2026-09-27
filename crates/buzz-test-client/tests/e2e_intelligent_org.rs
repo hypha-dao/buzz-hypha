@@ -8,8 +8,9 @@
 //! lines — `50100` / `50101` / `50103` ingest, draft settlement, `50012`,
 //! `50017` — the R-8 lines —
 //! bootstrap backfill of `39103.agent` and the `shapers/agent`
-//! membership move — the R-11 lines — `50021` → `39105` / `io_profiles`,
-//! profile draft rules, inactive on NIP-43 removal, and the
+//! membership move — the R-9a lines — project home room on pass, roster
+//! sync on accept / release / `dri` — the R-11 lines — `50021` → `39105` /
+//! `io_profiles`, profile draft rules, inactive on NIP-43 removal, and the
 //! `member_joined` ledger independence from the best-effort `8000`
 //! publish — and the R-12 lines — invites minted by Shapers, the
 //! `member_joined` ledger row, the transparency notice — driven through
@@ -2041,10 +2042,38 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
     let root = content(&work[0]);
     assert_eq!(root["state"], "open");
     assert_eq!(root["title"], "Weekday hall");
-    assert!(root.get("home").is_none(), "project home is R-9a");
+    let home = root.get("home").expect("R-9a writes home.channel");
+    assert!(home.get("channel").and_then(|c| c.as_str()).is_some());
+    assert!(home.get("repo").is_none(), "repo is R-9b");
+    assert!(home.get("project").is_none(), "project is R-9b");
     assert!(root.get("approved_at").is_some());
     let root_id = Uuid::parse_str(root["id"].as_str().expect("id")).expect("uuid");
     assert_eq!(c.item_row(root_id).await, Some(("open".into(), None, None)));
+    let channel_id = Uuid::parse_str(home["channel"].as_str().expect("channel")).expect("uuid");
+    let channel = sqlx::query(
+        "SELECT name, visibility::text AS visibility FROM channels \
+         WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
+    )
+    .bind(c.id)
+    .bind(channel_id)
+    .fetch_one(&c.pool)
+    .await
+    .expect("home channel");
+    assert_eq!(channel.get::<String, _>("name"), "weekday-hall");
+    assert_eq!(channel.get::<String, _>("visibility"), "open");
+    let members: Vec<(String, String)> = sqlx::query(
+        "SELECT encode(pubkey, 'hex') AS pubkey, role::text AS role FROM channel_members \
+         WHERE community_id = $1 AND channel_id = $2 AND removed_at IS NULL ORDER BY pubkey",
+    )
+    .bind(c.id)
+    .bind(channel_id)
+    .fetch_all(&c.pool)
+    .await
+    .expect("home roster")
+    .into_iter()
+    .map(|row| (row.get("pubkey"), row.get("role")))
+    .collect();
+    assert_eq!(members.len(), 1, "agent only until accept: {members:?}");
 
     let (_, offered_id) = c
         .pass_project(

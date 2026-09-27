@@ -2254,7 +2254,12 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     assert_eq!(accepted.1["dri"], second_hex);
     assert_eq!(
         h.ledger_verbs().await[ledger_before..],
-        ["vote_cast", "proposal_passed", "item_accepted"]
+        [
+            "vote_cast",
+            "proposal_passed",
+            "item_accepted",
+            "home_member_synced"
+        ]
     );
     assert_eq!(
         rejected(h.dri(&h.owner, &open_id, &member_hex, "{}", true).await),
@@ -2377,19 +2382,50 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
     assert_eq!(root.state, WorkItemState::Open);
     assert_eq!(root.title, "Weekday hall");
     assert!(root.approved_at.is_some());
-    assert!(root.home.is_none(), "project home is R-9a");
+    let home = root.home.as_ref().expect("R-9a writes home.channel");
+    let home_room = Uuid::parse_str(&home.channel).expect("home.channel uuid");
+    assert!(home.repo.is_none(), "repo is R-9b");
+    assert!(home.project.is_none(), "project is R-9b");
     assert!(root.dri.is_none());
     assert_eq!(root.path, Vec::<String>::new());
     let live = h.live_state(KIND_IO_WORK_ITEM).await;
     assert_eq!(live.len(), 1, "one live 39101 for the new root");
     assert_eq!(live[0].1["state"], "open");
+    assert_eq!(live[0].1["home"]["channel"], home.channel);
+    assert!(live[0].1["home"].get("repo").is_none());
+    let channel_row = sqlx::query(
+        "SELECT name, visibility::text AS visibility, description FROM channels \
+         WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
+    )
+    .bind(h.community().as_uuid())
+    .bind(home_room)
+    .fetch_one(&h.pool)
+    .await
+    .expect("home channel row");
+    assert_eq!(channel_row.get::<String, _>("name"), "weekday-hall");
+    assert_eq!(channel_row.get::<String, _>("visibility"), "open");
+    assert_eq!(
+        channel_row
+            .get::<Option<String>, _>("description")
+            .as_deref(),
+        Some("Weekday hall")
+    );
+    assert_eq!(
+        h.roster(home_room).await,
+        vec![(
+            h.agent.public_key().to_hex(),
+            AGENT_ROOM_ROLE.as_str().to_owned()
+        )],
+        "at pass the agent is the only member; holders land on accept"
+    );
     assert_eq!(
         h.ledger_verbs().await[ledger_before..],
         [
             "proposal_opened",
             "vote_cast",
             "proposal_passed",
-            "item_created"
+            "item_created",
+            "home_created",
         ]
     );
 
@@ -2408,8 +2444,139 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         offered.objective_ref.as_deref(),
         Some("objectives@1#l_7f3a")
     );
-    assert!(offered.home.is_none());
+    assert!(
+        offered.home.as_ref().is_some_and(|h| h.repo.is_none()),
+        "offered root also gets a home room; repo is R-9b"
+    );
+    assert_eq!(
+        h.roster(Uuid::parse_str(&offered.home.as_ref().unwrap().channel).unwrap())
+            .await
+            .len(),
+        1,
+        "suggested_dri is not yet a member; accept promotes them"
+    );
     assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn project_home_roster_follows_accept_release_and_dri() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let member = Keys::generate();
+    let member_hex = member.public_key().to_hex();
+    h.member(&member).await;
+    let other = Keys::generate();
+    let other_hex = other.public_key().to_hex();
+    h.member(&other).await;
+    let agent_hex = h.agent.public_key().to_hex();
+
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+    let room = Uuid::parse_str(&root.home.as_ref().unwrap().channel).unwrap();
+    assert_eq!(
+        h.roster(room).await,
+        vec![(agent_hex.clone(), "member".into())]
+    );
+
+    h.offer_item(&h.owner, &root.id, &member_hex)
+        .await
+        .expect("offer");
+    h.accept_item(&member, &root.id).await.expect("root accept");
+    assert_eq!(
+        h.roster(room).await,
+        {
+            let mut expected = vec![
+                (agent_hex.clone(), "member".into()),
+                (member_hex.clone(), "admin".into()),
+            ];
+            expected.sort();
+            expected
+        },
+        "root holder becomes admin"
+    );
+
+    let child = h
+        .ticket(
+            &member,
+            &root.id,
+            Some(&other_hex),
+            r#"{"title":"Permit","brief":"Get it","due_at":1800000001}"#,
+        )
+        .await
+        .expect("child")["item"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    h.accept_item(&other, &child).await.expect("child accept");
+    assert_eq!(
+        h.roster(room).await,
+        {
+            let mut expected = vec![
+                (agent_hex.clone(), "member".into()),
+                (member_hex.clone(), "admin".into()),
+                (other_hex.clone(), "member".into()),
+            ];
+            expected.sort();
+            expected
+        },
+        "child holder becomes member"
+    );
+
+    // A talk joiner is never removed by the sync.
+    sqlx::query(
+        "INSERT INTO channel_members (community_id, channel_id, pubkey, role) \
+         VALUES ($1, $2, $3, 'member') \
+         ON CONFLICT (community_id, channel_id, pubkey) DO UPDATE SET \
+            removed_at = NULL, role = 'member'",
+    )
+    .bind(h.community().as_uuid())
+    .bind(room)
+    .bind(h.owner.public_key().to_bytes().to_vec())
+    .execute(&h.pool)
+    .await
+    .expect("seed talk joiner");
+
+    h.release_item(&member, &root.id, r#"{"why":"stepping back"}"#)
+        .await
+        .expect("root release");
+    let after_release = h.roster(room).await;
+    assert!(
+        after_release
+            .iter()
+            .any(|(p, r)| p == &member_hex && r == "member"),
+        "released root admin is lowered to member, not removed: {after_release:?}"
+    );
+    assert!(
+        after_release
+            .iter()
+            .any(|(p, _)| p == &h.owner.public_key().to_hex()),
+        "talk joiner stays: {after_release:?}"
+    );
+    assert!(
+        after_release
+            .iter()
+            .any(|(p, r)| p == &other_hex && r == "member"),
+        "child holder stays member: {after_release:?}"
+    );
+
+    // A passed dri names a new root holder → admin again.
+    let opened = h
+        .dri(&h.owner, &root.id, &member_hex, r#"{"why":"back"}"#, true)
+        .await
+        .expect("dri pass");
+    assert_eq!(opened["status"], "passed");
+    let after_dri = h.roster(room).await;
+    assert!(
+        after_dri
+            .iter()
+            .any(|(p, r)| p == &member_hex && r == "admin"),
+        "dri pass restores admin: {after_dri:?}"
+    );
 }
 
 #[tokio::test]
@@ -2607,7 +2774,10 @@ async fn only_offered_to_accepts_or_declines() {
     assert_eq!(held.state, WorkItemState::Accepted);
     assert_eq!(held.dri.as_deref(), Some(member_hex.as_str()));
     assert!(held.offered_to.is_none());
-    assert_eq!(h.ledger_verbs().await[ledger_before..], ["item_accepted"]);
+    assert_eq!(
+        h.ledger_verbs().await[ledger_before..],
+        ["item_accepted", "home_member_synced"]
+    );
     assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 1);
 }
 
