@@ -16,6 +16,10 @@ import type {
 } from "@/features/home/lib/inbox";
 import { getProjectInboxReference } from "@/features/home/lib/projectInbox";
 import { ProjectInboxDetail } from "@/features/home/ui/ProjectInboxDetail";
+import {
+  isOrgInboxItem,
+  OrgInboxDetail,
+} from "@/features/org/ui/OrgInboxDetail";
 import { ChannelMembersBar } from "@/features/channels/ui/ChannelMembersBar";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { formatInboxTypeLabel } from "@/features/home/lib/inbox";
@@ -149,6 +153,17 @@ export function InboxDetailPane(props: InboxDetailPaneProps) {
     return (
       <ProjectInboxDetail
         isSinglePanelView={props.isSinglePanelView}
+        item={props.item}
+        onBack={props.onBack}
+        profiles={props.profiles}
+      />
+    );
+  }
+
+  if (props.item && isOrgInboxItem(props.item)) {
+    return (
+      <OrgInboxDetail
+        currentPubkey={props.currentPubkey}
         item={props.item}
         onBack={props.onBack}
         profiles={props.profiles}

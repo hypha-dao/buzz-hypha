@@ -134,6 +134,32 @@ function projectTypeLabel(item: FeedItem) {
   return "Project update";
 }
 
+function orgJsonTitle(item: FeedItem): string | null {
+  try {
+    const content = JSON.parse(item.content) as {
+      title?: unknown;
+      why?: unknown;
+    };
+    if (typeof content.title === "string" && content.title.trim()) {
+      return content.title.trim();
+    }
+    if (typeof content.why === "string" && content.why.trim()) {
+      return content.why.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function orgDraftHeadline(item: FeedItem) {
+  return orgJsonTitle(item) ?? "Draft";
+}
+
+function orgWorkHeadline(item: FeedItem) {
+  return orgJsonTitle(item) ?? "Work offer";
+}
+
 function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
   if (isProjectInboxItem(item)) {
     const root = projectRootItem(item, groupItems);
@@ -144,6 +170,12 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
   }
 
   switch (item.kind) {
+    case 50100:
+      return orgDraftHeadline(item);
+    case 39101:
+      return orgWorkHeadline(item);
+    case 39102:
+      return "Decision";
     case 40007:
       return "Reminder";
     case 43001:
@@ -178,6 +210,9 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
 }
 
 function feedPreview(item: FeedItem) {
+  if (item.kind === 50100 || item.kind === 39101 || item.kind === 39102) {
+    return orgJsonTitle(item) ?? feedHeadline(item);
+  }
   const content = item.content.trim();
   if (content.length > 0) {
     return content;
@@ -295,6 +330,13 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
   }
 
   if (primaryCategory === "needs_action") {
+    if (
+      item.item.kind === 50100 ||
+      item.item.kind === 39101 ||
+      item.item.kind === 39102
+    ) {
+      return { text: "Needs your answer", channelLabel: null };
+    }
     return {
       text: channelName ? "Needs action in" : "Needs action",
       channelLabel: channelName,

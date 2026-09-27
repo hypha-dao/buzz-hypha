@@ -72,6 +72,7 @@ import {
   KIND_HUDDLE_STARTED,
   KIND_IO_AGENT_NOTE,
   KIND_IO_DIRECTION,
+  KIND_IO_DRAFT,
   KIND_IO_HEALTH,
   KIND_IO_PROFILE_SET,
   KIND_IO_PROGRESS,
@@ -152,10 +153,12 @@ export type MockOrgSeed = {
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
   /**
-   * Community-scoped org events served on history REQ. D-1 seeds `39100`,
-   * root `39101`, passed `39102`, `50103` tally; D-3 seeds the Work tree and
-   * item-page trail (`39101`, `50101`, `50102`, `50001–50021`). `39103` is
-   * still generated from this seed.
+   * Community-scoped org events served on history REQ and (for draft /
+   * work-item / proposal) into the home `needs_action` feed. D-1 seeds
+   * `39100` / root `39101` / passed `39102` / `50103`; D-2 seeds `50100` /
+   * `39101` / `39102` for My Work cards; D-3 seeds the Work tree trail
+   * (`39101`, `50101`, `50102`, `50001–50021`). `39103` is still generated
+   * from this seed.
    */
   events?: RelayEvent[];
 };
@@ -3899,6 +3902,7 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
 function isMockOrgWorkKind(kind: number): boolean {
   return (
     kind === KIND_IO_DIRECTION ||
+    kind === KIND_IO_DRAFT ||
     kind === KIND_IO_WORK_ITEM ||
     kind === KIND_IO_PROPOSAL ||
     kind === KIND_IO_AGENT_NOTE ||
@@ -3933,9 +3937,49 @@ function eventMatchesMockOrgFilter(
     const values = event.tags
       .filter((tag) => tag[0] === name)
       .map((tag) => tag[1]);
-    if (!wanted.some((value) => values.includes(value))) return false;
+    if (wanted.some((value) => values.includes(value))) continue;
+    // `offered_by` lives in 39101 content (Protocol §4.2); there is no p
+    // marker for it, so `#p` would otherwise drop "You offered".
+    if (name === "p" && event.kind === KIND_IO_WORK_ITEM) {
+      try {
+        const content = JSON.parse(event.content) as { offered_by?: unknown };
+        if (
+          typeof content.offered_by === "string" &&
+          wanted.includes(content.offered_by)
+        ) {
+          continue;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return false;
   }
   return true;
+}
+
+function seedMockOrgFeedItems(events: readonly RelayEvent[]) {
+  for (const event of events) {
+    if (
+      event.kind !== KIND_IO_DRAFT &&
+      event.kind !== KIND_IO_WORK_ITEM &&
+      event.kind !== KIND_IO_PROPOSAL
+    ) {
+      continue;
+    }
+    mockFeedOverrides.needs_action.unshift({
+      id: event.id,
+      kind: event.kind,
+      pubkey: event.pubkey,
+      content: event.content,
+      created_at: event.created_at,
+      channel_id: null,
+      channel_name: "",
+      channel_type: null,
+      tags: event.tags,
+      category: "needs_action",
+    });
+  }
 }
 
 function initializeMockOrg(org: MockOrgSeed | undefined) {
@@ -3946,6 +3990,9 @@ function initializeMockOrg(org: MockOrgSeed | undefined) {
       ...event,
       tags: event.tags.map((tag) => [...tag]),
     });
+  }
+  if (org.events && org.events.length > 0) {
+    seedMockOrgFeedItems(org.events);
   }
   const agent = mockOrgAgentPubkey(org);
   applyMockDisplayName(agent, ORG_AGENT_DISPLAY_NAME);
