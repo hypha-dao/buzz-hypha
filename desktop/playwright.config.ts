@@ -179,7 +179,10 @@ export default defineConfig({
         "**/team-catalog-screenshots.spec.ts",
         "**/org-agent-defaults.spec.ts",
         "**/org-skeleton.spec.ts",
+        "**/org-overview.spec.ts",
         "**/org-my-work.spec.ts",
+        "**/org-work.spec.ts",
+        "**/org-about-skills.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

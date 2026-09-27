@@ -70,8 +70,12 @@ import {
   KIND_GIT_STATUS_MERGED,
   KIND_GIT_STATUS_OPEN,
   KIND_HUDDLE_STARTED,
+  KIND_IO_AGENT_NOTE,
+  KIND_IO_DIRECTION,
   KIND_IO_DRAFT,
+  KIND_IO_HEALTH,
   KIND_IO_PROFILE_SET,
+  KIND_IO_PROGRESS,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
@@ -148,7 +152,14 @@ export type MockOrgSeed = {
   agentHosted?: boolean;
   /** Seed the viewer's DM with the org agent (default true). */
   seedAgentDm?: boolean;
-  /** Community-global org events served on REQ (`50100` / `39101` / `39102`). */
+  /**
+   * Community-scoped org events served on history REQ and (for draft /
+   * work-item / proposal) into the home `needs_action` feed. D-1 seeds
+   * `39100` / root `39101` / passed `39102` / `50103`; D-2 seeds `50100` /
+   * `39101` / `39102` for My Work cards; D-3 seeds the Work tree trail
+   * (`39101`, `50101`, `50102`, `50001–50021`). `39103` is still generated
+   * from this seed.
+   */
   events?: RelayEvent[];
 };
 
@@ -373,8 +384,9 @@ type E2eConfig = {
      * Intelligent-org community state. When set, the mock relay serves one
      * relay-signed `kind:39103` (`d=shapers`) naming `agentPubkey` as the org
      * agent and, unless `seedAgentDm` is false, seeds the viewer's 1:1 DM with
-     * it plus its "Org agent" profile. Absent = the community was never
-     * bootstrapped: no `39103`, no org agent.
+     * it plus its "Org agent" profile. `events` are served on Work / item
+     * REQs (`39101`, `50101`, `50102`, `50001–50021`). Absent = the
+     * community was never bootstrapped: no `39103`, no org agent.
      */
     org?: MockOrgSeed;
     agentListDelayMs?: number;
@@ -1126,10 +1138,7 @@ type MockFilter = {
   "#d"?: string[];
   "#e"?: string[];
   "#h"?: string[];
-  "#n"?: string[];
   "#p"?: string[];
-  "#s"?: string[];
-  "#t"?: string[];
   authors?: string[];
   ids?: string[];
   kinds?: number[];
@@ -3378,6 +3387,7 @@ const deferredSendMessageLiveEchoes: Array<{
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
+const mockOrgEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
 const mockSockets = new Map<number, MockSocket>();
@@ -3889,27 +3899,48 @@ function refreshMockHuddleMembership(config?: E2eConfig | null) {
  * DM's `p` tags are `[member, agent]` and the agent's `kind:0` names it "Org
  * agent". Without `mock.org` nothing is seeded.
  */
-function mockOrgEventMatchesFilter(
+function isMockOrgWorkKind(kind: number): boolean {
+  return (
+    kind === KIND_IO_DIRECTION ||
+    kind === KIND_IO_DRAFT ||
+    kind === KIND_IO_WORK_ITEM ||
+    kind === KIND_IO_PROPOSAL ||
+    kind === KIND_IO_AGENT_NOTE ||
+    kind === KIND_IO_HEALTH ||
+    kind === KIND_IO_PROGRESS ||
+    (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET)
+  );
+}
+
+function recordMockOrgEvent(event: RelayEvent) {
+  mockOrgEvents.push(event);
+}
+
+function eventMatchesMockOrgFilter(
   event: RelayEvent,
   filter: MockFilter,
 ): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
-  for (const [key, values] of Object.entries(filter)) {
-    if (!key.startsWith("#") || !Array.isArray(values) || values.length === 0) {
-      continue;
-    }
-    const tagName = key.slice(1);
-    const wanted = values.filter(
-      (value): value is string => typeof value === "string",
-    );
-    if (wanted.length === 0) continue;
-    const eventValues = event.tags
-      .filter((tag) => tag[0] === tagName)
+  if (filter.ids && !filter.ids.includes(event.id)) return false;
+  if (
+    filter.authors &&
+    !filter.authors.some(
+      (author) => author.toLowerCase() === event.pubkey.toLowerCase(),
+    )
+  ) {
+    return false;
+  }
+  const filterRecord = filter as Record<string, string[] | undefined>;
+  for (const name of ["d", "e", "p", "i", "u", "s", "t"] as const) {
+    const wanted = filterRecord[`#${name}`];
+    if (!wanted || wanted.length === 0) continue;
+    const values = event.tags
+      .filter((tag) => tag[0] === name)
       .map((tag) => tag[1]);
-    if (wanted.some((value) => eventValues.includes(value))) continue;
+    if (wanted.some((value) => values.includes(value))) continue;
     // `offered_by` lives in 39101 content (Protocol §4.2); there is no p
     // marker for it, so `#p` would otherwise drop "You offered".
-    if (key === "#p" && event.kind === KIND_IO_WORK_ITEM) {
+    if (name === "p" && event.kind === KIND_IO_WORK_ITEM) {
       try {
         const content = JSON.parse(event.content) as { offered_by?: unknown };
         if (
@@ -3952,7 +3983,14 @@ function seedMockOrgFeedItems(events: readonly RelayEvent[]) {
 }
 
 function initializeMockOrg(org: MockOrgSeed | undefined) {
+  mockOrgEvents.length = 0;
   if (!org) return;
+  for (const event of org.events ?? []) {
+    mockOrgEvents.push({
+      ...event,
+      tags: event.tags.map((tag) => [...tag]),
+    });
+  }
   if (org.events && org.events.length > 0) {
     seedMockOrgFeedItems(org.events);
   }
@@ -11118,19 +11156,14 @@ function sendToMockSocket(args: {
       return;
     }
 
-    if (
-      filter.kinds?.some(
-        (kind) =>
-          kind === KIND_IO_DRAFT ||
-          kind === KIND_IO_WORK_ITEM ||
-          kind === KIND_IO_PROPOSAL,
-      )
-    ) {
-      const orgEvents = getConfig()?.mock?.org?.events ?? [];
-      for (const event of orgEvents) {
-        if (mockOrgEventMatchesFilter(event, filter)) {
-          sendWsText(socket.handler, ["EVENT", subId, event]);
-        }
+    if (filter.kinds?.some((kind) => isMockOrgWorkKind(kind))) {
+      const limit = filter.limit && filter.limit > 0 ? filter.limit : undefined;
+      let sent = 0;
+      for (const orgEvent of mockOrgEvents) {
+        if (!eventMatchesMockOrgFilter(orgEvent, filter)) continue;
+        sendWsText(socket.handler, ["EVENT", subId, orgEvent]);
+        sent += 1;
+        if (limit !== undefined && sent >= limit) break;
       }
       sendWsText(socket.handler, ["EOSE", subId]);
       return;
@@ -11444,6 +11477,7 @@ function sendToMockSocket(args: {
       event.kind >= KIND_IO_SHAPERS_PROPOSE &&
       event.kind <= KIND_IO_PROFILE_SET
     ) {
+      recordMockOrgEvent(event);
       emitMockGlobalEvent(event);
       sendWsText(socket.handler, ["OK", event.id, true, ""]);
       return;

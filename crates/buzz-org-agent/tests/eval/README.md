@@ -1,4 +1,4 @@
-# Evaluation fixtures (Development plan E-1)
+# Evaluation fixtures and cases (Development plan E-1, E-2)
 
 The synthetic organizations the org agent's evaluation harness and
 `OrgState::apply` tests read. Everything under `fixtures/` except
@@ -109,3 +109,115 @@ sit one below theirs so the sequences can hand each of them one more piece.
   plan against the brief and its snapshots against the seed.
 - Then `just org-fixtures`, `cargo test -p buzz-org-agent`, and commit the
   regenerated JSON with the change that caused it.
+
+## Cases (Development plan E-2)
+
+Gold cases live under `cases/`, next to `fixtures/`. They are **written by
+one person and reviewed by another** — not generated. `generate.mjs` does
+not emit them; `just org-fixtures-check` does not see them. Edit the JSON
+and this README, never Protocol, never a job that drafts.
+
+```
+cases/<suite>.json          trigger + gold + why_gold (one file per suite)
+cases/vacuous-titles.json   deterministic pre-check for the model judge
+cases/judge-prompt-v1.md    seven-question rubric; pass ≥ 11 of 14
+```
+
+Each case names an E-1 seed (and optional sequence snapshot). Overlays the
+seed does not hold are `imagine` — A-2 applies those as deltas; E-2 records
+them so a reviewer can disagree with the operator, not just the model.
+
+`cargo test -p buzz-org-agent` loads every case and parses its gold
+(`every_case_loads_and_its_gold_parses`). Negatives — `gold.silence` —
+are ≥ half of each suite (`negatives_are_at_least_half_of_each_suite`).
+
+### Job coverage (Org agent § 1)
+
+The table is the prove. A job with model output and no case set does not
+leave shadow. Counts are cases whose `job` field is that id (a suite may
+hold more than one job).
+
+| Job | Model output | Suite | Cases |
+| --- | ------------ | ----- | ----- |
+| J1 | yes | direction-to-projects | 19 |
+| J1b | yes | dri-suggestion | 12 |
+| J2 | yes | projects-to-tickets | 20 |
+| J3a | no | completion-to-direction | 1 |
+| J3b | yes | completion-to-direction | 6 |
+| J3c | yes | completion-to-direction | 4 |
+| J3d | yes | strategy-from-rejection | 7 |
+| J4 | yes | project-health | 18 |
+| J5 | no | — | 0 |
+| J6 | yes | direction-from-talk | 10 |
+| J7 | yes | talk-to-work | 10 |
+| J8 | no (MATCH) | done-from-talk | 10 |
+| J8b | yes | done-from-talk | 2 |
+| J9 | yes | assistant-flows | 14 |
+| J10 | yes | ask-the-org | 12 |
+| J11 | yes | profile-draft | 10 |
+| J12 | no | — | 0 |
+| J13 | no | — | 0 |
+| J14 | no | — | 0 |
+| J15 | later | — | 0 |
+| J16 | later | — | 0 |
+| J17 | no | — | 0 |
+
+J3d's seventh case is `j3d-rejection-no-direction-reason` in
+`completion-to-direction` (a timing/empty-reason silence). J8 is MATCH /
+no draft; its cases are Protocol § 5.5 rules and outnumber the positives
+by design.
+
+### Sequence and who-is-needed (first cut)
+
+The E-1 sequence fixtures already carry `why_gold`, `draft_now`, and both
+gate outcomes (`sequence_plans_are_ordered_gated_and_grounded_in_the_brief`).
+E-2 wraps them as J2 cases:
+
+- gate first — `j2-weekday-hall-gate-first`, `j2-iberia-site-gate-only`
+- next wave — `j2-weekday-hall-next-wave-granted`
+- outcome changes the plan — `j2-weekday-hall-outcome-changes-plan`
+- no invented order — `j2-no-invented-order`
+
+Who-is-needed (E-1 `who-is-needed/{river,energy}.json`):
+
+- `requires` — `j2-weekday-hall-gate-first`, `j1b-river-rafi-skills-only`
+- `unfilled` — `j2-hall-electrics-unfilled`, `j2-dutch-law-unfilled`, `j1-river-electrics-unfilled`
+- skill over availability — `j2-requires-over-availability`, `j1-energy-rowan-not-at-limit`
+
+### Vacuous titles
+
+`vacuous-titles.json` is the cheap judge's list. A title on it fails the
+model judge's *specific* question at 0, regardless of the rest.
+
+### Model judge prompt v1
+
+`judge-prompt-v1.md` — seven questions, 0–2 each, pass ≥ 11 of 14:
+
+1. Serves the cited line
+2. Not already covered
+3. The named person would recognise it
+4. Size of one holder
+5. Specific to this org (vacuous-title list)
+6. Right next thing
+7. Who this really needs (or `unfilled`)
+
+### Judge calibration (κ)
+
+Once a month, while a move is in shadow or on one community:
+
+1. Sample twenty live drafts (or twenty silence triggers) from the
+   community's L4. If fewer than twenty exist, take all of them.
+2. Three Shapers of that community score each on the same seven-question
+   rubric, independently, without seeing the model judge's scores.
+3. Majority human pass/fail (sum ≥ 11) is the label.
+4. The pinned judge model scores the same twenty against
+   `judge-prompt-v1.md`.
+5. Cohen's κ between the judge and the majority label. Target ≥ 0.70
+   (AI evaluation § Targets). Below that, retune the prompt — do not
+   silently lower the bar — and record the κ and the prompt version
+   with the cases.
+6. Do not use the generator model as the judge.
+
+Offline CI does not call a model. κ is a human-panel procedure; this
+file is where it lives so a later A-* slice does not invent a different
+one.

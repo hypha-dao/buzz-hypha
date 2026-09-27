@@ -98,6 +98,10 @@ run_unit_tests() {
   run_test_step "buzz-cli tests" \
     cargo test -p buzz-cli -- --nocapture
 
+  # buzz-admin: O-1 mint reuse + kind:0 "Org agent" name (no infra).
+  run_test_step "buzz-admin tests" \
+    cargo test -p buzz-admin -- --nocapture
+
   # Keep the relay-to-agent trust-boundary regressions in the fallback path
   # when cargo-nextest is unavailable.
   run_test_step "buzz-acp tests" \

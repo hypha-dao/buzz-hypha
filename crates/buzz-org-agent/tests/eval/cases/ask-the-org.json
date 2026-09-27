@@ -1,0 +1,289 @@
+{
+  "suite": "ask-the-org",
+  "job": "J10",
+  "cases": [
+    {
+      "id": "j10-who-holds-nordpool",
+      "job": "J10",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "You",
+        "room": "e-agent",
+        "message": "Who holds the Nordpool connector?"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "en",
+          "live": [],
+          "not_in_the_record": false,
+          "payload": {
+            "answer": [
+              {
+                "text": "Surya holds the Energy Management Systems root; the Nordpool connector is a child of that root.",
+                "receipts": ["39101:7b38d703-e2d9-414c-8a30-1f4a90b16305", "39101:9b29dbe1-a7e5-4769-a7d0-78daf07c5f08"]
+              }
+            ],
+            "live": []
+          }
+        }
+      },
+      "why_gold": "Answers over the seed with receipts on every sentence. The holder is on the 39101, not invented."
+    },
+    {
+      "id": "j10-what-is-the-mission",
+      "job": "J10",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Ada",
+        "room": "shapers",
+        "message": "What is our mission?"
+      },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "en",
+          "live": [],
+          "payload": {
+            "answer": [
+              {
+                "text": "The live mission is the 39100 mission head.",
+                "receipts": ["39100:mission@1"]
+              }
+            ],
+            "live": []
+          }
+        }
+      },
+      "why_gold": "A sentence that restates a 39100 head may cite that coordinate. No draft."
+    },
+    {
+      "id": "j10-live-number-refused",
+      "job": "J10",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Alex",
+        "room": "e-shapers",
+        "message": "How much is in the treasury?"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "en",
+          "live": ["treasury balance"],
+          "not_in_the_record": false,
+          "payload": {
+            "answer": [
+              {
+                "text": "I will not state a live treasury figure. Money is not on the work tree in this version.",
+                "receipts": []
+              }
+            ],
+            "live": ["treasury balance"]
+          }
+        }
+      },
+      "why_gold": "A question whose answer is a live number is refused and named in `live`. The prompt forbids figures the ledger does not hold."
+    },
+    {
+      "id": "j10-not-in-the-record",
+      "job": "J10",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "You",
+        "room": "agent",
+        "message": "What did the council say about parking?"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "en",
+          "not_in_the_record": true,
+          "payload": {
+            "answer": [
+              {
+                "text": "Not in the record.",
+                "receipts": []
+              }
+            ],
+            "live": []
+          }
+        }
+      },
+      "why_gold": "A question the ledger cannot answer is 'not in the record', not an invention about parking."
+    },
+    {
+      "id": "j10-locale-pt",
+      "job": "J10",
+      "org": "river",
+      "locale": "pt",
+      "polarity": "adversarial",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Maya",
+        "room": "agent",
+        "message": "Quem segura a banca de sábado?"
+      },
+      "seed": { "org": "river", "locale": "pt" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "pt",
+          "payload": {
+            "answer": [
+              {
+                "text": "O Sam segura a raiz da banca de sábado.",
+                "receipts": ["39101:79a1b1af-b3cf-4852-8ed2-b945ccb73773"]
+              }
+            ],
+            "live": []
+          }
+        }
+      },
+      "why_gold": "Asked in pt, answered in pt. Same receipts as en. An English answer on the pt seed fails locale."
+    },
+    {
+      "id": "j10-not-a-question",
+      "job": "J10",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Kai",
+        "room": "e-tech",
+        "message": "ship it"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Not classified question. J10 does not run."
+    },
+    {
+      "id": "j10-invented-holder",
+      "job": "J10",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "You",
+        "room": "agent",
+        "message": "Who is DRI of the weekday hall?"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": {
+        "silence": false,
+        "answer": {
+          "language": "en",
+          "not_in_the_record": true,
+          "payload": {
+            "answer": [
+              {
+                "text": "Not in the record — the weekday hall is still an open proposal, not a held root.",
+                "receipts": ["39102:fbf70696-79e2-4a6a-a28d-b1c9b1a1f2fd"]
+              }
+            ],
+            "live": []
+          }
+        }
+      },
+      "why_gold": "Weekday is an open project proposal in the seed. Inventing Lea as DRI (the sequence's later holder) is the failure. Gold is not-in-the-record plus the proposal receipt."
+    },
+    {
+      "id": "j10-untagged-in-mention-only-room",
+      "job": "J10",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Tom",
+        "room": "growers",
+        "message": "What's our mission?"
+      },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "Growers is mention-only. Untagged questions are not heard."
+    },
+    {
+      "id": "j10-balance-with-made-up-figure",
+      "job": "J10",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Edgar",
+        "room": "e-shapers",
+        "message": "How many euros did we pay last month?"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [{ "why": "a sentence with a currency amount not in the ledger" }]
+      },
+      "why_gold": "If the model answers with a figure, that is a hard fail. Gold treats the invented-figure path as silence: refuse into `live`, or say not in the record — never 6,000 EURC from memory."
+    },
+    {
+      "id": "j10-cold-who-is-dri",
+      "job": "J10",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Ada",
+        "message": "Who is DRI of the café?"
+      },
+      "seed": { "org": "cold", "locale": "en" },
+      "gold": {
+        "silence": true,
+        "must_not": [{ "why": "there is no café item yet" }]
+      },
+      "why_gold": "Cold has no work tree. 'Ada' as an invented DRI is wrong. Not in the record — and this gold is silence because there is not even a proposal to cite yet. (The paired positive is j10-what-is-the-mission.)"
+    },
+    {
+      "id": "j10-empty-question",
+      "job": "J10",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "hear_question", "speaker": "You", "room": "agent", "message": "?" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "A bare question mark is not a question the ledger can answer. No guess."
+    },
+    {
+      "id": "j10-future-gossip",
+      "job": "J10",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": {
+        "kind": "hear_question",
+        "speaker": "Nina",
+        "room": "e-agent",
+        "message": "Will the Junta approve the decree?"
+      },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "The future is not in the record. Predicting the Junta is an invention. Silence here means: do not answer with a yes/no; the paired 'not in the record' positive is j10-not-in-the-record. This case forbids a confident forecast."
+    }
+  ]
+}

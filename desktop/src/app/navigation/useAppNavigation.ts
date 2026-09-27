@@ -138,6 +138,18 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goOrgDirection = React.useCallback(
+    (slug: string, behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org/direction/$slug",
+          params: { slug },
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
   const goPulse = React.useCallback(
     (behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -511,6 +523,7 @@ export function useAppNavigation() {
     goHome,
     goNewMessage,
     goOrg,
+    goOrgDirection,
     goOrgMyWork,
     goOrgWork,
     goOrgWorkItem,

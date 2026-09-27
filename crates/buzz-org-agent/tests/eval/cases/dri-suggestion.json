@@ -1,0 +1,248 @@
+{
+  "suite": "dri-suggestion",
+  "job": "J1b",
+  "cases": [
+    {
+      "id": "j1b-river-rafi-skills-only",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_open_no_holder", "item_key": "project-weekday" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Weekday hall root is open with no holder; it needs council-licensing."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "Rafi from council-licensing on his 39105; no prior hall item.",
+            "needs": "shaper",
+            "suggested_holder": "Rafi",
+            "requires": ["council-licensing"],
+            "matched": { "skills": ["council-licensing"] },
+            "payload": {
+              "item": "39c3e589-1bda-43b9-9a9b-5259ef4a6218",
+              "suggested": "76545e50ef08d0f1aff997646fd5b247c8877bd106958ee4d45a3b78fdb80d5f",
+              "why": "Rafi's profile lists council licensing; nobody has held a hall item.",
+              "matched": { "skills": ["council-licensing"], "about": null, "items": [] },
+              "evidence": []
+            }
+          }
+        ]
+      },
+      "why_gold": "History and profile each suffice alone. Here the profile is enough. The weekday proposal is open in the seed; once it passes as a root with no holder, J1b names Rafi."
+    },
+    {
+      "id": "j1b-river-lea-history-only",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "offer_returned", "item_key": "stall" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "Sam stepped back; the stall is open again. Lea has no profile and held covers." },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "Lea from the covers she held; skills empty.",
+            "needs": "shaper",
+            "suggested_holder": "Lea",
+            "matched": { "skills": [], "items": ["cc7b8397-18b5-4932-bf75-96cefc637cd5"] }
+          }
+        ]
+      },
+      "why_gold": "Lea has no 39105. History is enough. Naming Sam again (he just returned the offer) or Priya from print skills fails."
+    },
+    {
+      "id": "j1b-energy-unfilled-dutch-law",
+      "job": "J1b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_open_no_holder", "item_key": "project-carbon" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "The open carbon project needs dutch-cooperative-law. Nobody has it."
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "null holder; unfilled names dutch-cooperative-law.",
+            "needs": "shaper",
+            "suggested_holder": null,
+            "requires": ["dutch-cooperative-law"],
+            "unfilled": "nobody here has dutch cooperative law"
+          }
+        ]
+      },
+      "why_gold": "Who-is-needed: dutch-cooperative-law is nobody. A DRI card that names the gap is useful; inventing a lawyer is not. DriDraft.suggested is required on the wire — gold at intent level is null plus unfilled until the schema names that case."
+    },
+    {
+      "id": "j1b-profile-changed-resuggests-only-where-it-matters",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "profile_changed", "speaker": "Rafi" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Rafi adds grant-writing a week after the roof project went live with no holder.",
+        "profile_skills": [{ "person": "Rafi", "skill": "grant-writing" }]
+      },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "One DRI suggestion for the unheld roof root; nothing for roots that already have a holder.",
+            "needs": "shaper",
+            "suggested_holder": "Rafi",
+            "matched": { "skills": ["grant-writing"] }
+          }
+        ],
+        "must_not": [
+          { "why": "stall already has Sam" },
+          { "why": "growers already have Noor" }
+        ]
+      },
+      "why_gold": "A 39105 change re-suggests only where it changes the answer. Roots that already have a holder stay quiet."
+    },
+    {
+      "id": "j1b-rowan-at-limit",
+      "job": "J1b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_open_no_holder", "item_key": "project-hardware" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": { "note": "Open hardware root needs on-call-operations." },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "Surya, not Rowan (at open_limit).",
+            "needs": "shaper",
+            "suggested_holder": "Surya",
+            "requires": ["on-call-operations"],
+            "matched": { "skills": ["on-call-operations"] }
+          }
+        ]
+      },
+      "why_gold": "open_limit respected. Rowan has the skill and is full. Surya has the skill and a slot."
+    },
+    {
+      "id": "j1b-root-already-has-holder",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "profile_changed", "speaker": "Jun" },
+      "seed": { "org": "river", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "The stall has Sam. Jun adding printing does not open a DRI card on a held root."
+    },
+    {
+      "id": "j1b-profile-edit-adds-nothing-relevant",
+      "job": "J1b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "profile_changed", "speaker": "Nina" },
+      "seed": { "org": "energy", "locale": "en" },
+      "imagine": {
+        "note": "Nina adds a hobby skill that no open root requires.",
+        "profile_skills": [{ "person": "Nina", "skill": "photography" }]
+      },
+      "gold": { "silence": true },
+      "why_gold": "A profile edit that adds nothing relevant is not a DRI wave."
+    },
+    {
+      "id": "j1b-unmatched-skill-invented",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "adversarial",
+      "trigger": { "kind": "root_open_no_holder" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": { "note": "A model that writes matched.skills = [grant-writing] on Maya, who never wrote it." },
+      "gold": {
+        "silence": true,
+        "must_not": [
+          { "why": "matched.skills contains a slug not on their 39105 — unmatched skill" }
+        ]
+      },
+      "why_gold": "The case that catches a model inventing fit. Gold is silence-after-judge: that draft must not publish."
+    },
+    {
+      "id": "j1b-cold-founder-fallback",
+      "job": "J1b",
+      "org": "cold",
+      "locale": "en",
+      "polarity": "positive",
+      "trigger": { "kind": "root_open_no_holder" },
+      "seed": { "org": "cold", "locale": "en" },
+      "imagine": { "note": "The café root just opened; Ada is the only member." },
+      "gold": {
+        "silence": false,
+        "must_draft": [
+          {
+            "kind": "dri",
+            "intent": "Founder fallback — Ada — when the community is new.",
+            "needs": "shaper",
+            "suggested_holder": "Ada"
+          }
+        ]
+      },
+      "why_gold": "A member with no profile and no rows is not a candidate; the founder is the fallback when the community is new. Cold has only Ada."
+    },
+    {
+      "id": "j1b-held-root-offer-still-open",
+      "job": "J1b",
+      "org": "energy",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "root_open_no_holder", "item_key": "ems" },
+      "seed": { "org": "energy", "locale": "en" },
+      "gold": { "silence": true },
+      "why_gold": "EMS already has a holder. J1b is for open-with-no-holder, offer returned, or a profile change that changes the answer."
+    },
+    {
+      "id": "j1b-same-holder-already-suggested",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "profile_changed", "speaker": "Rafi" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "Rafi already suggested for weekday; he adds a second council synonym, not a new skill.",
+        "profile_skills": [{ "person": "Rafi", "skill": "council-licensing" }]
+      },
+      "gold": { "silence": true },
+      "why_gold": "The answer did not change. Re-issuing the same DRI card is a nag."
+    },
+    {
+      "id": "j1b-wrong-holder-decline-lifts-on-profile",
+      "job": "J1b",
+      "org": "river",
+      "locale": "en",
+      "polarity": "negative",
+      "trigger": { "kind": "monday_scan" },
+      "seed": { "org": "river", "locale": "en" },
+      "imagine": {
+        "note": "A wrong_holder decline is in memory; no ProfileChanged of a candidate has fired.",
+        "declined_gap": "dri:weekday"
+      },
+      "gold": { "silence": true },
+      "why_gold": "A wrong_holder decline stays down until a candidate's 39105 changes. The Monday scan must not re-raise it."
+    }
+  ]
+}

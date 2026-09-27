@@ -47,7 +47,8 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
 
     await expect(page.getByTestId("sidebar-org-group")).toBeVisible();
     await page.getByTestId("sidebar-org-overview").click();
-    await expect(page.getByTestId("org-overview-empty")).toHaveText(
+    await expect(page.getByTestId("org-overview")).toBeVisible();
+    await expect(page.getByTestId("org-direction-empty-mission")).toHaveText(
       "Not set yet.",
     );
     await expect(page.getByTestId("chat-title")).toHaveText("Overview");
@@ -114,7 +115,7 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
     await installMockBridge(page);
     await openApp(page);
     await page.getByTestId("sidebar-org-overview").click();
-    await expect(page.getByTestId("org-overview-empty")).toBeVisible();
+    await expect(page.getByTestId("org-overview")).toBeVisible();
 
     await expect
       .poll(async () =>
