@@ -1443,6 +1443,146 @@ pub async fn get_live_hosted_agent(
     .transpose()
 }
 
+// ── io_scheduler_claims (§6.3 / V9) ───────────────────────────────────────────
+
+/// Claim kinds the scheduler inserts. Wire strings match the CHECK on
+/// `io_scheduler_claims.kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SchedulerClaimKind {
+    /// Offer past half its window — re-emit unchanged `39101` (D6).
+    OfferRenotify,
+    /// Offer past its window — return to `open`.
+    OfferExpire,
+    /// Root enters the last fifth of its run.
+    EnterReview,
+    /// Root reaches `due_at` — close by rule.
+    CloseDue,
+    /// Draft past its `expiration` tag.
+    DraftExpire,
+    /// Proposal past `expires_at`.
+    ProposalExpire,
+    /// Unaccepted shaper seat past `offer_window_secs`.
+    SeatLapse,
+}
+
+impl SchedulerClaimKind {
+    /// The CHECK-constrained wire value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OfferRenotify => "offer_renotify",
+            Self::OfferExpire => "offer_expire",
+            Self::EnterReview => "enter_review",
+            Self::CloseDue => "close_due",
+            Self::DraftExpire => "draft_expire",
+            Self::ProposalExpire => "proposal_expire",
+            Self::SeatLapse => "seat_lapse",
+        }
+    }
+}
+
+/// Insert a scheduler claim. Returns `true` when this transaction won the
+/// claim; `false` when another pod (or an earlier attempt) already holds it.
+/// The insert is the lock — same shape as [`crate::workflow::claim_scheduled_workflow_fire`].
+pub async fn claim_scheduler_transition(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    kind: SchedulerClaimKind,
+    object_id: &str,
+    epoch: DateTime<Utc>,
+) -> Result<bool> {
+    let row = sqlx::query(
+        "INSERT INTO io_scheduler_claims (community_id, kind, object_id, epoch) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (community_id, kind, object_id, epoch) DO NOTHING \
+         RETURNING claimed_at",
+    )
+    .bind(community_id.as_uuid())
+    .bind(kind.as_str())
+    .bind(object_id)
+    .bind(epoch)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.is_some())
+}
+
+/// Communities that have a live `39103` — one tick walks each through §6.3.
+pub async fn list_org_communities(conn: &mut PgConnection) -> Result<Vec<CommunityId>> {
+    let rows: Vec<Uuid> =
+        sqlx::query_scalar("SELECT community_id FROM io_shapers ORDER BY community_id")
+            .fetch_all(conn)
+            .await?;
+    Ok(rows.into_iter().map(CommunityId::from_uuid).collect())
+}
+
+/// Offered items whose `offered_at` is at or before `offered_before`
+/// (half-window or full-window cut). Callers filter further in process.
+pub async fn list_offered_items_past(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    offered_before: DateTime<Utc>,
+) -> Result<Vec<WorkItemRow>> {
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        work_item_columns!(),
+        " FROM io_work_items \
+         WHERE community_id = $1 AND state = 'offered' AND offered_at IS NOT NULL \
+           AND offered_at <= $2 ORDER BY offered_at, id"
+    ))
+    .bind(community_id.as_uuid())
+    .bind(offered_before)
+    .fetch_all(conn)
+    .await?;
+    rows.into_iter().map(work_item_row).collect()
+}
+
+/// Roots in `accepted` that have entered the last fifth of
+/// `[approved_at, due_at]` (floor two days), and whose `due_at` has not
+/// yet passed. The SQL encodes Protocol §5.1 / §6.3 rule 2.
+pub async fn list_roots_entering_review(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    now: DateTime<Utc>,
+) -> Result<Vec<WorkItemRow>> {
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        work_item_columns!(),
+        " FROM io_work_items \
+         WHERE community_id = $1 AND state = 'accepted' AND parent_id IS NULL \
+           AND approved_at IS NOT NULL AND due_at > $2 \
+           AND $2 >= due_at - (GREATEST( \
+                 EXTRACT(EPOCH FROM (due_at - approved_at)) * 0.2, \
+                 172800.0 \
+               ) * INTERVAL '1 second') \
+         ORDER BY due_at, id"
+    ))
+    .bind(community_id.as_uuid())
+    .bind(now)
+    .fetch_all(conn)
+    .await?;
+    rows.into_iter().map(work_item_row).collect()
+}
+
+/// Roots in `accepted`/`in_review` whose `due_at` is at or before `now`.
+pub async fn list_roots_due_for_close(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    now: DateTime<Utc>,
+) -> Result<Vec<WorkItemRow>> {
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        work_item_columns!(),
+        " FROM io_work_items \
+         WHERE community_id = $1 AND parent_id IS NULL \
+           AND state IN ('accepted', 'in_review') AND due_at <= $2 \
+         ORDER BY due_at, id"
+    ))
+    .bind(community_id.as_uuid())
+    .bind(now)
+    .fetch_all(conn)
+    .await?;
+    rows.into_iter().map(work_item_row).collect()
+}
+
 /// Retire the live hosted key at `retired_at`. Returns `false` when none is live.
 pub async fn retire_hosted_agent(
     conn: &mut PgConnection,

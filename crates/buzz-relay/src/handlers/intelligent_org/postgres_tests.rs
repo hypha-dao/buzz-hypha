@@ -202,7 +202,7 @@ impl Harness {
 
     /// `io_shapers_propose` as `keys`: `op`, an optional `p`, `content`, and
     /// the D1 `["vote", "agree"]` when `agree`. Returns the reply JSON.
-    async fn propose(
+    pub(super) async fn propose(
         &self,
         keys: &Keys,
         op: &str,
@@ -272,7 +272,7 @@ impl Harness {
 
     /// The real path to an offered seat: a passed `shapers/add`. With one
     /// Shaper the opener's agree passes it in one act.
-    async fn offer_seat(&self, p: &Keys) -> String {
+    pub(super) async fn offer_seat(&self, p: &Keys) -> String {
         self.pass_add(&self.owner, &[], p).await
     }
 
@@ -285,7 +285,7 @@ impl Harness {
         proposal
     }
 
-    async fn proposal(&self, id: &str) -> Proposal {
+    pub(super) async fn proposal(&self, id: &str) -> Proposal {
         let mut conn = self.pool.acquire().await.expect("acquire");
         store::get_proposal(
             &mut conn,
@@ -310,7 +310,7 @@ impl Harness {
     }
 
     /// `io_direction_propose` as `keys`.
-    async fn direction(
+    pub(super) async fn direction(
         &self,
         keys: &Keys,
         slug: &str,
@@ -486,7 +486,7 @@ impl Harness {
         (proposal, item)
     }
 
-    async fn ticket(
+    pub(super) async fn ticket(
         &self,
         keys: &Keys,
         parent: &str,

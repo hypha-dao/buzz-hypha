@@ -33,6 +33,10 @@ mod profiles;
 #[path = "profiles_postgres_tests.rs"]
 mod profiles_postgres_tests;
 mod proposals;
+pub mod scheduler;
+#[cfg(test)]
+#[path = "scheduler_postgres_tests.rs"]
+mod scheduler_postgres_tests;
 mod shapers;
 pub mod state;
 mod work;
