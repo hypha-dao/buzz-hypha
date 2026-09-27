@@ -107,6 +107,13 @@ org-kinds-check:
 org-fixtures-check:
     node crates/buzz-org-agent/tests/eval/fixtures/generate.mjs --check
 
+# Intelligent-org O-1: provision script against a running local relay.
+# Needs the progress-log recipe (Postgres, Redis, relay with
+# BUZZ_GIT_CONFORMANCE_PROBE=false). Named prove: row + NIP-43 member +
+# kind:0 "Org agent" + second-run idempotency + secret not printed.
+org-agent-provision-check:
+    ./scripts/test-org-agent-provision.sh
+
 # Regenerate the intelligent-org evaluation fixtures in place.
 org-fixtures:
     node crates/buzz-org-agent/tests/eval/fixtures/generate.mjs
@@ -401,6 +408,8 @@ test-unit:
         # map. Whole crate (lib decoder tests + tests/eval_fixtures.rs); no infra.
         cargo nextest run -p buzz-org-agent
         cargo nextest run -p buzz-cli
+        # buzz-admin: O-1 mint reuse + kind:0 "Org agent" name (no infra).
+        cargo nextest run -p buzz-admin
         # buzz-acp owns the relay-to-agent trust boundary. Run its tests here so
         # forged relay events cannot regain a path into agent routing unnoticed.
         cargo nextest run -p buzz-acp
