@@ -14,6 +14,12 @@
 //! `POST /api/invites`, `GET /api/join-policy`, NIP-98) exactly as a
 //! client or the `buzz` CLI would.
 //!
+//! C-3 also drives the Protocol §9 worked example (direction → draft →
+//! project → offer → ticket → done) through the C-1 `build_io_*` builders
+//! so the SDK tag layout is what the relay sees. Scheduler / review /
+//! redraw steps wait on R-6; profile-backed DRI receipts wait on R-11.
+//! R-6 / R-9a / R-10 / R-11 / R-13 Proves land here as those slices merge.
+//!
 //! Every test gets its own community (a fresh `Host`) on the running relay,
 //! because a `39103` bootstrap happens once per community and the relay
 //! process is shared with the other e2e suites. The only rows a test seeds
@@ -37,6 +43,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use buzz_core::intelligent_org::{
+    DirectionLineInput, DirectionProposeContent, DirectionSlug, DraftOrigin, DraftPayload,
+    ProjectDraft, ProjectProposeContent, TicketCreateContent, VoteChoice, VoteContent,
+};
 use buzz_core::kind::{
     KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE, KIND_IO_DIRECTION,
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
@@ -46,7 +56,12 @@ use buzz_core::kind::{
     KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
 };
-use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
+use buzz_sdk::intelligent_org::{
+    build_io_accept, build_io_direction_propose, build_io_done, build_io_draft, build_io_offer,
+    build_io_project_propose, build_io_ticket_create, build_io_vote, DraftNeeds, DraftReceipt,
+    IoDraft, Provenance,
+};
+use nostr::{Event, EventBuilder, EventId, Keys, Kind, Tag, Timestamp};
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -102,23 +117,35 @@ fn tag<const N: usize>(parts: [&str; N]) -> Tag {
     Tag::parse(parts).expect("tag")
 }
 
-/// Sign as a client would. `allow_self_tagging` matters: the bootstrap names
-/// the sender in its own `p` tag, which nostr's builder drops by default.
-/// `created_at` ticks so two identical commands in the same second (a
-/// re-offer after decline) are not a NIP-01 replay.
-fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
+/// Next `created_at` second so two otherwise identical commands in the same
+/// wall-clock second are not a NIP-01 replay.
+fn next_created_at() -> Timestamp {
     static TICK: AtomicU64 = AtomicU64::new(0);
-    let created_at = Timestamp::from(
+    Timestamp::from(
         Timestamp::now()
             .as_secs()
             .saturating_add(TICK.fetch_add(1, Ordering::Relaxed)),
-    );
+    )
+}
+
+/// Sign as a client would. `allow_self_tagging` matters: the bootstrap names
+/// the sender in its own `p` tag, which nostr's builder drops by default.
+fn signed(keys: &Keys, kind: u32, tags: Vec<Tag>, content: &str) -> Event {
     EventBuilder::new(Kind::Custom(kind as u16), content)
         .tags(tags)
         .allow_self_tagging()
-        .custom_created_at(created_at)
+        .custom_created_at(next_created_at())
         .sign_with_keys(keys)
         .expect("sign")
+}
+
+/// Sign a C-1 `build_io_*` builder. The SDK already sets
+/// `allow_self_tagging`; we only advance `created_at` for replay safety.
+fn signed_sdk(keys: &Keys, builder: EventBuilder) -> Event {
+    builder
+        .custom_created_at(next_created_at())
+        .sign_with_keys(keys)
+        .expect("sign sdk builder")
 }
 
 fn p_tags(event: &Value) -> Vec<String> {
@@ -2775,4 +2802,225 @@ async fn r7_draft_decide_and_health_rate() {
     )
     .await;
     assert!(c.ledger_verbs().await.contains(&"health_rated".to_owned()));
+}
+
+// ── C-3: Protocol §9 worked example through C-1 builders ─────────────────────
+//
+// Steps 1–9 of Protocol §9 (direction → draft → project → offer → ticket →
+// done) with Maya + Sam as Shapers. Steps 10–12 (scheduler `in_review`,
+// close-on-due, objectives redraw) wait on R-6. The DRI-draft profile
+// receipts in step 6 wait on R-11 — here the holder is offered directly.
+
+#[tokio::test]
+#[ignore]
+async fn protocol_section_9_direction_to_done_through_c1_builders() {
+    let c = Community::fresh().await;
+    c.bootstrap().await;
+
+    // Maya = owner; Sam = second Shaper; Lea / Jun = holders.
+    let maya = c.owner.clone();
+    let sam = Keys::generate();
+    let lea = Keys::generate();
+    let jun = Keys::generate();
+    c.seed_member(&sam, "member").await;
+    c.seed_member(&lea, "member").await;
+    c.seed_member(&jun, "member").await;
+    c.add_shaper(&maya, &[], &sam).await;
+
+    // §9.1–2: Maya proposes objectives; both Shapers agree → 39100 v1.
+    let direction = DirectionProposeContent {
+        body: "the lines".into(),
+        lines: Some(vec![DirectionLineInput {
+            id: Some("l_7f3a".into()),
+            text: "Weekday hall".into(),
+            date: None,
+        }]),
+        why: Some("first confirm".into()),
+    };
+    let dir_cmd = signed_sdk(
+        &maya,
+        build_io_direction_propose(DirectionSlug::Objectives, 0, &direction, None, true)
+            .expect("build direction"),
+    );
+    let dir_reply: Value =
+        serde_json::from_str(&c.submit_ok(&maya, &dir_cmd).await).expect("direction reply");
+    assert_eq!(
+        dir_reply["status"], "open",
+        "two Shapers: opener alone leaves it open"
+    );
+    let dir_proposal = dir_reply["proposal"].as_str().expect("proposal").to_owned();
+    let dir_uuid = Uuid::parse_str(&dir_proposal).expect("proposal uuid");
+    assert_eq!(
+        c.vote_ok_sdk(&sam, dir_uuid, VoteChoice::Agree).await["status"],
+        "passed"
+    );
+    let objectives = c.direction_state("objectives").await.expect("39100");
+    assert_eq!(content(&objectives)["version"], 1);
+    assert!(c
+        .ledger_verbs()
+        .await
+        .contains(&"direction_confirmed".to_owned()));
+
+    // §9.3: agent publishes a project draft (needs=shaper, gap on the line).
+    let receipt =
+        EventId::from_hex(objectives["id"].as_str().expect("39100 id")).expect("event id");
+    let project_payload = DraftPayload::Project(ProjectDraft {
+        title: "Saturday stall".into(),
+        brief: "A weekday hall for the market".into(),
+        objective_ref: Some("objectives@1#l_7f3a".into()),
+        due_at: 1_800_000_000,
+        suggested_dri: None,
+        why: "gap on the hall line".into(),
+        gaps: vec![],
+        matched: None,
+    });
+    let draft_cmd = signed_sdk(
+        &c.agent,
+        build_io_draft(&IoDraft {
+            needs: DraftNeeds::Shaper,
+            payload: &project_payload,
+            agent_move: 1,
+            origin: DraftOrigin::Gap,
+            gap: "objectives@1#l_7f3a",
+            receipts: &[DraftReceipt::Event(receipt)],
+            shadow: false,
+            expiration: None,
+            provenance: Provenance::default(),
+        })
+        .expect("build draft"),
+    );
+    c.submit_ok(&c.agent, &draft_cmd).await;
+    assert_eq!(
+        c.draft_outcome(&draft_cmd.id.to_hex()).await["status"],
+        "open"
+    );
+
+    // §9.4–5: Maya opens a project proposal settling the draft; Sam's vote
+    // passes it → root `open`. Draft payload ≠ ProjectProposeContent shape,
+    // so settlement is `amended` (still decided; Protocol §9 does not require
+    // byte-equal Agree).
+    let propose = ProjectProposeContent {
+        title: "Saturday stall".into(),
+        brief: "A weekday hall for the market".into(),
+        due_at: 1_800_000_000,
+        objective_ref: Some("objectives@1#l_7f3a".into()),
+        suggested_dri: None,
+    };
+    let open_cmd = signed_sdk(
+        &maya,
+        build_io_project_propose(&propose, Some(draft_cmd.id), true).expect("build project"),
+    );
+    let open_reply: Value =
+        serde_json::from_str(&c.submit_ok(&maya, &open_cmd).await).expect("project reply");
+    assert_eq!(open_reply["status"], "open");
+    let project_proposal = open_reply["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(
+        c.draft_outcome(&draft_cmd.id.to_hex()).await["status"],
+        "amended"
+    );
+    let project_uuid = Uuid::parse_str(&project_proposal).expect("proposal uuid");
+    assert_eq!(
+        c.vote_ok_sdk(&sam, project_uuid, VoteChoice::Agree).await["status"],
+        "passed"
+    );
+    let roots = c.live_work(&maya).await;
+    assert_eq!(roots.len(), 1, "one root after the project passes");
+    let root = content(&roots[0]);
+    let root_id = Uuid::parse_str(root["id"].as_str().expect("root id")).expect("root uuid");
+    assert_eq!(root["state"], "open");
+    assert!(root["dri"].is_null());
+
+    // §9.6–7: Maya offers the root to Lea; Lea accepts (skip dri-draft /
+    // 39105 — R-11).
+    c.submit_ok(
+        &maya,
+        &signed_sdk(
+            &maya,
+            build_io_offer(root_id, &lea.public_key().to_hex(), None).expect("build offer"),
+        ),
+    )
+    .await;
+    assert_eq!(c.item_row(root_id).await.expect("root row").0, "offered");
+    c.submit_ok(
+        &lea,
+        &signed_sdk(&lea, build_io_accept(root_id).expect("build accept")),
+    )
+    .await;
+    let (state, dri, _) = c.item_row(root_id).await.expect("accepted root");
+    assert_eq!(state, "accepted");
+    assert_eq!(dri.as_deref(), Some(lea.public_key().to_hex().as_str()));
+
+    // §9.8–9: Lea creates a ticket offered to Jun; Jun accepts and marks done.
+    let ticket = TicketCreateContent {
+        title: "Print the rota".into(),
+        brief: "Rota printed — done".into(),
+        due_at: 1_800_000_000,
+        after: vec![],
+    };
+    let ticket_cmd = signed_sdk(
+        &lea,
+        build_io_ticket_create(root_id, Some(&jun.public_key().to_hex()), &ticket, None)
+            .expect("build ticket"),
+    );
+    c.submit_ok(&lea, &ticket_cmd).await;
+    let children: Vec<Value> = c
+        .live_work(&lea)
+        .await
+        .into_iter()
+        .filter(|e| {
+            let body = content(e);
+            body["parent"].as_str() == Some(&root_id.to_string())
+        })
+        .collect();
+    assert_eq!(children.len(), 1, "one child under the root");
+    let child = content(&children[0]);
+    let child_id = Uuid::parse_str(child["id"].as_str().expect("child id")).expect("child uuid");
+    assert_eq!(child["state"], "offered");
+    c.submit_ok(
+        &jun,
+        &signed_sdk(&jun, build_io_accept(child_id).expect("build child accept")),
+    )
+    .await;
+    c.submit_ok(
+        &jun,
+        &signed_sdk(
+            &jun,
+            build_io_done(child_id, None, None).expect("build done"),
+        ),
+    )
+    .await;
+    let (child_state, child_dri, _) = c.item_row(child_id).await.expect("done child");
+    assert_eq!(child_state, "done");
+    assert_eq!(
+        child_dri.as_deref(),
+        Some(jun.public_key().to_hex().as_str())
+    );
+    let verbs = c.ledger_verbs().await;
+    for verb in [
+        "direction_confirmed",
+        "draft_stored",
+        "draft_decided",
+        "proposal_passed",
+        "item_created",
+        "item_offered",
+        "item_accepted",
+        "item_done",
+    ] {
+        assert!(
+            verbs.iter().any(|v| v == verb),
+            "ledger missing {verb}: {verbs:?}"
+        );
+    }
+}
+
+impl Community {
+    /// Vote via C-1 `build_io_vote`; returns the reply JSON.
+    async fn vote_ok_sdk(&self, keys: &Keys, proposal: Uuid, choice: VoteChoice) -> Value {
+        let event = signed_sdk(
+            keys,
+            build_io_vote(proposal, choice, &VoteContent::default()).expect("build vote"),
+        );
+        let message = self.submit_ok(keys, &event).await;
+        serde_json::from_str(&message).expect("vote reply json")
+    }
 }
