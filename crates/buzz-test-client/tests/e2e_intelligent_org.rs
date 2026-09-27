@@ -3250,4 +3250,3 @@ async fn r10_cited_message_is_readable_by_ids_but_not_by_h() {
         "#h of a room the reader is not in must return nothing"
     );
 }
-
