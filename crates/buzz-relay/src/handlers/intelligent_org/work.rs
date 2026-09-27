@@ -110,6 +110,40 @@ fn with_child_delta(
     parent
 }
 
+/// §5.1 rule 5 helper for the scheduler: every live child of a
+/// rule-closed root is returned to the Shapers as `open`. `done`
+/// children are left alone. Already-`open` children still get a rewrite
+/// so the ledger `orphaned_by_close` has a receipt `39101`.
+pub(super) fn orphan_child_for_closed_root(
+    mut child: WorkItem,
+) -> Option<(WorkItemState, WorkItem)> {
+    if child.state == WorkItemState::Done {
+        return None;
+    }
+    let from = child.state;
+    child.state = WorkItemState::Open;
+    child.dri = None;
+    child.offered_to = None;
+    child.offered_by = None;
+    child.offered_at = None;
+    Some((from, child))
+}
+
+/// Build a work-item projection the scheduler (and commands) write through
+/// `apply`. `receipt` is a prior state-event id for rule-driven rewrites.
+pub(super) fn work_item_projection(item: WorkItem, receipt: String) -> Projection {
+    work_projection(item, receipt)
+}
+
+/// Apply a children-counter delta to a parent the same way commands do.
+pub(super) fn parent_with_child_delta(
+    parent: WorkItem,
+    from: Option<WorkItemState>,
+    to: Option<WorkItemState>,
+) -> WorkItem {
+    with_child_delta(parent, from, to)
+}
+
 async fn persist(
     cmd: &Command<'_>,
     tx: Transaction<'static, Postgres>,

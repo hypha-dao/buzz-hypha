@@ -2190,7 +2190,7 @@ mod postgres_tests {
     /// The `io_*` projection tables added by migration `0045_intelligent_org`
     /// (Protocol §6.2). Kept in sync with `store::deletion::EXPECTED_SCOPED_TABLES`
     /// by `deletion_catalog_lists_every_intelligent_org_table`.
-    const INTELLIGENT_ORG_TABLES: [&str; 12] = [
+    const INTELLIGENT_ORG_TABLES: [&str; 13] = [
         "io_shapers",
         "io_direction",
         "io_work_items",
@@ -2203,6 +2203,7 @@ mod postgres_tests {
         "io_profiles",
         "io_ledger",
         "io_hosted_agents",
+        "io_scheduler_claims",
     ];
 
     #[test]

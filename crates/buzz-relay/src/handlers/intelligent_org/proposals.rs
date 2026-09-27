@@ -192,7 +192,7 @@ struct DriPayload {
 
 /// The §4.4 `subject` and `item` markers of a stored proposal, derived from
 /// its content the same way its opener derived them.
-fn markers(proposal: &Proposal) -> (Option<String>, Option<String>) {
+pub(super) fn markers(proposal: &Proposal) -> (Option<String>, Option<String>) {
     match proposal.kind {
         ProposalKind::Shapers => (shapers::subject_of(&proposal.payload), None),
         ProposalKind::Dri => match serde_json::from_value::<DriPayload>(proposal.payload.clone()) {

@@ -840,6 +840,17 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         info!("Admin action recovery worker started");
     }
 
+    // Intelligent-org date rules (Protocol §6.3): offer renotify/return,
+    // in_review, close on due_at, draft/proposal expiry, seat lapse. Each
+    // transition is a DB claim (V9) so multi-pod ticks are safe.
+    {
+        let io_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            buzz_relay::handlers::intelligent_org::scheduler::run(io_state).await
+        });
+        info!("Intelligent-org io_scheduler started");
+    }
+
     // NIP-ER reminder scheduler — polls for due reminders and publishes them
     // to Redis pub/sub for cross-pod fan-out. Each pod's existing
     // subscribe_local consumer picks them up and applies the author-only gate.

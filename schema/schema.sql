@@ -2191,6 +2191,27 @@ CREATE UNIQUE INDEX idx_io_hosted_agents_live
     ON io_hosted_agents (community_id)
     WHERE retired_at IS NULL;
 
+-- ── Scheduler claims — multi-pod lock for §6.3 transitions (R-6 / V9) ─────────
+CREATE TABLE io_scheduler_claims (
+    community_id        UUID NOT NULL REFERENCES communities(id),
+    kind                TEXT NOT NULL CHECK (kind IN (
+        'offer_renotify',
+        'offer_expire',
+        'enter_review',
+        'close_due',
+        'draft_expire',
+        'proposal_expire',
+        'seat_lapse'
+    )),
+    object_id           TEXT NOT NULL,
+    epoch               TIMESTAMPTZ NOT NULL,
+    claimed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, kind, object_id, epoch)
+);
+
+CREATE INDEX idx_io_scheduler_claims_claimed_at
+    ON io_scheduler_claims (claimed_at);
+
 -- ── Universal community write fence ──────────────────────────────────────────
 SELECT attach_community_write_fence('io_direction');
 SELECT attach_community_write_fence('io_drafts');
@@ -2201,6 +2222,7 @@ SELECT attach_community_write_fence('io_ledger');
 SELECT attach_community_write_fence('io_profiles');
 SELECT attach_community_write_fence('io_progress');
 SELECT attach_community_write_fence('io_proposals');
+SELECT attach_community_write_fence('io_scheduler_claims');
 SELECT attach_community_write_fence('io_shapers');
 SELECT attach_community_write_fence('io_votes');
 SELECT attach_community_write_fence('io_work_items');
