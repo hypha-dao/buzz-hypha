@@ -40,7 +40,7 @@ PR), `blocked`, or blank (not started). Waves and slice ids are the plan's.
 | R-13  |        |    |           | |
 | C-1   | merged | [#11](https://github.com/hypha-dao/buzz-hypha/pull/11) | `46ef9be4a` | `buzz-sdk/src/intelligent_org.rs`: `build_io_*` for every command (`50001–50021`) and read (`50100–50103`), typed over `buzz-core::intelligent_org`, tags per Protocol §4.8 / §4.3 / §4.7–4.7c; every builder sets `allow_self_tagging`; no builder yields `39100–39105` (`io_state_kinds_have_no_builder`). `buzz-sdk --lib` added to `just test-unit`; `crates/buzz-sdk` added to the retired-tag scan. |
 | C-2   | merged | [#22](https://github.com/hypha-dao/buzz-hypha/pull/22) | `cbb3ce363` | `buzz org` in `buzz-cli`: every verb → one `build_io_*` or one REQ; `org bootstrap` is `build_io_shapers_propose` self-add (`bootstrap_args_build_owner_self_add`); `50003`/`50019` `e` is read with `uuid_tag`; `progress note` refuses `not implemented`. Work / drafts / health have the CLI + unit test; relay execution is R-5/R-7 (runbook says so). |
-| C-3   |        |    |           | Grows with every R. |
+| C-3   | open | | | Protocol §9 worked example (`protocol_section_9_direction_to_done_through_c1_builders`) through C-1 `build_io_*` (direction → draft → project → offer → ticket → done). Merged-R Proves already in this file: R-3…R-5b, R-7 (three), R-8 backfill+move, R-12 (two). Scheduler / review / redraw (§9.10–12) wait on R-6; profile-backed DRI receipts on R-11; R-9a / R-10 / R-13 Proves land here as those slices merge. Suite is still local-only (no CI lane — follow-up above). |
 
 ### Waves 2–4
 
@@ -449,6 +449,11 @@ absorb an item into an unrelated slice.
   actually runs the same cases via `e2e_nostr_interop` (unfiltered) and
   the Postgres ingest lane. Adding `--test e2e_intelligent_org` remains
   the C-3 follow-up above.
+- **C-3 Protocol §9 is steps 1–9 only.** The worked example's scheduler
+  half (`in_review`, close-on-due, follow-up root) and the objectives
+  redraw wait on R-6; the DRI-draft profile receipts in step 6 wait on
+  R-11. R-9a / R-10 / R-13 Proves are absent until those slices merge —
+  prefer covering already-merged R first, then extend this file.
 - **The 0032 roster fence had to learn the V5 exception.** A DM `39002`
   that omits `39103.agent` is rejected by `guard_channel_roster_snapshot`
   unless the canonical set also drops that key. Migration `0046` (and
