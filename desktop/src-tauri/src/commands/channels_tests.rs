@@ -429,9 +429,10 @@ fn hash_is_stable_for_same_input() {
 #[test]
 fn starter_match_requires_open_unarchived_stream_by_normalized_name() {
     let spec = &STARTER_CHANNELS[0];
+    assert_eq!(spec.slug, "welcome-everyone");
     let mut channel = ChannelInfo {
         id: "chan-1".to_string(),
-        name: " General ".to_string(),
+        name: " Welcome-Everyone ".to_string(),
         channel_type: "stream".to_string(),
         visibility: "open".to_string(),
         description: "".to_string(),
