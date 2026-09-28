@@ -7,6 +7,10 @@
  * existing buzz-acp harness: it is the founder's own agent (not `39103.agent`,
  * never a sample persona, and not listed as the org agent). When the org
  * agent can listen, this guide folds into that DM (progress follow-up).
+ *
+ * Do **not** pass a synthetic `teamId` — `create_managed_agent` requires the
+ * team to already exist in the store (`team {id} not found`). Recognition uses
+ * a durable env marker instead.
  */
 
 import { getDefaultPersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
@@ -23,10 +27,12 @@ import type {
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 export const PERSONAL_ASSISTANT_NAME = "Personal Assistant";
-/** Stable team marker so we can recognise the PA without a persona id. */
-export const PERSONAL_ASSISTANT_TEAM_ID = "hypha:personal-assistant";
+/** Durable marker on the managed-agent record (not a teams-store team id). */
+export const PERSONAL_ASSISTANT_ENV_MARKER = "BUZZ_HYPHA_PERSONAL_ASSISTANT";
+export const PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX =
+  "You are the Personal Assistant for a new Buzz community that is becoming an intelligent organization.";
 
-export const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `You are the Personal Assistant for a new Buzz community that is becoming an intelligent organization.
+export const PERSONAL_ASSISTANT_SYSTEM_PROMPT = `${PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX}
 
 Your job in this chat:
 1. Congratulate the founder on starting the community.
@@ -50,11 +56,15 @@ function isAgentScopedToRelay(agent: ManagedAgent, relayUrl?: string | null) {
 }
 
 export function isPersonalAssistantAgent(
-  agent: Pick<ManagedAgent, "name" | "teamId">,
+  agent: Pick<ManagedAgent, "name" | "envVars" | "systemPrompt">,
 ): boolean {
-  if (agent.teamId === PERSONAL_ASSISTANT_TEAM_ID) return true;
+  if (agent.envVars?.[PERSONAL_ASSISTANT_ENV_MARKER] === "1") return true;
+  // Name + prompt fingerprint for agents created before the env marker, or
+  // records that stripped unknown env keys.
   return (
-    agent.name.trim().toLowerCase() === PERSONAL_ASSISTANT_NAME.toLowerCase()
+    agent.name.trim().toLowerCase() === PERSONAL_ASSISTANT_NAME.toLowerCase() &&
+    (agent.systemPrompt?.includes(PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX) ??
+      false)
   );
 }
 
@@ -114,13 +124,14 @@ async function buildPersonalAssistantCreateInput(
 ): Promise<CreateManagedAgentInput> {
   return {
     name: PERSONAL_ASSISTANT_NAME,
-    teamId: PERSONAL_ASSISTANT_TEAM_ID,
+    // No teamId — create_managed_agent refuses unknown team ids.
     relayUrl: relayUrl ?? undefined,
     acpCommand: "buzz-acp",
     agentCommand: runtime.command,
     agentArgs: [],
     mcpCommand: runtime.mcpCommand ?? "",
     systemPrompt: PERSONAL_ASSISTANT_SYSTEM_PROMPT,
+    envVars: { [PERSONAL_ASSISTANT_ENV_MARKER]: "1" },
     spawnAfterCreate: false,
     startOnAppLaunch: true,
     respondTo: "owner-only",
@@ -129,8 +140,8 @@ async function buildPersonalAssistantCreateInput(
 
 /**
  * Ensure a Personal Assistant managed agent exists for this community/relay,
- * start it when possible, and return it. Throws when no ACP runtime is
- * available — callers should surface that as a configure-AI hint.
+ * start it when possible, and return it. Throws when create/start cannot
+ * proceed — callers must surface the reason (no silent Welcome fallback).
  */
 export async function ensurePersonalAssistant(
   relayUrl?: string | null,
@@ -146,8 +157,9 @@ export async function ensurePersonalAssistant(
           expectedRelayUrl: relayUrl ?? undefined,
         });
       } catch (error) {
+        // Agent exists — DM can still open; chat needs a later Start.
         console.warn(
-          "Personal Assistant start failed; reusing idle agent.",
+          "Personal Assistant start failed; reusing idle agent for DM.",
           error,
         );
         return existing;
@@ -169,7 +181,7 @@ export async function ensurePersonalAssistant(
   );
   if (!runtime) {
     throw new Error(
-      "No agent runtime is available. Finish AI setup in onboarding or Settings → Agents, then retry.",
+      "Personal Assistant needs an AI runtime. Finish AI setup in Settings → Agents (or onboarding), then retry.",
     );
   }
 

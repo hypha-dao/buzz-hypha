@@ -275,15 +275,15 @@ export function CommunityOnboardingFlow({
       });
       if (!result.ok) throw new Error(result.reason);
       if (result.focusChannelId) {
-        // Direct entry: point the router at the Welcome channel *before* the
-        // app mounts, so it never lands on Home first. Consume the pending
-        // entry — it exists for the Home-route fallback, and leaving it would
-        // yank a later Home visit back to Welcome.
+        // Direct entry: point the router at the Personal Assistant DM (or
+        // #welcome-everyone if PA failed) *before* the app mounts, so it never
+        // lands on Home first. Consume the pending entry — it exists for the
+        // Home-route fallback, and leaving it would yank a later Home visit.
         takePendingWelcomeChannelForDirectEntry();
         window.location.hash = `/channels/${result.focusChannelId}`;
         markCommunityOnboardingComplete(identity.pubkey, relayUrl);
         // Keep this screen mounted as a curtain over the loading app; the
-        // "entering" stage fades it out once Welcome reports ready.
+        // "entering" stage fades it out once the focus channel reports ready.
         update({ stage: "entering", error: undefined });
         return;
       }

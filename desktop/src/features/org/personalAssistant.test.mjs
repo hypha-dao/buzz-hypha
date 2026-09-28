@@ -4,8 +4,9 @@ import test from "node:test";
 import {
   isPersonalAssistantAgent,
   isPersonalAssistantDm,
+  PERSONAL_ASSISTANT_ENV_MARKER,
   PERSONAL_ASSISTANT_NAME,
-  PERSONAL_ASSISTANT_TEAM_ID,
+  PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX,
   pickPersonalAssistantForRelay,
   pinPersonalAssistantDmFirst,
 } from "./personalAssistant.ts";
@@ -18,7 +19,8 @@ const OTHER =
 function agent(overrides = {}) {
   return {
     name: PERSONAL_ASSISTANT_NAME,
-    teamId: PERSONAL_ASSISTANT_TEAM_ID,
+    envVars: { [PERSONAL_ASSISTANT_ENV_MARKER]: "1" },
+    systemPrompt: PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX,
     pubkey: PA,
     status: "running",
     relayUrl: "ws://localhost:3000",
@@ -26,16 +28,22 @@ function agent(overrides = {}) {
   };
 }
 
-test("isPersonalAssistantAgent matches team id or name", () => {
+test("isPersonalAssistantAgent matches env marker", () => {
   assert.equal(isPersonalAssistantAgent(agent()), true);
   assert.equal(
     isPersonalAssistantAgent(
-      agent({ teamId: null, name: "Personal Assistant" }),
+      agent({
+        envVars: {},
+        name: PERSONAL_ASSISTANT_NAME,
+        systemPrompt: `${PERSONAL_ASSISTANT_SYSTEM_PROMPT_PREFIX} more`,
+      }),
     ),
     true,
   );
   assert.equal(
-    isPersonalAssistantAgent(agent({ teamId: "other", name: "Fizz" })),
+    isPersonalAssistantAgent(
+      agent({ envVars: {}, name: "Fizz", systemPrompt: "You are Fizz." }),
+    ),
     false,
   );
 });
