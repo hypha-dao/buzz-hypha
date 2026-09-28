@@ -7412,10 +7412,10 @@ async function handleEnsureStarterChannels(
     touchMockChannel(channel);
   };
 
-  for (const channelName of [
-    STARTER_GENERAL_CHANNEL_NAME,
-    STARTER_WELCOME_CHANNEL_NAME,
-  ]) {
+  // Production starters are `#welcome-everyone` only. The mock still seeds a
+  // `general` fixture channel for unrelated e2e specs, but ensure does not
+  // require membership there.
+  for (const channelName of [STARTER_WELCOME_CHANNEL_NAME]) {
     const channel = mockChannels.find(
       (candidate) =>
         candidate.name === channelName &&

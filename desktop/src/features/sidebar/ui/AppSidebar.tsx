@@ -14,7 +14,9 @@ import { useActiveWorkingChannelsById } from "@/features/sidebar/lib/useActiveWo
 import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
 import { sortDmChannelsForSidebar } from "@/features/sidebar/lib/dmSidebarSort";
 import { pinOrgAgentDmFirst } from "@/features/org/orgAgent";
+import { pinPersonalAssistantDmFirst } from "@/features/org/personalAssistant";
 import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
+import { usePersonalAssistantPubkey } from "@/features/org/usePersonalAssistant";
 import {
   sectionSortGroupKey,
   sortChannelsForSidebar,
@@ -401,17 +403,22 @@ export function AppSidebar({
       profileDisplayName: profile?.displayName,
     });
   const orgAgentPubkey = useOrgAgentPubkey();
-  // The org agent's DM leads the list in every sort mode (AGENTS.md § Hypha
-  // fork); the user's alpha/recent preference orders the rest.
+  const personalAssistantPubkey = usePersonalAssistantPubkey();
+  // Personal Assistant (local buzz-acp guide) leads the DM list; the org
+  // agent's DM (Design § Personal Assistant, once HEAR lands) pins next.
   const sortedDirectMessages = React.useMemo(
     () =>
-      pinOrgAgentDmFirst(
-        sortDmChannelsForSidebar(
-          directMessages,
-          dmChannelLabels,
-          sortModeFor("dms"),
+      pinPersonalAssistantDmFirst(
+        pinOrgAgentDmFirst(
+          sortDmChannelsForSidebar(
+            directMessages,
+            dmChannelLabels,
+            sortModeFor("dms"),
+          ),
+          orgAgentPubkey,
+          currentPubkey ?? null,
         ),
-        orgAgentPubkey,
+        personalAssistantPubkey,
         currentPubkey ?? null,
       ),
     [
@@ -419,6 +426,7 @@ export function AppSidebar({
       directMessages,
       dmChannelLabels,
       orgAgentPubkey,
+      personalAssistantPubkey,
       sortModeFor,
     ],
   );

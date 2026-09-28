@@ -9,29 +9,26 @@ import {
 import { channelsQueryKey } from "@/features/channels/hooks";
 import {
   ensureStarterChannels,
-  ensureWelcomeChannel,
-  hasEnsuredWelcomeChannel,
   markWelcomeChannelEnsured,
   notifyWelcomeChannelReady,
   rememberPendingWelcomeChannel,
 } from "@/features/onboarding/welcome";
 import { forceFreshOnboarding } from "@/features/onboarding/devFreshOnboarding";
-import { ensureWelcomeCanvas } from "@/features/onboarding/welcomeCanvas";
 import {
-  ensureWelcomeTeam,
-  WelcomeTeamUnavailableError,
-} from "@/features/onboarding/welcomeGuide";
+  ensurePersonalAssistant,
+  pickPersonalAssistantForRelay,
+} from "@/features/org/personalAssistant";
+import { writeOrgOnboardingStage } from "@/features/org/orgOnboarding";
+import { personalAssistantQueryKey } from "@/features/org/usePersonalAssistant";
 import { useProfileQuery } from "@/features/profile/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel } from "@/shared/api/types";
 import {
-  createChannel,
-  deleteChannel,
   ensureStarterChannels as ensureStarterChannelsCommand,
-  getChannelMembers,
   getChannels,
-  updateChannel,
+  listManagedAgents,
+  openDm,
 } from "@/shared/api/tauri";
 
 // Adapter: resolves the full channel list without the not-modified short-circuit.
@@ -45,41 +42,10 @@ export type ChannelInitResult =
   | { ok: true; focusChannelId?: string }
   | { ok: false; reason: string; focusChannelId?: string };
 
-const welcomeSeedPromises = new Map<string, Promise<void>>();
-
-function seedWelcomeExperience(
-  queryClient: ReturnType<typeof useQueryClient>,
-  channelId: string,
-  pubkey: string | null,
-  communityScope: string | null,
-) {
-  const key = `${communityScope ?? ""}:${channelId}`;
-  const current = welcomeSeedPromises.get(key);
-  if (current) return current;
-
-  const promise = (async () => {
-    try {
-      // No starter personas on this build (the Hypha fork seeds none) means
-      // no team — the canvas still seeds and the channel still counts as
-      // ensured, so the next launch does not retry a team that cannot exist.
-      await ensureWelcomeTeam(channelId, communityScope).catch((error) => {
-        if (error instanceof WelcomeTeamUnavailableError) return null;
-        throw error;
-      });
-      await ensureWelcomeCanvas(channelId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
-      ]);
-      markWelcomeChannelEnsured(pubkey, communityScope);
-    } catch (error) {
-      console.warn("Failed to seed the private Welcome experience.", error);
-    }
-  })().finally(() => welcomeSeedPromises.delete(key));
-  welcomeSeedPromises.set(key, promise);
-  return promise;
-}
-
+/**
+ * Hypha org onboarding surface: public `#welcome-everyone` plus the Personal
+ * Assistant DM. Never creates the private Block-era Welcome channel.
+ */
 export async function initializeStarterChannels(
   queryClient: ReturnType<typeof useQueryClient>,
   {
@@ -92,85 +58,91 @@ export async function initializeStarterChannels(
     communityScope: string | null;
   },
 ): Promise<ChannelInitResult> {
+  let starterChannels: Awaited<
+    ReturnType<typeof ensureStarterChannels>
+  > | null = null;
   try {
-    let starterChannels: Awaited<
-      ReturnType<typeof ensureStarterChannels>
-    > | null = null;
-    try {
-      starterChannels = await ensureStarterChannels({
-        ensureStarterChannels: ensureStarterChannelsCommand,
-        getChannels: getChannelsList,
-      });
-    } catch (error) {
-      // Public starter channels are optional. Owners may have deliberately
-      // deleted their deterministic starter channels; that must not strand a
-      // new member after the required private Welcome channel succeeds.
-      console.warn("Failed to initialize public starter channels.", error);
-    }
-
-    const welcomeChannel = await ensureWelcomeChannel(
-      {
-        createChannel,
-        deleteChannel,
-        getChannelMembers,
-        getChannels: getChannelsList,
-        updateChannel,
-      },
-      {
-        replaceExisting: forceFreshOnboarding,
-      },
-    );
-
-    const starterChannelList = starterChannels?.channels ?? [];
-    queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
-      const ensuredIds = new Set(
-        starterChannelList.map((channel) => channel.id),
-      );
-      ensuredIds.add(welcomeChannel.id);
-      return [
-        ...starterChannelList,
-        ...(starterChannelList.some(
-          (channel) => channel.id === welcomeChannel.id,
-        )
-          ? []
-          : [welcomeChannel]),
-        ...channels.filter((channel) => !ensuredIds.has(channel.id)),
-      ];
+    starterChannels = await ensureStarterChannels({
+      ensureStarterChannels: ensureStarterChannelsCommand,
+      getChannels: getChannelsList,
     });
-    void seedWelcomeExperience(
-      queryClient,
-      welcomeChannel.id,
-      pubkey,
-      communityScope,
-    );
-    await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
-    if (focus) {
-      // Refreshing can briefly replace the optimistic cache with an older relay
-      // snapshot. Reinsert the just-ensured channels before announcing focus so
-      // the route can consume the pending private Welcome channel immediately.
-      queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
-        const byId = new Map(
-          [...channels, ...starterChannelList, welcomeChannel].map(
-            (channel) => [channel.id, channel],
-          ),
-        );
-        return [...byId.values()];
-      });
-      rememberPendingWelcomeChannel(welcomeChannel.id);
-      notifyWelcomeChannelReady(welcomeChannel.id);
-    }
-    const focusChannelId = focus ? welcomeChannel.id : undefined;
-    return { ok: true, focusChannelId };
   } catch (error) {
-    console.warn("Failed to initialize starter channels.", error);
-    return {
-      ok: false,
-      reason:
-        error instanceof Error
-          ? error.message
-          : "Failed to set up starter channels",
-    };
+    // Public starter is optional if the owner deleted it; PA is still required.
+    console.warn("Failed to initialize public starter channels.", error);
   }
+
+  const starterChannelList = starterChannels?.channels ?? [];
+  const publicWelcomeId = starterChannels?.welcomeChannel?.id;
+
+  let personalAssistantDm: Channel | null = null;
+  let paFailure: string | null = null;
+  try {
+    const assistant = await ensurePersonalAssistant(communityScope);
+    personalAssistantDm = await openDm({
+      pubkeys: [assistant.pubkey],
+      expectedRelayUrl: communityScope ?? undefined,
+      expectedSignerPubkey: pubkey ?? undefined,
+    });
+    writeOrgOnboardingStage(pubkey, communityScope, "welcome");
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
+      queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
+      queryClient.invalidateQueries({ queryKey: personalAssistantQueryKey }),
+    ]);
+    markWelcomeChannelEnsured(pubkey, communityScope);
+  } catch (error) {
+    paFailure =
+      error instanceof Error
+        ? error.message
+        : "Could not create the Personal Assistant";
+    console.error("Personal Assistant setup failed.", error);
+  }
+
+  const focusChannel =
+    personalAssistantDm ??
+    (publicWelcomeId
+      ? (starterChannelList.find((channel) => channel.id === publicWelcomeId) ??
+        null)
+      : null);
+
+  queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
+    const ensuredIds = new Set(starterChannelList.map((channel) => channel.id));
+    if (personalAssistantDm) ensuredIds.add(personalAssistantDm.id);
+    return [
+      ...starterChannelList,
+      ...(personalAssistantDm &&
+      !starterChannelList.some(
+        (channel) => channel.id === personalAssistantDm.id,
+      )
+        ? [personalAssistantDm]
+        : []),
+      ...channels.filter((channel) => !ensuredIds.has(channel.id)),
+    ];
+  });
+  await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+
+  let focusChannelId: string | undefined;
+  if (focus && focusChannel) {
+    queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
+      const byId = new Map(
+        [...channels, ...starterChannelList, focusChannel].map((channel) => [
+          channel.id,
+          channel,
+        ]),
+      );
+      return [...byId.values()];
+    });
+    focusChannelId = focusChannel.id;
+    // Reuse the pending-channel seam so Home does not steal focus before the
+    // PA (or public welcome-everyone) route mounts.
+    rememberPendingWelcomeChannel(focusChannel.id);
+    notifyWelcomeChannelReady(focusChannel.id);
+  }
+
+  if (paFailure) {
+    return { ok: false, reason: paFailure, focusChannelId };
+  }
+  return { ok: true, focusChannelId };
 }
 
 async function refreshChannelsCache(
@@ -580,28 +552,9 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
     [currentPubkey, queryClient, starterChannelsCommunityScope],
   );
 
-  React.useEffect(() => {
-    if (
-      onboardingGate.stage !== "ready" ||
-      !currentPubkey ||
-      !starterChannelsCommunityScope ||
-      !readOnboardingCompletion(currentPubkey) ||
-      hasEnsuredWelcomeChannel(currentPubkey, starterChannelsCommunityScope)
-    ) {
-      return;
-    }
-
-    void requestStarterChannels(false);
-  }, [
-    currentPubkey,
-    onboardingGate.stage,
-    requestStarterChannels,
-    starterChannelsCommunityScope,
-  ]);
-
   const showStarterRetryToast = React.useCallback(
     (reason: string) => {
-      toast.error("Couldn't set up starter channels", {
+      toast.error("Couldn't open Personal Assistant", {
         id: STARTER_CHANNEL_SETUP_TOAST_ID,
         action: {
           label: "Retry",
@@ -618,6 +571,11 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
                 return;
               }
               toast.dismiss(STARTER_CHANNEL_SETUP_TOAST_ID);
+              if (result.focusChannelId) {
+                window.location.hash = `/channels/${encodeURIComponent(
+                  result.focusChannelId,
+                )}`;
+              }
             });
           },
         },
@@ -626,6 +584,48 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
     },
     [requestStarterChannels],
   );
+
+  // Once per community+identity session: ensure PA + #welcome-everyone even if
+  // an earlier build marked "welcome ensured" after a failed PA attempt (that
+  // used to create the private Welcome channel and then never retried). Focus
+  // the PA DM only when this session still needs to open it.
+  const orgOnboardingInitKeyRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (
+      onboardingGate.stage !== "ready" ||
+      !currentPubkey ||
+      !starterChannelsCommunityScope ||
+      !readOnboardingCompletion(currentPubkey)
+    ) {
+      return;
+    }
+    const initKey = `${starterChannelsCommunityScope}:${currentPubkey}`;
+    if (orgOnboardingInitKeyRef.current === initKey) return;
+    orgOnboardingInitKeyRef.current = initKey;
+    void (async () => {
+      const hadPa = !!pickPersonalAssistantForRelay(
+        await listManagedAgents(),
+        starterChannelsCommunityScope,
+      );
+      // Focus only when PA still needs to be created/opened for this community.
+      const result = await requestStarterChannels(!hadPa);
+      if (!result.ok) {
+        showStarterRetryToast(result.reason);
+        return;
+      }
+      if (!hadPa && result.focusChannelId) {
+        window.location.hash = `/channels/${encodeURIComponent(
+          result.focusChannelId,
+        )}`;
+      }
+    })();
+  }, [
+    currentPubkey,
+    onboardingGate.stage,
+    requestStarterChannels,
+    showStarterRetryToast,
+    starterChannelsCommunityScope,
+  ]);
 
   const completeAndShowWelcome = React.useCallback(() => {
     setIsCompletingStarterSetup(true);

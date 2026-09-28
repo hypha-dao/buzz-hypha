@@ -35,7 +35,8 @@
       "id": "org",
       "name": "Org",
       "description": "Overview, Work, and My Work — the intelligent organization doors",
-      "platforms": ["desktop"]
+      "platforms": ["desktop"],
+      "defaultEnabled": true
     }
   ]
 }

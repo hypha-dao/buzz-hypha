@@ -1,5 +1,5 @@
 import type { UserProfileSummary } from "@/shared/api/types";
-import { normalizePubkey } from "@/shared/lib/pubkey";
+import { normalizePubkey, truncatePubkey } from "@/shared/lib/pubkey";
 
 export function personLabel(
   pubkey: string,
@@ -7,7 +7,7 @@ export function personLabel(
 ): string {
   const key = normalizePubkey(pubkey);
   const profile = profiles[key];
-  return profile?.displayName || profile?.name || pubkey.slice(0, 8);
+  return profile?.displayName || profile?.name || truncatePubkey(pubkey);
 }
 
 export function OrgPersonName({

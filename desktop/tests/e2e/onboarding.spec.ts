@@ -377,12 +377,24 @@ async function expectPrivateWelcomeLanding(page: Page) {
 }
 
 async function expectWelcomeView(page: Page) {
-  await expectPrivateWelcomeLanding(page);
-  await expect(page.getByTestId("channel-general")).toBeVisible();
+  await expect(page).toHaveURL(/#\/channels\/[^/?#]+$/);
   await expect(page.getByTestId("channel-welcome-everyone")).toBeVisible();
   await expect(page.getByTestId("channel-ephemeral-Welcome")).toHaveCount(0);
   await expect(page.getByTestId("chat-ephemeral-badge")).toHaveCount(0);
   await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
+
+  // Preferred Hypha path: Personal Assistant DM + org onboarding guide.
+  const paGuide = page.getByTestId("org-onboarding-guide");
+  if ((await paGuide.count()) > 0) {
+    await expect(paGuide).toBeVisible();
+    await expect(page.getByTestId("org-onboarding-alone")).toBeVisible();
+    await expect(page.getByTestId("org-onboarding-others")).toBeVisible();
+    await expect(page.getByTestId("message-composer")).toBeVisible();
+    return;
+  }
+
+  // Legacy private Welcome fallback when no ACP runtime can mint the PA.
+  await expectPrivateWelcomeLanding(page);
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
     "private welcome channel",
@@ -452,6 +464,10 @@ async function expectWelcomeView(page: Page) {
 async function expectWelcomeComposerBannerCompletesAfterPersonaMention(
   page: Page,
 ) {
+  if ((await page.getByTestId("org-onboarding-guide").count()) > 0) {
+    // Org PA path has no Welcome Team mention banner.
+    return;
+  }
   const banner = page.getByTestId("welcome-composer-guide-banner");
   const channelIntro = page.getByTestId("message-channel-intro");
   const composer = page.getByTestId("message-composer");
@@ -598,45 +614,43 @@ async function expectStarterChannels(page: Page) {
   await expect
     .poll(async () => {
       const channels = await getMockChannels(page);
-      return ["general", "welcome-everyone"].map((name) => {
-        const channel = channels.find(
-          (candidate) =>
-            candidate.name === name && candidate.visibility === "open",
-        );
-        if (!channel) {
-          return null;
-        }
-        return {
-          channelType: channel.channel_type,
-          isMember: channel.is_member,
-          memberCountAtLeastOne: channel.member_count >= 1,
-          ttlSeconds: channel.ttl_seconds,
-          visibility: channel.visibility,
-        };
-      });
+      const channel = channels.find(
+        (candidate) =>
+          candidate.name === "welcome-everyone" &&
+          candidate.visibility === "open",
+      );
+      if (!channel) {
+        return null;
+      }
+      return {
+        channelType: channel.channel_type,
+        isMember: channel.is_member,
+        memberCountAtLeastOne: channel.member_count >= 1,
+        ttlSeconds: channel.ttl_seconds,
+        visibility: channel.visibility,
+      };
     })
-    .toEqual([
-      {
-        channelType: "stream",
-        isMember: true,
-        memberCountAtLeastOne: true,
-        ttlSeconds: null,
-        visibility: "open",
-      },
-      {
-        channelType: "stream",
-        isMember: true,
-        memberCountAtLeastOne: true,
-        ttlSeconds: null,
-        visibility: "open",
-      },
-    ]);
+    .toEqual({
+      channelType: "stream",
+      isMember: true,
+      memberCountAtLeastOne: true,
+      ttlSeconds: null,
+      visibility: "open",
+    });
 }
 
 async function expectWelcomeGuideIntro(
   page: Page,
   { expectVisible = true }: { expectVisible?: boolean } = {},
 ) {
+  // Org PA path replaces the Fizz Welcome Team kickoff.
+  if ((await page.getByTestId("org-onboarding-guide").count()) > 0) {
+    if (expectVisible) {
+      await expect(page.getByTestId("org-onboarding-guide")).toBeVisible();
+    }
+    return;
+  }
+
   await expect
     .poll(async () => {
       const channelId = await getWelcomeChannelId(page);
