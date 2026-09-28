@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
+import { FEATURE_OVERRIDES_STORAGE_KEY } from "../helpers/features";
 
 /**
  * Plan slice D-0 — feature gate and skeleton (Design § Surfaces; Phase 0
@@ -12,6 +13,9 @@ import { installMockBridge } from "../helpers/bridge";
  *   - `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render their
  *     empty states;
  *   - a command hook produces the C-1 kind and tags (captured `sign_event`).
+ *
+ * O-2 sets `org.defaultEnabled: true` (team dogfood). Gate-off must seed an
+ * explicit override — an empty overrides object would leave the doors on.
  */
 
 const SHOTS = "test-results/org-skeleton";
@@ -26,6 +30,10 @@ async function openApp(page: Page) {
 
 test.describe("Org doors — feature gate and skeleton (D-0)", () => {
   test("01 — gate off hides the sidebar group", async ({ page }) => {
+    // Explicit off override: org is defaultEnabled on this fork (O-2).
+    await page.addInitScript((key) => {
+      window.localStorage.setItem(key, JSON.stringify({ org: false }));
+    }, FEATURE_OVERRIDES_STORAGE_KEY);
     await installMockBridge(page, undefined, { seedPreviewFeatures: false });
     await openApp(page);
 
