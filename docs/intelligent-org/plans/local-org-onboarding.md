@@ -5,16 +5,20 @@ Personal Assistant → Shaper → bootstrap flow before staging (O-2).
 
 ## What ships
 
-1. New communities seed **only** `#welcome-everyone` (no `#general`).
-2. After create / first-run finish, desktop opens a **Personal Assistant** DM.
+1. New communities seed **only** `#welcome-everyone` (no `#general`, no
+   private Block-era **Welcome** channel).
+2. After create / first-run — and once per session when PA is still missing —
+   desktop creates a **Personal Assistant** managed agent and opens that DM.
+   Failure surfaces a toast with Retry (no silent Welcome fallback).
 3. Guide panel: congratulate → sole Shaper vs others (board-like explanation)
    → **Bootstrap as first Shaper** publishes real `50001` (relay creates
    `#shapers`) → alone continues direction in chat / Overview; others mint
    an invite.
 4. `org` preview feature is **on by default** (`preview-features.json`).
 5. Org agent stays unlisted (Agents door); Agents still seeds no sample
-   personas. The PA is the founder's own buzz-acp managed agent
-   (`teamId: hypha:personal-assistant`), temporary until org-agent HEAR.
+   personas. The PA is the founder's own buzz-acp agent, marked with env
+   `BUZZ_HYPHA_PERSONAL_ASSISTANT=1` (not a teams-store `teamId` — that was
+   rejected by `create_managed_agent` and caused the Welcome fallback).
 
 ## How to try (Vlad's machine)
 
