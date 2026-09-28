@@ -21,6 +21,9 @@ import {
   ensureWelcomeTeam,
   WelcomeTeamUnavailableError,
 } from "@/features/onboarding/welcomeGuide";
+import { ensurePersonalAssistant } from "@/features/org/personalAssistant";
+import { writeOrgOnboardingStage } from "@/features/org/orgOnboarding";
+import { personalAssistantQueryKey } from "@/features/org/usePersonalAssistant";
 import { useProfileQuery } from "@/features/profile/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -31,6 +34,7 @@ import {
   ensureStarterChannels as ensureStarterChannelsCommand,
   getChannelMembers,
   getChannels,
+  openDm,
   updateChannel,
 } from "@/shared/api/tauri";
 
@@ -104,62 +108,88 @@ export async function initializeStarterChannels(
     } catch (error) {
       // Public starter channels are optional. Owners may have deliberately
       // deleted their deterministic starter channels; that must not strand a
-      // new member after the required private Welcome channel succeeds.
+      // new member after the Personal Assistant DM succeeds.
       console.warn("Failed to initialize public starter channels.", error);
     }
 
-    const welcomeChannel = await ensureWelcomeChannel(
-      {
-        createChannel,
-        deleteChannel,
-        getChannelMembers,
-        getChannels: getChannelsList,
-        updateChannel,
-      },
-      {
-        replaceExisting: forceFreshOnboarding,
-      },
-    );
+    // Hypha local org onboarding: open the Personal Assistant DM and take the
+    // founder there. Private Welcome + sample-persona kickoff stay available
+    // as a best-effort fallback when no ACP runtime can mint the PA.
+    let focusChannelId: string | undefined;
+    let personalAssistantDm: Channel | null = null;
+    try {
+      const assistant = await ensurePersonalAssistant(communityScope);
+      personalAssistantDm = await openDm({ pubkeys: [assistant.pubkey] });
+      if (focus) {
+        focusChannelId = personalAssistantDm.id;
+        writeOrgOnboardingStage(pubkey, communityScope, "welcome");
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: personalAssistantQueryKey }),
+      ]);
+      markWelcomeChannelEnsured(pubkey, communityScope);
+    } catch (paError) {
+      console.warn(
+        "Personal Assistant unavailable; falling back to Welcome channel.",
+        paError,
+      );
+      const welcomeChannel = await ensureWelcomeChannel(
+        {
+          createChannel,
+          deleteChannel,
+          getChannelMembers,
+          getChannels: getChannelsList,
+          updateChannel,
+        },
+        {
+          replaceExisting: forceFreshOnboarding,
+        },
+      );
+      void seedWelcomeExperience(
+        queryClient,
+        welcomeChannel.id,
+        pubkey,
+        communityScope,
+      );
+      if (focus) {
+        focusChannelId = welcomeChannel.id;
+        rememberPendingWelcomeChannel(welcomeChannel.id);
+        notifyWelcomeChannelReady(welcomeChannel.id);
+      }
+      personalAssistantDm = welcomeChannel;
+    }
 
     const starterChannelList = starterChannels?.channels ?? [];
+    const ensuredFocusChannel = personalAssistantDm;
     queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
       const ensuredIds = new Set(
         starterChannelList.map((channel) => channel.id),
       );
-      ensuredIds.add(welcomeChannel.id);
+      if (ensuredFocusChannel) ensuredIds.add(ensuredFocusChannel.id);
       return [
         ...starterChannelList,
-        ...(starterChannelList.some(
-          (channel) => channel.id === welcomeChannel.id,
+        ...(ensuredFocusChannel &&
+        !starterChannelList.some(
+          (channel) => channel.id === ensuredFocusChannel.id,
         )
-          ? []
-          : [welcomeChannel]),
+          ? [ensuredFocusChannel]
+          : []),
         ...channels.filter((channel) => !ensuredIds.has(channel.id)),
       ];
     });
-    void seedWelcomeExperience(
-      queryClient,
-      welcomeChannel.id,
-      pubkey,
-      communityScope,
-    );
     await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
-    if (focus) {
-      // Refreshing can briefly replace the optimistic cache with an older relay
-      // snapshot. Reinsert the just-ensured channels before announcing focus so
-      // the route can consume the pending private Welcome channel immediately.
+    if (focus && ensuredFocusChannel) {
       queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
         const byId = new Map(
-          [...channels, ...starterChannelList, welcomeChannel].map(
+          [...channels, ...starterChannelList, ensuredFocusChannel].map(
             (channel) => [channel.id, channel],
           ),
         );
         return [...byId.values()];
       });
-      rememberPendingWelcomeChannel(welcomeChannel.id);
-      notifyWelcomeChannelReady(welcomeChannel.id);
     }
-    const focusChannelId = focus ? welcomeChannel.id : undefined;
     return { ok: true, focusChannelId };
   } catch (error) {
     console.warn("Failed to initialize starter channels.", error);

@@ -50,6 +50,9 @@ import {
   WelcomeComposerGuidanceLayer,
 } from "@/features/channels/ui/WelcomeComposerBanner";
 import { useWelcomeComposerBanner } from "@/features/channels/ui/useWelcomeComposerBanner";
+import { OrgOnboardingGuide } from "@/features/org/ui/OrgOnboardingGuide";
+import { isPersonalAssistantDm } from "@/features/org/personalAssistant";
+import { usePersonalAssistantPubkey } from "@/features/org/usePersonalAssistant";
 import {
   mentionsKnownAgent,
   selectThreadComposerBotTypingPubkeys,
@@ -234,6 +237,14 @@ export const ChannelPane = React.memo(function ChannelPane({
     agentPubkeysPending && hasOtherDmParticipant(activeChannel, currentPubkey);
   const isActiveWelcomeChannel =
     activeChannel !== null && isWelcomeExperience(activeChannel);
+  const personalAssistantPubkey = usePersonalAssistantPubkey();
+  const isActivePersonalAssistantDm =
+    activeChannel !== null &&
+    isPersonalAssistantDm(
+      activeChannel,
+      personalAssistantPubkey,
+      currentPubkey ?? null,
+    );
   useComposerHeightPadding(
     timelineScrollRef,
     composerWrapperRef,
@@ -746,6 +757,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                     >
                       {welcomeKickoffStage}
                     </WelcomeComposerGuidanceLayer>
+                  ) : null}
+                  {isActivePersonalAssistantDm && !timeoutState.active ? (
+                    <OrgOnboardingGuide active />
                   ) : null}
                   {timeoutState.active ? (
                     <ComposerTimeoutBanner

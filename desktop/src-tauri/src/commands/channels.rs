@@ -28,18 +28,16 @@ struct StarterChannelSpec {
     description: &'static str,
 }
 
-const STARTER_CHANNELS: &[StarterChannelSpec] = &[
-    StarterChannelSpec {
-        slug: "general",
-        name: "general",
-        description: "General conversation and community updates.",
-    },
-    StarterChannelSpec {
-        slug: "welcome-everyone",
-        name: "welcome-everyone",
-        description: "Say hi, ask a question, or share what brought you here.",
-    },
-];
+/// Hypha / intelligent-org: a new community starts with one public room
+/// (`#welcome-everyone`). `#general` is intentionally not seeded — members
+/// create rooms as work needs them. Mock e2e fixtures may still include a
+/// `general` channel for unrelated specs; production `ensure_starter_channels`
+/// does not create it.
+const STARTER_CHANNELS: &[StarterChannelSpec] = &[StarterChannelSpec {
+    slug: "welcome-everyone",
+    name: "welcome-everyone",
+    description: "Say hi, ask a question, or share what brought you here.",
+}];
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 

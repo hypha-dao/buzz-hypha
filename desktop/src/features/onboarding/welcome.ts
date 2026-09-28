@@ -41,7 +41,8 @@ type StarterChannelsClient = {
 
 export type StarterChannelsResult = {
   channels: Channel[];
-  generalChannel: Channel;
+  /** Present when a legacy `#general` starter still exists on the relay. */
+  generalChannel: Channel | null;
   welcomeChannel: Channel;
 };
 
@@ -87,18 +88,20 @@ function findStarterChannel(channels: Channel[], name: string) {
 export function findStarterChannels(
   channels: Channel[],
 ): Omit<StarterChannelsResult, "channels"> | null {
-  const generalChannel = findStarterChannel(
-    channels,
-    STARTER_GENERAL_CHANNEL_NAME,
-  );
   const welcomeChannel = findStarterChannel(
     channels,
     STARTER_WELCOME_CHANNEL_NAME,
   );
-
-  if (!generalChannel || !welcomeChannel) {
+  if (!welcomeChannel) {
     return null;
   }
+
+  // `#general` is no longer seeded for new Hypha communities; keep detecting
+  // it when an older relay still has one so callers can label it.
+  const generalChannel = findStarterChannel(
+    channels,
+    STARTER_GENERAL_CHANNEL_NAME,
+  );
 
   return { generalChannel, welcomeChannel };
 }
