@@ -17,10 +17,10 @@ use nostr::{EventBuilder, Keys, Kind};
 
 use crate::{connect_db, parse_pubkey_hex, resolve_admin_tenant_for_host};
 
-/// The `kind:0` `name` Design § Where it runs / Org agent § 15.2 require.
-const ORG_AGENT_NAME: &str = "Org agent";
+/// The `kind:0` `name` the desktop shows as Org. Agent.
+const ORG_AGENT_NAME: &str = "Org. Agent";
 
-const KIND0_CONTENT: &str = r#"{"name":"Org agent"}"#;
+const KIND0_CONTENT: &str = r#"{"name":"Org. Agent"}"#;
 
 #[derive(Subcommand)]
 pub enum HostedAgentCommand {
@@ -46,7 +46,7 @@ pub enum HostedAgentCommand {
         #[arg(long)]
         host: Option<String>,
     },
-    /// Publish `kind:0` `{"name":"Org agent"}` from a secret file. Never prints the secret.
+    /// Publish `kind:0` `{"name":"Org. Agent"}` from a secret file. Never prints the secret.
     PublishProfile {
         #[arg(long)]
         secret_file: PathBuf,
@@ -225,7 +225,7 @@ mod tests {
     fn kind0_name_is_org_agent() {
         assert!(profile_name_is_org_agent(KIND0_CONTENT));
         assert!(profile_name_is_org_agent(
-            r#"{"name":"Org agent","about":"x"}"#
+            r#"{"name":"Org. Agent","about":"x"}"#
         ));
         assert!(!profile_name_is_org_agent(r#"{"name":"Other"}"#));
         assert!(!profile_name_is_org_agent("not json"));

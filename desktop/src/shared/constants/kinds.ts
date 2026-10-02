@@ -117,6 +117,8 @@ export const KIND_IO_REOPEN = 50018;
 export const KIND_IO_SHAPER_ACCEPT = 50019;
 export const KIND_IO_SHAPER_STEP_DOWN = 50020;
 export const KIND_IO_PROFILE_SET = 50021;
+export const KIND_IO_WITHDRAW = 50022;
+export const KIND_IO_WITHDRAW_PROPOSE = 50023;
 // Drafts and reads (agent- or person-signed; never change state).
 export const KIND_IO_DRAFT = 50100;
 export const KIND_IO_HEALTH = 50101;

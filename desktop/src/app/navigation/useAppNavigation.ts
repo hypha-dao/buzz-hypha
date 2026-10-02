@@ -138,6 +138,22 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goOrgProfile = React.useCallback(
+    (pubkey?: string, behavior?: NavigationBehavior) =>
+      commitNavigation(
+        pubkey
+          ? {
+              params: { pubkey },
+              to: "/org/profile/$pubkey",
+            }
+          : {
+              to: "/org/profile",
+            },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
   const goOrgDirection = React.useCallback(
     (slug: string, behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -525,6 +541,7 @@ export function useAppNavigation() {
     goOrg,
     goOrgDirection,
     goOrgMyWork,
+    goOrgProfile,
     goOrgWork,
     goOrgWorkItem,
     goNewWorkflow,

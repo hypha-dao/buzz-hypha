@@ -3,6 +3,7 @@ import * as React from "react";
 import {
   classifyEvent,
   isOrgInboxKind,
+  memberDisplayName,
   OrgEventCard,
   toOrgEvent,
 } from "@/features/org/cards";
@@ -52,8 +53,10 @@ export function OrgInboxDetail({
       // The feed already decided this needs the viewer (R-13 / mock seed).
       isShaper: true,
       nameOf,
+      displayNameOf: (pubkey) =>
+        memberDisplayName(pubkey, currentPubkey, profiles),
     });
-  }, [agent?.pubkey, currentPubkey, event, nameOf]);
+  }, [agent?.pubkey, currentPubkey, event, nameOf, profiles]);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

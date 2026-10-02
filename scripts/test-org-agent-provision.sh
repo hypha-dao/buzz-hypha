@@ -54,6 +54,9 @@ STORE="$(mktemp -d "${TMPDIR:-/tmp}/o1-store.XXXXXX")"
 LOG1="$(mktemp "${TMPDIR:-/tmp}/o1-run1.XXXXXX")"
 LOG2="$(mktemp "${TMPDIR:-/tmp}/o1-run2.XXXXXX")"
 cleanup() {
+  if [[ -f "${STORE}/${COMMUNITY}/run.pid" ]]; then
+    kill "$(cat "${STORE}/${COMMUNITY}/run.pid")" 2>/dev/null || true
+  fi
   rm -rf "${STORE}" "${LOG1}" "${LOG2}"
 }
 trap cleanup EXIT

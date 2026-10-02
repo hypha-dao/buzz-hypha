@@ -79,7 +79,8 @@ test.describe("Org loop — direction confirm through done (D-6)", () => {
 
     const card = page.getByTestId(`org-card-${DIRECTION_DECISION_ID}`);
     await expect(card).toHaveAttribute("data-card-type", "decision");
-    await expect(card.getByTestId("org-card-needed")).toHaveText("1 of 2");
+    await expect(card.getByTestId("org-card-vote")).toHaveCount(2);
+    await expect(card.locator('[data-voted="true"]')).toHaveCount(1);
     await expect(card).toContainText("Confirm objectives");
 
     await waitForAnimations(page);
@@ -137,7 +138,8 @@ test.describe("Org loop — direction confirm through done (D-6)", () => {
 
     const card = page.getByTestId(`org-card-${PROJECT_DECISION_ID}`);
     await expect(card).toHaveAttribute("data-card-type", "decision");
-    await expect(card.getByTestId("org-card-needed")).toHaveText("1 of 2");
+    await expect(card.getByTestId("org-card-vote")).toHaveCount(2);
+    await expect(card.locator('[data-voted="true"]')).toHaveCount(1);
     await expect(card).toContainText("Weekday hall");
 
     await waitForAnimations(page);
@@ -223,7 +225,7 @@ test.describe("Org loop — direction confirm through done (D-6)", () => {
     expect(signed[0]?.tags).toEqual([["i", CHILD_ID]]);
   });
 
-  test("07 — child on Work and done card Mark done emits 50009", async ({
+  test("07 — Work lists the project, and done card Mark done emits 50009", async ({
     page,
   }) => {
     await installMockBridge(page, { org: { events: stageChildAndDone() } });
@@ -233,9 +235,7 @@ test.describe("Org loop — direction confirm through done (D-6)", () => {
     await expect(page.getByTestId(`org-work-row-${ROOT_ID}`)).toContainText(
       "Weekday hall",
     );
-    await expect(page.getByTestId(`org-work-row-${CHILD_ID}`)).toContainText(
-      "Electrics",
-    );
+    await expect(page.getByTestId(`org-work-row-${CHILD_ID}`)).toHaveCount(0);
 
     await waitForAnimations(page);
     await page.getByTestId("org-work").screenshot({

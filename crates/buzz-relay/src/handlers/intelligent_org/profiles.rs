@@ -9,8 +9,9 @@
 //! [`persist_write`] like every other command.
 
 use buzz_core::intelligent_org::{
-    skill_slug, OrgProfile, ProfileSetContent, Skill, PROFILE_ABOUT_MAX_CHARS, PROFILE_MAX_SKILLS,
-    PROFILE_OPEN_LIMIT_RANGE, PROFILE_SKILL_LABEL_MAX_CHARS,
+    normalize_socials, skill_slug, OrgProfile, ProfileSetContent, ProfileSocial, Skill,
+    PROFILE_ABOUT_MAX_CHARS, PROFILE_MAX_SKILLS, PROFILE_OPEN_LIMIT_RANGE,
+    PROFILE_SKILL_LABEL_MAX_CHARS,
 };
 use buzz_db::intelligent_org as store;
 use sqlx::{Postgres, Transaction};
@@ -55,7 +56,9 @@ fn skills_from_labels(labels: &[String]) -> Result<Vec<Skill>, IngestError> {
     Ok(skills)
 }
 
-fn enforce_limits(content: &ProfileSetContent) -> Result<Vec<Skill>, IngestError> {
+fn enforce_limits(
+    content: &ProfileSetContent,
+) -> Result<(Vec<Skill>, Vec<ProfileSocial>), IngestError> {
     if content.about.chars().count() > PROFILE_ABOUT_MAX_CHARS {
         return Err(invalid(&format!(
             "about over {PROFILE_ABOUT_MAX_CHARS} characters"
@@ -66,7 +69,9 @@ fn enforce_limits(content: &ProfileSetContent) -> Result<Vec<Skill>, IngestError
             return Err(invalid("open_limit must be 1–50 or null"));
         }
     }
-    skills_from_labels(&content.skills)
+    let skills = skills_from_labels(&content.skills)?;
+    let socials = normalize_socials(&content.socials).map_err(invalid)?;
+    Ok((skills, socials))
 }
 
 /// §5.4a / §4.8: the subject is the signer. A content `pubkey` or a `p` tag
@@ -108,13 +113,14 @@ pub async fn set(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
     authorize::require_member(cmd.is_member(&cmd.actor_hex).await?)?;
     refuse_foreign_subject(cmd)?;
     let content: ProfileSetContent = parse_content(cmd.event)?;
-    let skills = enforce_limits(&content)?;
+    let (skills, socials) = enforce_limits(&content)?;
     let version = next_version(&mut tx, cmd).await?;
     let profile = OrgProfile {
         pubkey: cmd.actor_hex.clone(),
         version,
         about: content.about,
         skills,
+        socials,
         open_limit: content.open_limit,
         updated_at: cmd.at,
         receipt: cmd.receipt_hex(),

@@ -74,11 +74,11 @@ import {
   KIND_IO_DIRECTION,
   KIND_IO_DRAFT,
   KIND_IO_HEALTH,
-  KIND_IO_PROFILE_SET,
   KIND_IO_PROGRESS,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_SHAPERS_PROPOSE,
+  KIND_IO_WITHDRAW_PROPOSE,
   KIND_IO_WORK_ITEM,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
@@ -3908,7 +3908,7 @@ function isMockOrgWorkKind(kind: number): boolean {
     kind === KIND_IO_AGENT_NOTE ||
     kind === KIND_IO_HEALTH ||
     kind === KIND_IO_PROGRESS ||
-    (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET)
+    (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_WITHDRAW_PROPOSE)
   );
 }
 
@@ -11475,7 +11475,7 @@ function sendToMockSocket(args: {
 
     if (
       event.kind >= KIND_IO_SHAPERS_PROPOSE &&
-      event.kind <= KIND_IO_PROFILE_SET
+      event.kind <= KIND_IO_WITHDRAW_PROPOSE
     ) {
       recordMockOrgEvent(event);
       emitMockGlobalEvent(event);

@@ -8,9 +8,13 @@ import {
   DECISION_ID,
   DONE_ID,
   DRAFTED_ID,
+  HELD_EVENT_ID,
   ITEM_DONE,
+  ITEM_OPEN,
   myWorkSeedEvents,
   OFFER_EVENT_ID,
+  OFFERED_EVENT_ID,
+  OPEN_PROJECT_ID,
   REVIEW_ID,
   SUGGEST_ID,
 } from "../helpers/orgMyWork";
@@ -59,6 +63,8 @@ test.describe("Org My Work — the card set (D-2)", () => {
     await expect(needs).toBeVisible();
     await expect(held).toBeVisible();
     await expect(offered).toBeVisible();
+    await expect(page.getByTestId("org-my-work-column-finished")).toBeVisible();
+    await expect(page.getByTestId("org-my-work-held-projects")).toBeVisible();
 
     await expect(page.getByTestId(`org-card-${ASKING_ID}`)).toHaveAttribute(
       "data-card-type",
@@ -82,11 +88,25 @@ test.describe("Org My Work — the card set (D-2)", () => {
 
     await expect(held.getByText("Weekday hall")).toBeVisible();
     await expect(offered.getByText("Flyer run")).toBeVisible();
+    const openProject = page.getByTestId(`org-card-${OPEN_PROJECT_ID}`);
+    await expect(openProject).toBeVisible();
+    await expect(needs.getByText("Autumn harvest")).toBeVisible();
+    await expect(openProject.getByTestId("org-card-kicker")).toHaveText(
+      "Needs a DRI",
+    );
+    await expect(openProject.getByTestId("org-card-accept")).toHaveCount(0);
 
     await waitForAnimations(page);
     await page.getByTestId("org-my-work-board").screenshot({
       path: `${SHOTS}/01-three-columns.png`,
     });
+
+    await openProject.getByTestId("org-card-open").click();
+    await expect(page.getByTestId("org-item-title")).toHaveText(
+      "Autumn harvest",
+    );
+    await expect(page.getByTestId("org-state-chip")).toHaveText("needs a DRI");
+    await expect(page).toHaveURL(new RegExp(`/org/work/${ITEM_OPEN}$`));
   });
 
   test("02 — kickers, receipts, and n of needed", async ({ page }) => {
@@ -119,10 +139,13 @@ test.describe("Org My Work — the card set (D-2)", () => {
     );
 
     await expect(
+      page.getByTestId(`org-card-${DECISION_ID}`).getByTestId("org-card-vote"),
+    ).toHaveCount(2);
+    await expect(
       page
         .getByTestId(`org-card-${DECISION_ID}`)
-        .getByTestId("org-card-needed"),
-    ).toHaveText("1 of 2");
+        .locator('[data-voted="true"]'),
+    ).toHaveCount(1);
   });
 
   test("03 — Agree carries the draft e tag on sign_event", async ({ page }) => {
@@ -271,5 +294,32 @@ test.describe("Org My Work — the card set (D-2)", () => {
     await expect
       .poll(async () => (await signedOfKind(page, 50011)).length)
       .toBeGreaterThan(0);
+  });
+
+  test("07 — work cards open the item, including from the keyboard", async ({
+    page,
+  }) => {
+    await openMyWork(page);
+
+    await expect(
+      page.getByTestId(`org-card-${ASKING_ID}`).getByTestId("org-card-open"),
+    ).toHaveCount(0);
+    await expect(
+      page
+        .getByTestId(`org-card-${OFFER_EVENT_ID}`)
+        .getByTestId("org-card-open"),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByTestId(`org-card-${OFFERED_EVENT_ID}`)
+        .getByTestId("org-card-open"),
+    ).toBeVisible();
+
+    const held = page
+      .getByTestId(`org-card-${HELD_EVENT_ID}`)
+      .getByTestId("org-card-open");
+    await held.focus();
+    await held.press("Enter");
+    await expect(page.getByTestId("org-item-title")).toHaveText("Weekday hall");
   });
 });

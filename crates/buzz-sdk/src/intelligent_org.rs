@@ -42,6 +42,7 @@ use buzz_core::kind::{
     KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROGRESS, KIND_IO_PROJECT_PROPOSE,
     KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
 };
 use nostr::{EventBuilder, EventId, Kind, Tag};
 use serde::Serialize;
@@ -491,6 +492,37 @@ pub fn build_io_dri_propose(
         tags.push(opener_vote_tag()?);
     }
     Ok(io_event(KIND_IO_DRI_PROPOSE, tags, content_json(content)?))
+}
+
+/// `io_withdraw` (`50022`): `["i", <uuid>]`, `{ why?: "" }`.
+///
+/// A sole Shaper removes a project. A ticket's creator, or the member who
+/// offered it, removes that ticket.
+pub fn build_io_withdraw(item: Uuid, content: &WhyContent) -> Result<EventBuilder, SdkError> {
+    Ok(io_event(
+        KIND_IO_WITHDRAW,
+        vec![item_tag(item)?],
+        content_json(content)?,
+    ))
+}
+
+/// `io_withdraw_propose` (`50023`): `["i", <uuid>]`, `["vote", "agree"]`?,
+/// `{ why?: "" }`. Opens a `withdraw` proposal when more than one Shaper
+/// is seated. The project decision rule applies.
+pub fn build_io_withdraw_propose(
+    item: Uuid,
+    content: &WhyContent,
+    vote_agree: bool,
+) -> Result<EventBuilder, SdkError> {
+    let mut tags = vec![item_tag(item)?];
+    if vote_agree {
+        tags.push(opener_vote_tag()?);
+    }
+    Ok(io_event(
+        KIND_IO_WITHDRAW_PROPOSE,
+        tags,
+        content_json(content)?,
+    ))
 }
 
 /// `io_join_propose` (`50016`, reserved — the relay refuses it
@@ -1135,6 +1167,14 @@ mod tests {
                 build_io_dri_propose(item, PK, &WhyContent::default(), None, false).unwrap(),
             ),
             (
+                "withdraw",
+                build_io_withdraw(item, &WhyContent::default()).unwrap(),
+            ),
+            (
+                "withdraw_propose",
+                build_io_withdraw_propose(item, &WhyContent::default(), false).unwrap(),
+            ),
+            (
                 "join_propose",
                 build_io_join_propose(PK, &JoinProposeContent::default()).unwrap(),
             ),
@@ -1190,11 +1230,11 @@ mod tests {
             assert!(kinds.insert(kind), "{name} duplicates kind {kind}");
         }
         // Every command kind and every read kind has exactly one builder.
-        let expected: BTreeSet<u32> = (KIND_IO_SHAPERS_PROPOSE..=KIND_IO_PROFILE_SET)
+        let expected: BTreeSet<u32> = (KIND_IO_SHAPERS_PROPOSE..=KIND_IO_WITHDRAW_PROPOSE)
             .chain(KIND_IO_DRAFT..=KIND_IO_AGENT_NOTE)
             .collect();
         assert_eq!(kinds, expected);
-        assert_eq!(kinds.len(), 21 + 4);
+        assert_eq!(kinds.len(), 23 + 4);
     }
 
     #[test]
@@ -1635,6 +1675,7 @@ mod tests {
         let profile = ProfileSetContent {
             about: "I run the Tuesday kitchen.".into(),
             skills: vec!["hosting events".into(), "spanish".into()],
+            socials: vec![],
             open_limit: Some(3),
         };
         let set = sign(build_io_profile_set(&profile, Some(ev(EV))).unwrap());
@@ -1800,6 +1841,7 @@ mod tests {
             pubkey: PK.into(),
             about: "a".into(),
             skills: vec![],
+            socials: vec![],
             open_limit: None,
             heard: vec![],
         });

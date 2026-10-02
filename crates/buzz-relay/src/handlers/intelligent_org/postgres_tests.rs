@@ -2460,6 +2460,34 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn a_suggested_dri_who_agreed_holds_the_project() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let (_, held) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Make hypha great","brief":"Hold it","due_at":1800000000,"suggested_dri":"{owner_hex}"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(held.state, WorkItemState::Accepted);
+    assert_eq!(held.dri.as_deref(), Some(owner_hex.as_str()));
+    assert!(held.offered_to.is_none());
+    assert!(held.offered_by.is_none());
+    let room = Uuid::parse_str(held.home.as_ref().unwrap().channel.as_str()).unwrap();
+    let roster = h.roster(room).await;
+    assert!(
+        roster
+            .iter()
+            .any(|(pubkey, role)| pubkey == &owner_hex && role == "admin"),
+        "the agreeing holder is the home admin: {roster:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn project_home_roster_follows_accept_release_and_dri() {
     let h = harness().await;
     h.bootstrap().await;
@@ -2962,6 +2990,20 @@ async fn release_returns_children_and_set_due_follows_authority() {
     h.accept_item(&other, &held_child)
         .await
         .expect("other holds the rota");
+    h.set_due_item(&other, &held_child, 1_800_000_400, "{}")
+        .await
+        .expect("the ticket holder moves the due date");
+    assert_eq!(
+        h.work_item(&held_child).await.expect("holder due").due_at,
+        1_800_000_400
+    );
+    h.set_due_item(&member, &held_child, 1_800_000_450, "{}")
+        .await
+        .expect("the ticket creator moves the due date");
+    assert_eq!(
+        h.work_item(&held_child).await.expect("creator due").due_at,
+        1_800_000_450
+    );
 
     let parent = h.work_item(&mid).await.expect("mid before release");
     assert_eq!(parent.children.open, 1);
@@ -3013,7 +3055,7 @@ async fn release_returns_children_and_set_due_follows_authority() {
     );
     assert_eq!(
         rejected(h.set_due_item(&other, &mid, 1_900_000_000, "{}").await),
-        "restricted: not the holder"
+        "restricted: not the holder or the creator"
     );
     let live_before = h.live_work_count().await;
     let ledger_before = h.ledger_verbs().await.len();
@@ -3241,4 +3283,159 @@ async fn bootstrap_backfills_existing_rooms_and_shapers_agent_moves_every_row() 
         assert!(members.contains(&new_hex), "the new key is in every room");
         assert!(!members.contains(&agent_hex), "the old key is in no room");
     }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn revising_an_open_proposal_clears_votes_and_stays_open() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let second = Keys::generate();
+    h.add_shaper(&h.owner, &[], &second).await;
+    let outsider = Keys::generate();
+    h.member(&outsider).await;
+
+    let opened = h
+        .direction(
+            &h.owner,
+            "vision",
+            0,
+            r#"{"body":"a hall the neighborhood uses"}"#,
+            false,
+        )
+        .await
+        .expect("open vision");
+    assert_eq!(opened["status"], "open");
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("first agree")["status"],
+        "open"
+    );
+    assert_eq!(h.proposal(&waiting).await.votes.len(), 1);
+
+    assert_eq!(
+        rejected(
+            h.send(
+                &outsider,
+                KIND_IO_DIRECTION_PROPOSE,
+                vec![
+                    tag(["d", "vision"]),
+                    tag(["base", "0"]),
+                    tag(["e", &waiting, "", "revises"]),
+                ],
+                r#"{"body":"a hall the neighborhood uses, with a garden"}"#,
+            )
+            .await
+        ),
+        "restricted: not a Shaper"
+    );
+
+    let revised = h
+        .send(
+            &second,
+            KIND_IO_DIRECTION_PROPOSE,
+            vec![
+                tag(["d", "vision"]),
+                tag(["base", "0"]),
+                tag(["e", &waiting, "", "revises"]),
+            ],
+            r#"{"body":"a hall the neighborhood uses, with a garden"}"#,
+        )
+        .await
+        .expect("revise vision");
+    let revised: serde_json::Value = serde_json::from_str(&revised).expect("json");
+    assert_eq!(revised["proposal"], waiting);
+    assert_eq!(revised["status"], "open");
+    let proposal = h.proposal(&waiting).await;
+    assert_eq!(proposal.status, ProposalStatus::Open);
+    assert!(
+        proposal.votes.is_empty(),
+        "the earlier agree does not carry"
+    );
+    assert_eq!(h.votes(&waiting).await.len(), 0);
+    assert_eq!(
+        proposal.payload["body"],
+        "a hall the neighborhood uses, with a garden"
+    );
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("agree again")["status"],
+        "open"
+    );
+    assert_eq!(
+        h.vote(&second, &waiting, "agree", "{}")
+            .await
+            .expect("second agree")["status"],
+        "passed"
+    );
+    let passed = h.proposal(&waiting).await;
+    assert_eq!(
+        passed.payload["body"],
+        "a hall the neighborhood uses, with a garden"
+    );
+    assert_eq!(
+        rejected(
+            h.send(
+                &second,
+                KIND_IO_DIRECTION_PROPOSE,
+                vec![
+                    tag(["d", "vision"]),
+                    tag(["base", "1"]),
+                    tag(["e", &waiting, "", "revises"]),
+                ],
+                r#"{"body":"too late"}"#,
+            )
+            .await
+        ),
+        "invalid: proposal is not open"
+    );
+
+    let project = h
+        .project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book the hall","due_at":1800000000}"#,
+            false,
+        )
+        .await
+        .expect("open project");
+    assert_eq!(project["status"], "open");
+    let project_id = project["proposal"].as_str().expect("id").to_owned();
+    h.vote(&h.owner, &project_id, "agree", "{}")
+        .await
+        .expect("project agree");
+    let project_revised = h
+        .send(
+            &second,
+            KIND_IO_PROJECT_PROPOSE,
+            vec![tag(["e", &project_id, "", "revises"])],
+            r#"{"title":"Weekday hall","brief":"Book the hall and the garden","due_at":1800000000}"#,
+        )
+        .await
+        .expect("revise project");
+    let project_revised: serde_json::Value = serde_json::from_str(&project_revised).expect("json");
+    assert_eq!(project_revised["proposal"], project_id);
+    assert_eq!(project_revised["status"], "open");
+    assert!(h.proposal(&project_id).await.votes.is_empty());
+    assert_eq!(
+        h.proposal(&project_id).await.payload["brief"],
+        "Book the hall and the garden"
+    );
+    h.vote(&h.owner, &project_id, "agree", "{}")
+        .await
+        .expect("project agree again");
+    let done = h
+        .vote(&second, &project_id, "agree", "{}")
+        .await
+        .expect("project passes");
+    assert_eq!(done["status"], "passed");
+    assert!(
+        h.proposal(&project_id)
+            .await
+            .executed
+            .is_some_and(|executed| !executed.id.is_empty()),
+        "a passed project proposal names the work item"
+    );
 }

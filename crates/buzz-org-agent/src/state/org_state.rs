@@ -426,7 +426,7 @@ impl OrgState {
         let homes: BTreeSet<String> = self
             .items
             .values()
-            .filter(|i| i.parent.is_none() && i.state != WorkItemState::Done)
+            .filter(|i| i.parent.is_none() && is_live_root(i.state))
             .filter_map(|i| i.home.as_ref().map(|h| h.channel.clone()))
             .collect();
         let agent = self
@@ -474,13 +474,10 @@ impl OrgState {
         let Some(root) = root else {
             return Vec::new();
         };
-        let live = self
-            .items
-            .get(&root)
-            .is_some_and(|i| i.state != WorkItemState::Done)
+        let live = self.items.get(&root).is_some_and(|i| is_live_root(i.state))
             || matches!(
                 decoded,
-                Decoded::WorkItem(i) if i.parent.is_none() && i.state != WorkItemState::Done
+                Decoded::WorkItem(i) if i.parent.is_none() && is_live_root(i.state)
             );
         if live {
             vec![Transition::RootLedgerChanged {
@@ -491,6 +488,10 @@ impl OrgState {
             Vec::new()
         }
     }
+}
+
+fn is_live_root(state: WorkItemState) -> bool {
+    !matches!(state, WorkItemState::Done | WorkItemState::Withdrawn)
 }
 
 fn slug_key(slug: DirectionSlug) -> &'static str {

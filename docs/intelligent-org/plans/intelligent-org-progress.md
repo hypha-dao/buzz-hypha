@@ -76,6 +76,19 @@ Things a slice found that were out of its scope. Each is either fixed
 (strike it and cite the PR) or still open. Add to this list; do not silently
 absorb an item into an unrelated slice.
 
+- **Chat drafts a proposal, then a person publishes it.** The same
+  path in the Org. Agent DM and in `#shapers`, whether one Shaper is
+  seated or many. Saying “create a project about X” (and the same for
+  direction, a DRI, adding or removing a Shaper, changing the decision
+  rules, choosing the org agent, revising an open proposal, or removing
+  a project) puts a draft on the agent’s reply.
+  Opening it edits the fields; talking to the agent updates the draft.
+  Publish does not attach an agree. The proposal shows on My work for
+  every Shaper, and the publisher’s client posts a message in `#shapers`
+  with a link to My work. Tickets, done, and removing a ticket are still
+  signed from the chat, because those are not proposals. A project
+  removal is a proposal even for the only Shaper.
+
 - **`pgschema` silently drops table-level `CHECK` constraints whose text
   contains `IS NOT NULL`.** Found in R-2a (probed in isolation: named or
   unnamed, `CHECK (a IS NULL OR b IS NOT NULL)` vanishes from the

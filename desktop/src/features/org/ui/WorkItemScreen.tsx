@@ -5,16 +5,11 @@ import { KIND_IO_HEALTH, KIND_IO_WORK_ITEM } from "@/shared/constants/kinds";
 
 import { ORG_HISTORY_LIMIT } from "../hooks/filters";
 import { TAG_ITEM } from "../tags";
-import {
-  childrenOf,
-  itemById,
-  latestHealth,
-  trailForItem,
-} from "../work/model";
+import { childrenOf, itemById, latestHealth } from "../work/model";
 import { ORG_EMPTY_NOT_SET_YET, OrgDoorScreen } from "./OrgDoorScreen";
 import { WorkItemView } from "./work/WorkItemView";
 
-/** Item page — brief, holder, dates, breadcrumb, trail, health (D-3). */
+/** Item page — brief, holder, dates, breadcrumb, health (D-3). */
 export function WorkItemScreen({ itemId }: { itemId: string }) {
   const { events, isLoading } = useWorkItemEvents(itemId);
   const item = itemById(events, itemId);
@@ -49,7 +44,6 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
   const healthEvents = useLiveDoorEvents(healthFilters);
   const parent = parentId ? itemById(parentEvents.events, parentId) : null;
   const kids = childrenOf(events, itemId);
-  const trail = trailForItem(events, itemId);
   const health = latestHealth(healthEvents.events, itemId);
 
   if (!isLoading && !item) {
@@ -71,7 +65,6 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
             health={health}
             item={item}
             parent={parent}
-            trail={trail}
           />
         ) : null}
       </div>

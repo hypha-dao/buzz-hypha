@@ -2,34 +2,41 @@ import * as React from "react";
 import { useQueryClient, type QueryStatus } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import {
-  managedAgentsQueryKey,
-  relayAgentsQueryKey,
-} from "@/features/agents/hooks";
 import { channelsQueryKey } from "@/features/channels/hooks";
 import {
   ensureStarterChannels,
+  isWelcomeChannel,
   markWelcomeChannelEnsured,
   notifyWelcomeChannelReady,
+  omitPrivateWelcomeChannels,
   rememberPendingWelcomeChannel,
 } from "@/features/onboarding/welcome";
 import { forceFreshOnboarding } from "@/features/onboarding/devFreshOnboarding";
+import { isPersonalAssistantAgent } from "@/features/org/personalAssistant";
 import {
-  ensurePersonalAssistant,
-  pickPersonalAssistantForRelay,
-} from "@/features/org/personalAssistant";
-import { writeOrgOnboardingStage } from "@/features/org/orgOnboarding";
-import { personalAssistantQueryKey } from "@/features/org/usePersonalAssistant";
+  buildIoShapersPropose,
+  publishOrgCommand,
+} from "@/features/org/commands";
+import {
+  fetchShapersSnapshot,
+  orgAgentQueryKey,
+} from "@/features/org/useOrgAgent";
 import { useProfileQuery } from "@/features/profile/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel } from "@/shared/api/types";
 import {
+  deleteChannel,
   ensureStarterChannels as ensureStarterChannelsCommand,
   getChannels,
+  leaveChannel,
   listManagedAgents,
   openDm,
 } from "@/shared/api/tauri";
+import {
+  setManagedAgentStartOnAppLaunch,
+  stopManagedAgent,
+} from "@/shared/api/tauriManagedAgents";
 
 // Adapter: resolves the full channel list without the not-modified short-circuit.
 // Onboarding paths run once and always need fresh data.
@@ -43,8 +50,9 @@ export type ChannelInitResult =
   | { ok: false; reason: string; focusChannelId?: string };
 
 /**
- * Hypha org onboarding surface: public `#welcome-everyone` plus the Personal
- * Assistant DM. Never creates the private Block-era Welcome channel.
+ * Hypha org onboarding surface: public `#welcome-everyone` plus the member's
+ * DM with the hosted org agent. Never creates the private Block-era Welcome
+ * channel, and never a member-configured Personal Assistant.
  */
 export async function initializeStarterChannels(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -58,6 +66,8 @@ export async function initializeStarterChannels(
     communityScope: string | null;
   },
 ): Promise<ChannelInitResult> {
+  await retirePrivateWelcomeChannels();
+
   let starterChannels: Awaited<
     ReturnType<typeof ensureStarterChannels>
   > | null = null;
@@ -74,32 +84,25 @@ export async function initializeStarterChannels(
   const starterChannelList = starterChannels?.channels ?? [];
   const publicWelcomeId = starterChannels?.welcomeChannel?.id;
 
-  let personalAssistantDm: Channel | null = null;
-  let paFailure: string | null = null;
+  await retirePersonalAssistant();
+
+  let orgAgentDm: Channel | null = null;
+  let orgAgentFailure: string | null = null;
   try {
-    const assistant = await ensurePersonalAssistant(communityScope);
-    personalAssistantDm = await openDm({
-      pubkeys: [assistant.pubkey],
-      expectedRelayUrl: communityScope ?? undefined,
-      expectedSignerPubkey: pubkey ?? undefined,
-    });
-    writeOrgOnboardingStage(pubkey, communityScope, "welcome");
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
-      queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
-      queryClient.invalidateQueries({ queryKey: personalAssistantQueryKey }),
-    ]);
+    orgAgentDm = await openOrgAgentDm(pubkey, communityScope);
+    await queryClient.invalidateQueries({ queryKey: orgAgentQueryKey });
     markWelcomeChannelEnsured(pubkey, communityScope);
   } catch (error) {
-    paFailure =
-      error instanceof Error
-        ? error.message
-        : "Could not create the Personal Assistant";
-    console.error("Personal Assistant setup failed.", error);
+    orgAgentFailure =
+      error instanceof Error ? error.message : "Could not open the org agent";
+    console.error(
+      "Org. Agent setup failed:",
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
   const focusChannel =
-    personalAssistantDm ??
+    orgAgentDm ??
     (publicWelcomeId
       ? (starterChannelList.find((channel) => channel.id === publicWelcomeId) ??
         null)
@@ -107,17 +110,15 @@ export async function initializeStarterChannels(
 
   queryClient.setQueryData<Channel[]>(channelsQueryKey, (channels = []) => {
     const ensuredIds = new Set(starterChannelList.map((channel) => channel.id));
-    if (personalAssistantDm) ensuredIds.add(personalAssistantDm.id);
-    return [
+    if (orgAgentDm) ensuredIds.add(orgAgentDm.id);
+    return omitPrivateWelcomeChannels([
       ...starterChannelList,
-      ...(personalAssistantDm &&
-      !starterChannelList.some(
-        (channel) => channel.id === personalAssistantDm.id,
-      )
-        ? [personalAssistantDm]
+      ...(orgAgentDm &&
+      !starterChannelList.some((channel) => channel.id === orgAgentDm.id)
+        ? [orgAgentDm]
         : []),
       ...channels.filter((channel) => !ensuredIds.has(channel.id)),
-    ];
+    ]);
   });
   await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
 
@@ -130,7 +131,7 @@ export async function initializeStarterChannels(
           channel,
         ]),
       );
-      return [...byId.values()];
+      return omitPrivateWelcomeChannels([...byId.values()]);
     });
     focusChannelId = focusChannel.id;
     // Reuse the pending-channel seam so Home does not steal focus before the
@@ -139,17 +140,116 @@ export async function initializeStarterChannels(
     notifyWelcomeChannelReady(focusChannel.id);
   }
 
-  if (paFailure) {
-    return { ok: false, reason: paFailure, focusChannelId };
+  if (orgAgentFailure) {
+    return { ok: false, reason: orgAgentFailure, focusChannelId };
   }
   return { ok: true, focusChannelId };
+}
+
+async function openOrgAgentDm(
+  pubkey: string | null,
+  communityScope: string | null,
+): Promise<Channel> {
+  let snapshot = await fetchShapersSnapshot();
+  if (!snapshot.bootstrapped && pubkey) {
+    await publishOrgCommand(
+      buildIoShapersPropose({ op: "add", pubkey }, false),
+    );
+    for (
+      let attempt = 0;
+      attempt < 8 && !snapshot.identity.pubkey;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 400);
+      });
+      snapshot = await fetchShapersSnapshot();
+    }
+  }
+  const agentPubkey = snapshot.identity.pubkey;
+  if (!agentPubkey) {
+    throw new Error(
+      snapshot.bootstrapped
+        ? "This community has no hosted org agent. The relay operator has to provision one."
+        : "Bootstrap did not publish the org agent.",
+    );
+  }
+  return openDm({
+    pubkeys: [agentPubkey],
+    expectedRelayUrl: communityScope ?? undefined,
+    expectedSignerPubkey: pubkey ?? undefined,
+  });
+}
+
+/**
+ * The private Block-era Welcome room is not part of this app. Delete it when
+ * we can, and leave it when delete is refused, so the next channel fetch
+ * does not bring it back.
+ */
+async function retirePrivateWelcomeChannels() {
+  let channels: Channel[] = [];
+  try {
+    channels = await getChannelsList();
+  } catch (error) {
+    console.warn("Could not look up the private Welcome channel.", error);
+    return;
+  }
+
+  const welcomeChannels = channels.filter(isWelcomeChannel);
+  await Promise.all(
+    welcomeChannels.map(async (channel) => {
+      try {
+        await deleteChannel(channel.id);
+        return;
+      } catch (deleteError) {
+        try {
+          await leaveChannel(channel.id);
+        } catch (leaveError) {
+          console.warn(
+            "Could not remove the private Welcome channel.",
+            deleteError,
+            leaveError,
+          );
+        }
+      }
+    }),
+  );
+}
+
+/** The temporary member-owned assistant is not the org agent. Stop it. */
+async function retirePersonalAssistant() {
+  let agents: Awaited<ReturnType<typeof listManagedAgents>> = [];
+  try {
+    agents = await listManagedAgents();
+  } catch {
+    return;
+  }
+  const assistants = agents.filter((agent) => isPersonalAssistantAgent(agent));
+  if (assistants.length === 0) return;
+  await Promise.all(
+    assistants.map(async (agent) => {
+      try {
+        if (agent.startOnAppLaunch) {
+          await setManagedAgentStartOnAppLaunch(agent.pubkey, false);
+        }
+        if (agent.status === "running" || agent.status === "deployed") {
+          await stopManagedAgent(agent.pubkey);
+        }
+      } catch (error) {
+        console.warn("Could not retire the Personal Assistant.", error);
+      }
+    }),
+  );
 }
 
 async function refreshChannelsCache(
   queryClient: ReturnType<typeof useQueryClient>,
 ) {
   try {
-    queryClient.setQueryData(channelsQueryKey, await getChannelsList());
+    queryClient.setQueryData(
+      channelsQueryKey,
+      omitPrivateWelcomeChannels(await getChannelsList()),
+    );
   } catch {
     // The next mounted channels query can still retry; this cache refresh is
     // only here to avoid a blank Home flash after first-run setup.
@@ -554,7 +654,7 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
 
   const showStarterRetryToast = React.useCallback(
     (reason: string) => {
-      toast.error("Couldn't open Personal Assistant", {
+      toast.error("Couldn't open the org agent", {
         id: STARTER_CHANNEL_SETUP_TOAST_ID,
         action: {
           label: "Retry",
@@ -585,10 +685,7 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
     [requestStarterChannels],
   );
 
-  // Once per community+identity session: ensure PA + #welcome-everyone even if
-  // an earlier build marked "welcome ensured" after a failed PA attempt (that
-  // used to create the private Welcome channel and then never retried). Focus
-  // the PA DM only when this session still needs to open it.
+  // Once per community+identity session: open the hosted org agent's DM.
   const orgOnboardingInitKeyRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (
@@ -603,17 +700,12 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
     if (orgOnboardingInitKeyRef.current === initKey) return;
     orgOnboardingInitKeyRef.current = initKey;
     void (async () => {
-      const hadPa = !!pickPersonalAssistantForRelay(
-        await listManagedAgents(),
-        starterChannelsCommunityScope,
-      );
-      // Focus only when PA still needs to be created/opened for this community.
-      const result = await requestStarterChannels(!hadPa);
+      const result = await requestStarterChannels(true);
       if (!result.ok) {
         showStarterRetryToast(result.reason);
         return;
       }
-      if (!hadPa && result.focusChannelId) {
+      if (result.focusChannelId) {
         window.location.hash = `/channels/${encodeURIComponent(
           result.focusChannelId,
         )}`;

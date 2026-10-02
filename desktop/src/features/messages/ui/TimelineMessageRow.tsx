@@ -54,7 +54,7 @@ export function SystemRow({
         profiles={profiles}
         ownerProfiles={ownerProfiles}
       />
-      {footer}
+      <AlignedMessageFooter>{footer}</AlignedMessageFooter>
     </div>
   );
 }
@@ -185,7 +185,7 @@ export function MessageRowItem({
           summaryIndentOffsetRem={-THREAD_REPLY_ROW_MARGIN_INLINE_REM}
           unreadCount={threadUnreadCounts?.get(message.id)}
         />
-        {footer}
+        <AlignedMessageFooter>{footer}</AlignedMessageFooter>
       </div>
     );
   }
@@ -222,7 +222,18 @@ export function MessageRowItem({
         showDepthGuides={false}
         videoReviewContext={videoReviewContext}
       />
-      {footer}
+      <AlignedMessageFooter>{footer}</AlignedMessageFooter>
+    </div>
+  );
+}
+
+/** Lines the footer up with the message text, past the avatar gutter. */
+function AlignedMessageFooter({ children }: { children: React.ReactNode }) {
+  if (React.Children.toArray(children).length === 0) return null;
+  return (
+    <div className="mx-1 flex gap-2.5 px-2">
+      <div aria-hidden="true" className="w-9 shrink-0" />
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

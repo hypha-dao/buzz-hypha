@@ -1,5 +1,10 @@
 import * as React from "react";
 
+import {
+  isOrgAgentDm,
+  orgAgentDmPresence,
+  orgAgentSidebarFace,
+} from "@/features/org/orgAgent";
 import { usePresenceQuery } from "@/features/presence/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
@@ -11,12 +16,14 @@ export function useDmSidebarMetadata({
   currentPubkey,
   directMessages,
   fallbackDisplayName,
+  orgAgentPubkey,
   profileDisplayName,
   enabled = true,
 }: {
   currentPubkey?: string;
   directMessages: Channel[];
   fallbackDisplayName?: string;
+  orgAgentPubkey?: string | null;
   profileDisplayName?: string | null;
   enabled?: boolean;
 }) {
@@ -29,22 +36,32 @@ export function useDmSidebarMetadata({
       ),
     [fallbackDisplayName, profileDisplayName],
   );
-  const dmParticipantPubkeys = React.useMemo(
-    () =>
-      directMessages.flatMap((channel) =>
-        channel.participantPubkeys.filter((pubkey, index) => {
-          const normalizedPubkey = pubkey.toLowerCase();
-          if (normalizedPubkey === currentPubkey?.toLowerCase()) {
-            return false;
-          }
+  const dmParticipantPubkeys = React.useMemo(() => {
+    const pubkeys = directMessages.flatMap((channel) =>
+      channel.participantPubkeys.filter((pubkey, index) => {
+        const normalizedPubkey = pubkey.toLowerCase();
+        if (normalizedPubkey === currentPubkey?.toLowerCase()) {
+          return false;
+        }
 
-          const participantLabel =
-            channel.participants[index]?.trim().toLowerCase() ?? null;
-          return !participantLabel || !selfDmLabels.has(participantLabel);
-        }),
-      ),
-    [currentPubkey, directMessages, selfDmLabels],
-  );
+        const participantLabel =
+          channel.participants[index]?.trim().toLowerCase() ?? null;
+        return !participantLabel || !selfDmLabels.has(participantLabel);
+      }),
+    );
+    if (
+      orgAgentPubkey &&
+      directMessages.some((channel) =>
+        isOrgAgentDm(channel, orgAgentPubkey, currentPubkey ?? null),
+      ) &&
+      !pubkeys.some(
+        (pubkey) => pubkey.toLowerCase() === orgAgentPubkey.toLowerCase(),
+      )
+    ) {
+      pubkeys.push(orgAgentPubkey);
+    }
+    return pubkeys;
+  }, [currentPubkey, directMessages, orgAgentPubkey, selfDmLabels]);
   const dmPresenceQuery = usePresenceQuery(dmParticipantPubkeys, {
     enabled: enabled && directMessages.length > 0,
   });
@@ -69,16 +86,28 @@ export function useDmSidebarMetadata({
             },
           );
 
+          const relayStatus: PresenceStatus | null = otherParticipantPubkey
+            ? (dmPresenceQuery.data?.[otherParticipantPubkey.toLowerCase()] ??
+              "offline")
+            : "offline";
           return [
             channel.id,
-            otherParticipantPubkey
-              ? (dmPresenceQuery.data?.[otherParticipantPubkey.toLowerCase()] ??
-                "offline")
-              : "offline",
+            orgAgentDmPresence(
+              channel,
+              orgAgentPubkey ?? null,
+              currentPubkey ?? null,
+              relayStatus,
+            ) ?? "offline",
           ];
         }),
       ) satisfies Record<string, PresenceStatus>,
-    [currentPubkey, directMessages, dmPresenceQuery.data, selfDmLabels],
+    [
+      currentPubkey,
+      directMessages,
+      dmPresenceQuery.data,
+      orgAgentPubkey,
+      selfDmLabels,
+    ],
   );
   const dmChannelLabels = React.useMemo(
     () =>
@@ -89,10 +118,11 @@ export function useDmSidebarMetadata({
             channel,
             currentPubkey,
             dmProfilesQuery.data?.profiles,
+            orgAgentPubkey,
           ),
         ]),
       ),
-    [currentPubkey, directMessages, dmProfilesQuery.data],
+    [currentPubkey, directMessages, dmProfilesQuery.data, orgAgentPubkey],
   );
   const dmParticipantsByChannelId = React.useMemo(
     () =>
@@ -117,6 +147,16 @@ export function useDmSidebarMetadata({
           });
           const visibleParticipants =
             otherParticipants.length > 0 ? otherParticipants : participants;
+          const agentFace = orgAgentSidebarFace(
+            channel,
+            orgAgentPubkey ?? null,
+            currentPubkey ?? null,
+            dmProfiles?.[orgAgentPubkey?.toLowerCase() ?? ""]?.avatarUrl ??
+              null,
+          );
+          if (agentFace) {
+            return [channel.id, [agentFace]];
+          }
 
           return [
             channel.id,
@@ -139,7 +179,7 @@ export function useDmSidebarMetadata({
           ];
         }),
       ) satisfies Record<string, SidebarDmParticipant[]>,
-    [currentPubkey, directMessages, dmProfiles, selfDmLabels],
+    [currentPubkey, directMessages, dmProfiles, orgAgentPubkey, selfDmLabels],
   );
 
   return {

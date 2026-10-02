@@ -82,7 +82,12 @@ function OrgAboutSkillsBody({
   const onSubmit = React.useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const built = buildValidatedProfileSet({ about, openLimit, skills });
+      const built = buildValidatedProfileSet({
+        about,
+        openLimit,
+        skills,
+        socials: profile.socials,
+      });
       if (!built.ok) {
         setError(built.error);
         return;
@@ -103,7 +108,7 @@ function OrgAboutSkillsBody({
           setSaving(false);
         });
     },
-    [about, commands, openLimit, skills],
+    [about, commands, openLimit, profile.socials, skills],
   );
 
   return (

@@ -16,10 +16,13 @@ import { Route as indexRouteImport } from "./routes/index";
 import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as orgDotworkRouteImport } from "./routes/org.work";
+import { Route as orgDotprofileRouteImport } from "./routes/org.profile";
 import { Route as orgDotmyWorkRouteImport } from "./routes/org.my-work";
 import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 import { Route as orgDotworkDotitemIdRouteImport } from "./routes/org.work.$itemId";
+import { Route as orgDotproposalDotproposalIdRouteImport } from "./routes/org.proposal.$proposalId";
+import { Route as orgDotprofileDotpubkeyRouteImport } from "./routes/org.profile.$pubkey";
 import { Route as orgDotdirectionDotslugRouteImport } from "./routes/org.direction.$slug";
 import { Route as channelsDotchannelIdDotpostsDotpostIdRouteImport } from "./routes/channels.$channelId.posts.$postId";
 
@@ -78,6 +81,11 @@ const orgDotworkRoute = orgDotworkRouteImport.update({
   path: "/org/work",
   getParentRoute: () => rootRouteImport,
 } as any);
+const orgDotprofileRoute = orgDotprofileRouteImport.update({
+  id: "/org/profile",
+  path: "/org/profile",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const orgDotmyWorkRoute = orgDotmyWorkRouteImport.update({
   id: "/org/my-work",
   path: "/org/my-work",
@@ -96,6 +104,17 @@ const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
 const orgDotworkDotitemIdRoute = orgDotworkDotitemIdRouteImport.update({
   id: "/org/work/$itemId",
   path: "/org/work/$itemId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgDotproposalDotproposalIdRoute =
+  orgDotproposalDotproposalIdRouteImport.update({
+    id: "/org/proposal/$proposalId",
+    path: "/org/proposal/$proposalId",
+    getParentRoute: () => rootRouteImport,
+  } as any);
+const orgDotprofileDotpubkeyRoute = orgDotprofileDotpubkeyRouteImport.update({
+  id: "/org/profile/$pubkey",
+  path: "/org/profile/$pubkey",
   getParentRoute: () => rootRouteImport,
 } as any);
 const orgDotdirectionDotslugRoute = orgDotdirectionDotslugRouteImport.update({
@@ -122,10 +141,13 @@ export interface FileRoutesByFullPath {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/profile": typeof orgDotprofileRoute;
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/profile/$pubkey": typeof orgDotprofileDotpubkeyRoute;
+  "/org/proposal/$proposalId": typeof orgDotproposalDotproposalIdRoute;
   "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
@@ -141,10 +163,13 @@ export interface FileRoutesByTo {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/profile": typeof orgDotprofileRoute;
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/profile/$pubkey": typeof orgDotprofileDotpubkeyRoute;
+  "/org/proposal/$proposalId": typeof orgDotproposalDotproposalIdRoute;
   "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
@@ -161,10 +186,13 @@ export interface FileRoutesById {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/org/my-work": typeof orgDotmyWorkRoute;
+  "/org/profile": typeof orgDotprofileRoute;
   "/org/work": typeof orgDotworkRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
   "/org/direction/$slug": typeof orgDotdirectionDotslugRoute;
+  "/org/profile/$pubkey": typeof orgDotprofileDotpubkeyRoute;
+  "/org/proposal/$proposalId": typeof orgDotproposalDotproposalIdRoute;
   "/org/work/$itemId": typeof orgDotworkDotitemIdRoute;
   "/channels/$channelId/posts/$postId": typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
@@ -182,10 +210,13 @@ export interface FileRouteTypes {
     | "/channels/$channelId"
     | "/messages/new"
     | "/org/my-work"
+    | "/org/profile"
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
     | "/org/direction/$slug"
+    | "/org/profile/$pubkey"
+    | "/org/proposal/$proposalId"
     | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   fileRoutesByTo: FileRoutesByTo;
@@ -201,10 +232,13 @@ export interface FileRouteTypes {
     | "/channels/$channelId"
     | "/messages/new"
     | "/org/my-work"
+    | "/org/profile"
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
     | "/org/direction/$slug"
+    | "/org/profile/$pubkey"
+    | "/org/proposal/$proposalId"
     | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   id:
@@ -220,10 +254,13 @@ export interface FileRouteTypes {
     | "/channels/$channelId"
     | "/messages/new"
     | "/org/my-work"
+    | "/org/profile"
     | "/org/work"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
     | "/org/direction/$slug"
+    | "/org/profile/$pubkey"
+    | "/org/proposal/$proposalId"
     | "/org/work/$itemId"
     | "/channels/$channelId/posts/$postId";
   fileRoutesById: FileRoutesById;
@@ -240,10 +277,13 @@ export interface RootRouteChildren {
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
   messagesDotnewRoute: typeof messagesDotnewRoute;
   orgDotmyWorkRoute: typeof orgDotmyWorkRoute;
+  orgDotprofileRoute: typeof orgDotprofileRoute;
   orgDotworkRoute: typeof orgDotworkRoute;
   projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   workflowsDotworkflowIdRoute: typeof workflowsDotworkflowIdRoute;
   orgDotdirectionDotslugRoute: typeof orgDotdirectionDotslugRoute;
+  orgDotprofileDotpubkeyRoute: typeof orgDotprofileDotpubkeyRoute;
+  orgDotproposalDotproposalIdRoute: typeof orgDotproposalDotproposalIdRoute;
   orgDotworkDotitemIdRoute: typeof orgDotworkDotitemIdRoute;
   channelsDotchannelIdDotpostsDotpostIdRoute: typeof channelsDotchannelIdDotpostsDotpostIdRoute;
 }
@@ -327,6 +367,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof orgDotworkRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/org/profile": {
+      id: "/org/profile";
+      path: "/org/profile";
+      fullPath: "/org/profile";
+      preLoaderRoute: typeof orgDotprofileRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/org/my-work": {
       id: "/org/my-work";
       path: "/org/my-work";
@@ -353,6 +400,20 @@ declare module "@tanstack/react-router" {
       path: "/org/work/$itemId";
       fullPath: "/org/work/$itemId";
       preLoaderRoute: typeof orgDotworkDotitemIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org/proposal/$proposalId": {
+      id: "/org/proposal/$proposalId";
+      path: "/org/proposal/$proposalId";
+      fullPath: "/org/proposal/$proposalId";
+      preLoaderRoute: typeof orgDotproposalDotproposalIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org/profile/$pubkey": {
+      id: "/org/profile/$pubkey";
+      path: "/org/profile/$pubkey";
+      fullPath: "/org/profile/$pubkey";
+      preLoaderRoute: typeof orgDotprofileDotpubkeyRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/org/direction/$slug": {
@@ -384,10 +445,13 @@ const rootRouteChildren: RootRouteChildren = {
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
   messagesDotnewRoute: messagesDotnewRoute,
   orgDotmyWorkRoute: orgDotmyWorkRoute,
+  orgDotprofileRoute: orgDotprofileRoute,
   orgDotworkRoute: orgDotworkRoute,
   projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   workflowsDotworkflowIdRoute: workflowsDotworkflowIdRoute,
   orgDotdirectionDotslugRoute: orgDotdirectionDotslugRoute,
+  orgDotprofileDotpubkeyRoute: orgDotprofileDotpubkeyRoute,
+  orgDotproposalDotproposalIdRoute: orgDotproposalDotproposalIdRoute,
   orgDotworkDotitemIdRoute: orgDotworkDotitemIdRoute,
   channelsDotchannelIdDotpostsDotpostIdRoute:
     channelsDotchannelIdDotpostsDotpostIdRoute,

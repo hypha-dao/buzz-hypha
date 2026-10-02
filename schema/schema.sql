@@ -1964,7 +1964,7 @@ CREATE TABLE io_work_items (
     parent_id           UUID,
     depth               INTEGER NOT NULL CHECK (depth >= 0),
     kind                TEXT NOT NULL CHECK (kind IN ('project', 'ticket')),
-    state               TEXT NOT NULL CHECK (state IN ('open', 'offered', 'accepted', 'in_review', 'done')),
+    state               TEXT NOT NULL CHECK (state IN ('open', 'offered', 'accepted', 'in_review', 'done', 'withdrawn')),
     dri                 BYTEA CHECK (dri IS NULL OR length(dri) = 32),
     offered_to          BYTEA CHECK (offered_to IS NULL OR length(offered_to) = 32),
     offered_at          TIMESTAMPTZ,
@@ -2004,7 +2004,7 @@ CREATE INDEX idx_io_work_items_offered_to
 CREATE TABLE io_proposals (
     community_id        UUID NOT NULL REFERENCES communities(id),
     id                  UUID NOT NULL,
-    kind                TEXT NOT NULL CHECK (kind IN ('direction', 'project', 'dri', 'shapers', 'money', 'join')),
+    kind                TEXT NOT NULL CHECK (kind IN ('direction', 'project', 'dri', 'shapers', 'money', 'join', 'withdraw')),
     status              TEXT NOT NULL CHECK (status IN ('open', 'passed', 'rejected', 'expired', 'settled')),
     opened_by           BYTEA NOT NULL CHECK (length(opened_by) = 32),
     opened_at           TIMESTAMPTZ NOT NULL,

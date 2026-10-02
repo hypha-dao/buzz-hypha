@@ -3,6 +3,7 @@ import {
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import { formatDmParticipantDisplayName } from "@/features/channels/lib/dmParticipantDisplay";
+import { isOrgAgentDm, ORG_AGENT_LABEL } from "@/features/org/orgAgent";
 import type { Channel } from "@/shared/api/types";
 
 function isGenericDmChannelName(name: string) {
@@ -20,7 +21,14 @@ export function resolveChannelDisplayLabel(
   channel: Channel,
   currentPubkey: string | undefined,
   profiles: UserProfileLookup | undefined,
+  orgAgentPubkey?: string | null,
 ) {
+  if (
+    orgAgentPubkey &&
+    isOrgAgentDm(channel, orgAgentPubkey, currentPubkey ?? null)
+  ) {
+    return ORG_AGENT_LABEL;
+  }
   if (channel.channelType !== "dm" || !isGenericDmChannelName(channel.name)) {
     return channel.name;
   }

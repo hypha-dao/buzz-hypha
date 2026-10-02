@@ -50,6 +50,9 @@ pub mod tag {
     pub const NEEDS_SHAPER: &str = "shaper";
     /// Fourth element of `["e", <draft>, "", "draft"]` — the command settles that draft.
     pub const MARKER_DRAFT: &str = "draft";
+    /// Fourth element of `["e", <proposal>, "", "revises"]` — replace an open
+    /// `direction` or `project` proposal and clear its votes.
+    pub const MARKER_REVISES: &str = "revises";
     /// Fourth element of `["e"|"a", <id>, "", "receipt"]`.
     pub const MARKER_RECEIPT: &str = "receipt";
     /// Fourth element of `["p", <pubkey>, "", "needs"]` on `50100`.
@@ -134,6 +137,8 @@ pub enum WorkItemState {
     InReview,
     /// Closed.
     Done,
+    /// Taken off the live board. The events stay.
+    Withdrawn,
 }
 
 /// `project` (a root) or `ticket` (has a parent); the `t` tag of a `39101`.
@@ -215,6 +220,14 @@ pub struct WorkItem {
     pub offered_by: Option<String>,
     /// When the open offer was made.
     pub offered_at: Option<Timestamp>,
+    /// The member who created a ticket (`io_ticket_create`). Absent on
+    /// projects and on items written before withdrawal existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<PubkeyHex>,
+    /// The member who last offered this item. Kept after the offer settles
+    /// so that member can still withdraw the ticket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offered_by_member: Option<PubkeyHex>,
     /// End date (root) or estimated completion (child).
     pub due_at: Timestamp,
     /// When the root went live; roots only.
@@ -529,6 +542,9 @@ pub struct ProfileDraft {
     /// Proposed skills, as the person's words.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Proposed social links. Empty keeps none on the replacement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// Proposed open-pieces limit.
     pub open_limit: Option<u32>,
     /// Messages it was heard in.
@@ -638,6 +654,8 @@ pub enum ProposalKind {
     Join,
     /// The Shaper set, its rules, or its agent.
     Shapers,
+    /// Take a project off the live board. Uses the `project` decision rule.
+    Withdraw,
 }
 
 /// Proposal state machine (Protocol §5.3); the `s` tag of a `39102`.
@@ -1186,6 +1204,25 @@ pub const PROFILE_MAX_SKILLS: usize = 20;
 pub const PROFILE_SKILL_LABEL_MAX_CHARS: usize = 40;
 /// `open_limit`, when set, is within `1..=50`.
 pub const PROFILE_OPEN_LIMIT_RANGE: std::ops::RangeInclusive<u32> = 1..=50;
+/// At most this many social links.
+pub const PROFILE_MAX_SOCIALS: usize = 8;
+/// Each social URL ≤ this many chars.
+pub const PROFILE_SOCIAL_URL_MAX_CHARS: usize = 200;
+
+/// Networks a profile link may name. `website` is any other https page.
+pub const PROFILE_SOCIAL_NETWORKS: &[&str] = &[
+    "website",
+    "github",
+    "x",
+    "linkedin",
+    "nostr",
+    "mastodon",
+    "telegram",
+    "discord",
+    "youtube",
+    "instagram",
+    "bluesky",
+];
 
 /// Kebab-case of a skill label for the `39105` `k` tag (§4.7a).
 ///
@@ -1222,6 +1259,132 @@ pub fn skill_slug(label: &str) -> String {
     slug
 }
 
+/// One link on a member's org profile. The URL is https and opens in a browser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileSocial {
+    /// One of [`PROFILE_SOCIAL_NETWORKS`].
+    pub network: String,
+    /// Canonical `https://` URL.
+    pub url: String,
+}
+
+/// Accept social links for a `39105`.
+///
+/// One link per named network (the first wins). Up to three `website` links.
+/// A named network must point at that network's host. An empty or generic
+/// network is inferred from the host.
+pub fn normalize_socials(input: &[ProfileSocial]) -> Result<Vec<ProfileSocial>, &'static str> {
+    if input.len() > PROFILE_MAX_SOCIALS {
+        return Err("at most 8 social links");
+    }
+    let mut out = Vec::with_capacity(input.len());
+    let mut seen = std::collections::HashSet::new();
+    let mut websites = 0u32;
+    for raw in input {
+        let (host, url) = https_url(&raw.url)?;
+        let network = canonical_network(raw.network.trim(), &host)?;
+        if !host_matches(&network, &host) {
+            return Err("link does not match that social");
+        }
+        if network == "website" {
+            websites += 1;
+            if websites > 3 {
+                return Err("at most 3 website links");
+            }
+            out.push(ProfileSocial { network, url });
+            continue;
+        }
+        if !seen.insert(network.clone()) {
+            continue;
+        }
+        out.push(ProfileSocial { network, url });
+    }
+    Ok(out)
+}
+
+fn https_url(raw: &str) -> Result<(String, String), &'static str> {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() > PROFILE_SOCIAL_URL_MAX_CHARS {
+        return Err("social link is too long");
+    }
+    let Some(rest) = trimmed.strip_prefix("https://") else {
+        return Err("social link must be https");
+    };
+    if rest.is_empty()
+        || rest.contains(' ')
+        || rest.contains('@')
+        || rest.chars().any(|ch| ch.is_control())
+    {
+        return Err("social link must be https");
+    }
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = rest[..host_end].to_ascii_lowercase();
+    if host.is_empty()
+        || !host.contains('.')
+        || host.starts_with('.')
+        || host.ends_with('.')
+        || host.contains("..")
+        || !host
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+        return Err("social link must be https");
+    }
+    Ok((host.clone(), format!("https://{host}{}", &rest[host_end..])))
+}
+
+fn canonical_network(raw: &str, host: &str) -> Result<String, &'static str> {
+    let named = raw.trim().to_ascii_lowercase();
+    let named = match named.as_str() {
+        "" | "link" | "web" | "site" | "homepage" | "url" => infer_network(host).to_string(),
+        "twitter" => "x".to_string(),
+        other => other.to_string(),
+    };
+    if PROFILE_SOCIAL_NETWORKS.contains(&named.as_str()) {
+        Ok(named)
+    } else {
+        Err("unknown social")
+    }
+}
+
+fn infer_network(host: &str) -> &'static str {
+    let host = host.trim_start_matches("www.");
+    if host == "github.com" || host.ends_with(".github.io") {
+        "github"
+    } else if host == "x.com" || host == "twitter.com" {
+        "x"
+    } else if host == "linkedin.com" || host == "lnkd.in" {
+        "linkedin"
+    } else if host == "youtube.com" || host == "youtu.be" || host == "youtube-nocookie.com" {
+        "youtube"
+    } else if host == "instagram.com" {
+        "instagram"
+    } else if host == "t.me" || host == "telegram.me" || host == "telegram.org" {
+        "telegram"
+    } else if host == "discord.com" || host == "discord.gg" {
+        "discord"
+    } else if host == "bsky.app" {
+        "bluesky"
+    } else if host == "njump.me"
+        || host == "primal.net"
+        || host == "nostr.com"
+        || host == "snort.social"
+    {
+        "nostr"
+    } else if host.contains("mastodon") {
+        "mastodon"
+    } else {
+        "website"
+    }
+}
+
+fn host_matches(network: &str, host: &str) -> bool {
+    if network == "website" || network == "mastodon" {
+        return true;
+    }
+    infer_network(host) == network
+}
+
 /// Content of `kind:39105` — one member's org profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OrgProfile {
@@ -1231,9 +1394,12 @@ pub struct OrgProfile {
     pub version: u32,
     /// Free text.
     pub about: String,
-    /// The person's skills.
+    /// The person's skills — what they can do and the work they want.
     #[serde(default)]
     pub skills: Vec<Skill>,
+    /// Links to their socials. Empty when they have not added any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// How many open pieces at once; `null` = no limit.
     pub open_limit: Option<u32>,
     /// When last written.
@@ -1314,7 +1480,8 @@ pub struct ProjectProposeContent {
     /// The objective line it serves.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub objective_ref: Option<String>,
-    /// If named, the root opens `offered` to them.
+    /// If named, the root opens `offered` to them, unless they already
+    /// agreed on this proposal — then they hold it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_dri: Option<PubkeyHex>,
 }
@@ -1387,6 +1554,9 @@ pub struct ProfileSetContent {
     /// Labels in the person's words; the relay derives slugs.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Social links. Absent or empty clears them on this whole-profile replace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// Within [`PROFILE_OPEN_LIMIT_RANGE`], or absent for no limit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_limit: Option<u32>,
@@ -1781,6 +1951,34 @@ mod tests {
         assert_eq!(skill_slug("rust"), "rust");
         assert_eq!(skill_slug("---"), "");
         assert_eq!(skill_slug(""), "");
+    }
+
+    #[test]
+    fn social_links_are_https_and_match_the_network() {
+        let links = normalize_socials(&[
+            ProfileSocial {
+                network: "GitHub".into(),
+                url: "https://GitHub.com/travolta".into(),
+            },
+            ProfileSocial {
+                network: String::new(),
+                url: "https://example.com/me".into(),
+            },
+        ])
+        .expect("links");
+        assert_eq!(links[0].network, "github");
+        assert_eq!(links[0].url, "https://github.com/travolta");
+        assert_eq!(links[1].network, "website");
+        assert!(normalize_socials(&[ProfileSocial {
+            network: "github".into(),
+            url: "https://evil.example/phish".into(),
+        }])
+        .is_err());
+        assert!(normalize_socials(&[ProfileSocial {
+            network: "github".into(),
+            url: "http://github.com/travolta".into(),
+        }])
+        .is_err());
     }
 
     #[test]

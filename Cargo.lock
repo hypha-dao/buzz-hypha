@@ -1224,6 +1224,7 @@ dependencies = [
  "clap",
  "hex",
  "nostr 0.44.7",
+ "reqwest 0.13.4",
  "schemars",
  "serde",
  "serde_json",

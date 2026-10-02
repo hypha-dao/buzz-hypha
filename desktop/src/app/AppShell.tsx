@@ -45,6 +45,7 @@ import {
   useHomeFeedNotificationState,
 } from "@/features/notifications/hooks";
 import { PreventSleepProvider } from "@/features/agents/usePreventSleep";
+import { OrgChatActs } from "@/features/org/useActFromChat";
 import { requestOpenCreateAgent } from "@/features/agents/openCreateAgentEvent";
 import { useAgentsDataRefresh } from "@/features/agents/lib/useAgentsDataRefresh";
 import { useManagedAgentRuntimeReconciliation } from "@/features/agents/useManagedAgentRuntimeReconciliation";
@@ -701,6 +702,7 @@ export function AppShell() {
   });
   return (
     <PreventSleepProvider>
+      <OrgChatActs />
       {!isHuddleRoom ? (
         <AppShellTrayMenu
           channels={channels}

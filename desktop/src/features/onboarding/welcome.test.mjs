@@ -7,8 +7,10 @@ import {
   ensureWelcomeChannel,
   findPrivateWelcomeChannel,
   hasEnsuredWelcomeChannel,
+  isOmittedPrivateWelcomeChannelId,
   isWelcomeExperienceChannel,
   markWelcomeChannelEnsured,
+  omitPrivateWelcomeChannels,
   rememberPendingWelcomeChannel,
   WELCOME_CHANNEL_DESCRIPTION,
   WELCOME_CHANNEL_NAME,
@@ -359,4 +361,25 @@ test("isWelcomeExperienceChannel matches legacy Welcome and starter welcome-ever
     false,
   );
   assert.equal(isWelcomeExperienceChannel(null), false);
+});
+
+test("omitPrivateWelcomeChannels drops only the private Welcome channel", () => {
+  const welcome = makeChannel({ id: "private-welcome" });
+  const publicWelcome = makeChannel({
+    id: "public-welcome",
+    name: "welcome-everyone",
+    visibility: "open",
+  });
+  const general = makeChannel({
+    id: "general",
+    name: "general",
+    visibility: "open",
+  });
+
+  assert.deepEqual(
+    omitPrivateWelcomeChannels([welcome, publicWelcome, general]),
+    [publicWelcome, general],
+  );
+  assert.equal(isOmittedPrivateWelcomeChannelId("private-welcome"), true);
+  assert.equal(isOmittedPrivateWelcomeChannelId("public-welcome"), false);
 });

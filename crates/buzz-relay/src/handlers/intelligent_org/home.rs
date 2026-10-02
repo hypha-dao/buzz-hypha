@@ -77,6 +77,25 @@ pub(super) async fn create_project_room(
     .map_err(|e| internal("create project home room", e))
 }
 
+/// Archive a project's home room. Already archived, or a room that is gone,
+/// is a no-op so a retry of the same removal does not fail.
+pub(super) async fn archive_home_channel(
+    conn: &mut PgConnection,
+    community: CommunityId,
+    channel: Uuid,
+) -> Result<(), IngestError> {
+    sqlx::query(
+        "UPDATE channels SET archived_at = NOW() \
+         WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL AND archived_at IS NULL",
+    )
+    .bind(community.as_uuid())
+    .bind(channel)
+    .execute(conn)
+    .await
+    .map_err(|e| internal("archive project home room", e))?;
+    Ok(())
+}
+
 /// `39101.home` for R-9a — channel only; `repo` / `project` wait for R-9b.
 pub(super) fn home_channel_only(channel: Uuid) -> ProjectHome {
     ProjectHome {

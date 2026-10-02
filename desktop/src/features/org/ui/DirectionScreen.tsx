@@ -11,7 +11,13 @@ import { useLiveDoorEvents } from "../hooks";
 
 import { DIRECTION_LABEL, NOT_SET_YET } from "./overview/overviewCopy";
 import { directionPageFilters } from "./overview/overviewExtraFilters";
+import { motionDelay } from "./OrgMotionFrame";
 import { OrgPersonName } from "./overview/OrgPersonName";
+import {
+  overviewCardDelayMs,
+  overviewLineDelayMs,
+  overviewRuleDelayMs,
+} from "./overview/overviewMotion";
 import {
   DIRECTION_SLUGS,
   directionHistory,
@@ -73,7 +79,10 @@ export function DirectionScreen({ slug }: { slug: string }) {
           </Button>
           {label ? (
             <div>
-              <h1 className="text-xl font-semibold">
+              <h1
+                className="org-dir-line text-xl font-semibold"
+                style={motionDelay(overviewLineDelayMs(0, 0))}
+              >
                 {label.title}
                 <span className="font-normal text-muted-foreground">
                   {" "}
@@ -81,7 +90,10 @@ export function DirectionScreen({ slug }: { slug: string }) {
                 </span>
               </h1>
               {head ? (
-                <p className="mt-1 text-2xs text-muted-foreground">
+                <p
+                  className="org-dir-line mt-1 text-2xs text-muted-foreground"
+                  style={motionDelay(overviewLineDelayMs(0, 1))}
+                >
                   v{head.version}
                   {head.confirmedBy ? (
                     <>
@@ -95,7 +107,10 @@ export function DirectionScreen({ slug }: { slug: string }) {
                   ) : null}
                 </p>
               ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p
+                  className="org-dir-line mt-2 text-sm text-muted-foreground"
+                  style={motionDelay(overviewLineDelayMs(0, 1))}
+                >
                   {NOT_SET_YET}
                 </p>
               )}
@@ -105,23 +120,38 @@ export function DirectionScreen({ slug }: { slug: string }) {
           )}
           {head ? (
             <div className="space-y-3" data-testid="org-direction-body">
+              <span
+                aria-hidden="true"
+                className="org-dir-rule block h-px w-10 bg-foreground/45"
+                style={motionDelay(overviewRuleDelayMs(0))}
+              />
               {head.lines.length > 0 ? (
                 <ol className="list-decimal space-y-2 pl-5">
-                  {head.lines.map((line) => (
-                    <li className="text-message leading-relaxed" key={line.id}>
+                  {head.lines.map((line, index) => (
+                    <li
+                      className="org-dir-line text-message leading-relaxed"
+                      key={line.id}
+                      style={motionDelay(overviewLineDelayMs(1, index))}
+                    >
                       {line.text}
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="text-message leading-relaxed">{head.body}</p>
+                <p
+                  className="org-dir-line text-message leading-relaxed"
+                  style={motionDelay(overviewLineDelayMs(1, 0))}
+                >
+                  {head.body}
+                </p>
               )}
             </div>
           ) : null}
           <section aria-labelledby="org-direction-history-heading">
             <h2
-              className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
+              className="org-dir-line text-2xs font-medium uppercase tracking-wider text-muted-foreground"
               id="org-direction-history-heading"
+              style={motionDelay(overviewLineDelayMs(2, 0))}
             >
               Versions — every one confirmed by a Shaper
             </h2>
@@ -134,25 +164,29 @@ export function DirectionScreen({ slug }: { slug: string }) {
                 className="mt-2 space-y-2"
                 data-testid="org-direction-history"
               >
-                {versions.map((version) => (
-                  <li
-                    className="rounded-lg border border-border/70 px-3 py-2"
-                    key={version.proposal}
-                  >
-                    <p className="text-2xs text-muted-foreground">
-                      v{version.version}
-                      {version.confirmedBy ? (
-                        <>
-                          {" "}
-                          · confirmed by{" "}
-                          <OrgPersonName
-                            profiles={profiles}
-                            pubkey={version.confirmedBy}
-                          />
-                        </>
-                      ) : null}
-                    </p>
-                    <p className="mt-1 text-sm">{version.body}</p>
+                {versions.map((version, index) => (
+                  <li key={version.proposal}>
+                    <div className="org-overview-lift">
+                      <div
+                        className="org-overview-settle rounded-lg border border-border/70 px-3 py-2"
+                        style={motionDelay(overviewCardDelayMs(index + 1))}
+                      >
+                        <p className="text-2xs text-muted-foreground">
+                          v{version.version}
+                          {version.confirmedBy ? (
+                            <>
+                              {" "}
+                              · confirmed by{" "}
+                              <OrgPersonName
+                                profiles={profiles}
+                                pubkey={version.confirmedBy}
+                              />
+                            </>
+                          ) : null}
+                        </p>
+                        <p className="mt-1 text-sm">{version.body}</p>
+                      </div>
+                    </div>
                   </li>
                 ))}
               </ol>

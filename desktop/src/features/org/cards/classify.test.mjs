@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { classifyEvent, classifyMyWork, kickerFor } from "./classify.ts";
-import { claimOf, receiptsOf } from "./parse.ts";
+import { claimOf, proposalVoteMarks, receiptsOf } from "./parse.ts";
 
 const ORG_AGENT_PUBKEY =
   "0c9a6e2b4d8f1a3c5e7b9d0f2a4c6e8b1d3f5a7c9e0b2d4f6a8c0e1b3d5f7a92";
@@ -190,7 +190,7 @@ test("receipts and claim bind the tagged e/ref rows", () => {
   assert.equal(claimOf(draft), "Hall");
 });
 
-test("shadow drafts and done items are hidden", () => {
+test("shadow drafts are hidden; done work is finished", () => {
   const shadow = event(50100, { title: "Hidden" }, [
     ["n", ME],
     ["t", "project"],
@@ -199,14 +199,223 @@ test("shadow drafts and done items are hidden", () => {
   assert.equal(classifyEvent(shadow, ctx), null);
   const doneItem = event(
     39101,
-    { title: "Finished", state: "done", dri: ME },
+    { title: "Finished", state: "done", dri: ME, due_at: 1_700_000_100 },
     [
       ["d", ITEM],
       ["s", "done"],
       ["p", ME],
+      ["t", "ticket"],
     ],
     "ff".repeat(32),
     ME,
   );
-  assert.equal(classifyEvent(doneItem, ctx), null);
+  const card = classifyEvent(doneItem, ctx);
+  assert.equal(card?.column, "finished");
+  assert.equal(card?.itemKind, "ticket");
+  assert.equal(card?.dueAt, 1_700_000_100);
+  assert.equal(
+    card?.facts.some((fact) => fact.label === "Holds it"),
+    false,
+  );
+});
+
+test("held cards name who asked and skip the holder fact", () => {
+  const held = classifyEvent(
+    event(
+      39101,
+      {
+        title: "Hall",
+        state: "accepted",
+        dri: ME,
+        offered_by: ALICE,
+        due_at: 1_785_000_000,
+        parent: "22222222-2222-4222-8222-222222222222",
+      },
+      [
+        ["d", ITEM],
+        ["s", "accepted"],
+        ["t", "ticket"],
+        ["u", "22222222-2222-4222-8222-222222222222"],
+        ["p", ME],
+        ["due", "1785000000"],
+      ],
+      "ab".repeat(32),
+      ALICE,
+    ),
+    ctx,
+  );
+  assert.equal(held?.column, "you_hold");
+  assert.equal(held?.kicker, "Asked by alice");
+  assert.equal(held?.dueAt, 1_785_000_000);
+  assert.equal(
+    held?.facts.some((fact) => fact.label === "Holds it"),
+    false,
+  );
+
+  const asking = classifyEvent(
+    event(
+      39101,
+      {
+        title: "Rota",
+        state: "offered",
+        offered_to: ME,
+        offered_by: ALICE,
+      },
+      [
+        ["d", "33333333-3333-4333-8333-333333333333"],
+        ["s", "offered"],
+        ["t", "ticket"],
+        ["p", ME, "", "offered"],
+      ],
+      "ac".repeat(32),
+      ALICE,
+    ),
+    ctx,
+  );
+  assert.equal(asking?.kicker, "alice is asking you");
+});
+
+test("columns sort by due date and name the parent project", () => {
+  const project = event(
+    39101,
+    {
+      title: "Saturday stall",
+      state: "accepted",
+      dri: ME,
+      due_at: 1_800_000_000,
+    },
+    [
+      ["d", "22222222-2222-4222-8222-222222222222"],
+      ["s", "accepted"],
+      ["t", "project"],
+      ["p", ME],
+    ],
+    "b1".repeat(32),
+    ALICE,
+  );
+  const later = event(
+    39101,
+    {
+      title: "Later ticket",
+      state: "accepted",
+      dri: ME,
+      parent: "22222222-2222-4222-8222-222222222222",
+      due_at: 1_790_000_000,
+    },
+    [
+      ["d", "44444444-4444-4444-8444-444444444444"],
+      ["s", "accepted"],
+      ["t", "ticket"],
+      ["u", "22222222-2222-4222-8222-222222222222"],
+      ["p", ME],
+    ],
+    "b2".repeat(32),
+    ALICE,
+  );
+  const sooner = event(
+    39101,
+    {
+      title: "Sooner ticket",
+      state: "accepted",
+      dri: ME,
+      parent: "22222222-2222-4222-8222-222222222222",
+      due_at: 1_780_000_000,
+    },
+    [
+      ["d", ITEM],
+      ["s", "accepted"],
+      ["t", "ticket"],
+      ["u", "22222222-2222-4222-8222-222222222222"],
+      ["p", ME],
+    ],
+    "b3".repeat(32),
+    ALICE,
+  );
+  const columns = classifyMyWork([later, project, sooner], ctx);
+  assert.deepEqual(
+    columns.you_hold.map((card) => card.claim),
+    ["Sooner ticket", "Later ticket", "Saturday stall"],
+  );
+  assert.equal(columns.you_hold[0]?.itemKind, "ticket");
+  assert.equal(columns.you_hold[0]?.parentTitle, "Saturday stall");
+  assert.equal(columns.you_hold[2]?.itemKind, "project");
+  assert.deepEqual(columns.finished, []);
+});
+
+test("an open project with no DRI needs a Shaper's answer", () => {
+  const openProject = event(
+    39101,
+    {
+      title: "Weekday hall",
+      state: "open",
+      brief: "Still nobody named.",
+      due_at: 1_785_000_000,
+    },
+    [
+      ["d", ITEM],
+      ["s", "open"],
+      ["t", "project"],
+      ["due", "1785000000"],
+    ],
+    "c1".repeat(32),
+    "f".repeat(64),
+  );
+  const columns = classifyMyWork([openProject], ctx);
+  assert.equal(columns.needs_answer.length, 1);
+  assert.equal(columns.needs_answer[0]?.claim, "Weekday hall");
+  assert.equal(columns.needs_answer[0]?.kicker, "Needs a DRI");
+  assert.equal(columns.needs_answer[0]?.column, "needs_answer");
+  assert.deepEqual(columns.you_hold, []);
+  assert.deepEqual(columns.you_offered, []);
+
+  const member = classifyMyWork([openProject], { ...ctx, isShaper: false });
+  assert.deepEqual(member.needs_answer, []);
+  assert.deepEqual(member.you_hold, []);
+
+  const openTicket = event(
+    39101,
+    { title: "Print the list", state: "open" },
+    [
+      ["d", "44444444-4444-4444-8444-444444444444"],
+      ["s", "open"],
+      ["t", "ticket"],
+      ["u", ITEM],
+    ],
+    "c2".repeat(32),
+    "f".repeat(64),
+  );
+  const tickets = classifyMyWork([openTicket], ctx);
+  assert.deepEqual(tickets.needs_answer, []);
+});
+
+test("a proposal has one vote mark per Shaper", () => {
+  const open = event(
+    39102,
+    {
+      kind: "project",
+      needed: 1,
+      votes: [],
+      payload: { title: "Hall" },
+    },
+    [
+      ["d", PROPOSAL],
+      ["p", ME, "", "eligible"],
+    ],
+  );
+  assert.deepEqual(proposalVoteMarks(open), { cast: 0, seats: 1 });
+  const voted = event(
+    39102,
+    {
+      kind: "project",
+      needed: 2,
+      votes: [{ p: ALICE, vote: "agree" }],
+      payload: { title: "Hall" },
+    },
+    [
+      ["d", PROPOSAL],
+      ["p", ME, "", "eligible"],
+      ["p", ALICE, "", "eligible"],
+    ],
+  );
+  assert.deepEqual(proposalVoteMarks(voted), { cast: 1, seats: 2 });
 });

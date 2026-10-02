@@ -9,6 +9,7 @@ export const ALICE_PUBKEY =
 export const ASKING_ID = "a1".repeat(32);
 export const SUGGEST_ID = "a2".repeat(32);
 export const DRAFTED_ID = "a3".repeat(32);
+export const OPEN_PROJECT_ID = "b0".repeat(32);
 export const OFFER_EVENT_ID = "b1".repeat(32);
 export const HELD_EVENT_ID = "b2".repeat(32);
 export const OFFERED_EVENT_ID = "b3".repeat(32);
@@ -17,6 +18,7 @@ export const DONE_ID = "d2".repeat(32);
 export const REVIEW_ID = "d3".repeat(32);
 export const RECEIPT_ID = "e1".repeat(32);
 
+export const ITEM_OPEN = "10101010-1010-4010-8010-101010101010";
 export const ITEM_OFFER = "11111111-1111-4111-8111-111111111111";
 export const ITEM_HELD = "22222222-2222-4222-8222-222222222222";
 export const ITEM_OFFERED = "33333333-3333-4333-8333-333333333333";
@@ -107,6 +109,25 @@ export function myWorkSeedEvents(): RelayEvent[] {
       ],
       ORG_AGENT_PUBKEY,
       1_700_000_070,
+    ),
+    ev(
+      OPEN_PROJECT_ID,
+      39101,
+      {
+        id: ITEM_OPEN,
+        title: "Autumn harvest",
+        brief: "Approved, and still nobody named.",
+        state: "open",
+        due_at: 1_784_000_000,
+      },
+      [
+        ["d", ITEM_OPEN],
+        ["s", "open"],
+        ["t", "project"],
+        ["due", "1784000000"],
+      ],
+      "f".repeat(64),
+      1_700_000_065,
     ),
     ev(
       OFFER_EVENT_ID,

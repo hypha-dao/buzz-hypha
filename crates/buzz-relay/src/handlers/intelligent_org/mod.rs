@@ -52,7 +52,7 @@ use buzz_core::kind::{
     KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROFILE_SET,
     KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
     KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -101,6 +101,8 @@ pub async fn handle_command(
         KIND_IO_DRAFT_DECIDE => drafts::decide(&cmd).await,
         KIND_IO_HEALTH_RATE => drafts::health_rate(&cmd).await,
         KIND_IO_PROFILE_SET => profiles::set(&cmd).await,
+        KIND_IO_WITHDRAW => work::withdraw(&cmd).await,
+        KIND_IO_WITHDRAW_PROPOSE => proposals::withdraw_propose(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
@@ -433,6 +435,11 @@ pub(crate) fn content_value(event: &Event) -> Result<serde_json::Value, IngestEr
 /// membership notices for a room whose roster moved, and the membership
 /// caches those rows feed. Nothing here can fail the command — it is
 /// already durable.
+///
+/// Discovery (`39000`/`39002`) is stored before any membership notice.
+/// The desktop refetches its sidebar from `39002` the moment `44100`
+/// arrives; a notice that races ahead of that roster event leaves the
+/// project room out of the sidebar until the next poll.
 pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_created: Option<Uuid>) {
     use buzz_core::kind::{KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION};
     use buzz_db::relay_rooms::RosterChange;
@@ -472,6 +479,15 @@ pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_crea
         }
         cmd.state
             .invalidate_membership(cmd.tenant, *room, change.pubkey());
+    }
+    for room in rooms {
+        if let Err(e) =
+            super::side_effects::emit_group_discovery_events(cmd.tenant, cmd.state, room).await
+        {
+            warn!(room = %room, error = %e, "intelligent-org: NIP-29 discovery emission failed");
+        }
+    }
+    for (room, change) in &applied.roster {
         let notification = match change {
             RosterChange::Added { .. } => KIND_MEMBER_ADDED_NOTIFICATION,
             RosterChange::Removed { .. } => KIND_MEMBER_REMOVED_NOTIFICATION,
@@ -487,13 +503,6 @@ pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_crea
         .await
         {
             warn!(room = %room, error = %e, "intelligent-org: membership notification failed");
-        }
-    }
-    for room in rooms {
-        if let Err(e) =
-            super::side_effects::emit_group_discovery_events(cmd.tenant, cmd.state, room).await
-        {
-            warn!(room = %room, error = %e, "intelligent-org: NIP-29 discovery emission failed");
         }
     }
 }

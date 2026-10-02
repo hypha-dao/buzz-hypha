@@ -13,11 +13,13 @@ import {
   getThreadReference,
   isBroadcastReply,
 } from "@/features/messages/lib/threading";
+import { ORG_AGENT_LABEL } from "@/features/org/orgAgent";
 import {
   formatOwnerLabel,
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 import { getMentionTagPubkey } from "@/shared/lib/resolveMentionNames";
 import {
   KIND_JOB_ACCEPTED,
@@ -37,7 +39,6 @@ import {
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
 import { resolveEventAuthorPubkey } from "@/shared/lib/authors";
-import { normalizePubkey } from "@/shared/lib/pubkey";
 import { channelRoleMap } from "@/shared/lib/rosterDerivations";
 
 const EMPTY_ROLE_MAP: ReadonlyMap<string, string> = new Map();
@@ -147,6 +148,17 @@ function formatMessageAuthor(
     relaySelfPubkey,
     requireChannelTagForPTags: true,
   });
+  if (
+    currentPubkey &&
+    channel?.channelType === "dm" &&
+    channel.participantPubkeys.length > 0 &&
+    channel.participantPubkeys.every(
+      (pubkey) => normalizePubkey(pubkey) === normalizePubkey(currentPubkey),
+    ) &&
+    normalizePubkey(authorPubkey) !== normalizePubkey(currentPubkey)
+  ) {
+    return ORG_AGENT_LABEL;
+  }
   const fallbackName =
     channel?.channelType === "dm"
       ? (() => {

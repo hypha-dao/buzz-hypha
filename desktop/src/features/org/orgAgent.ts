@@ -1,4 +1,4 @@
-import type { Channel, RelayEvent } from "@/shared/api/types";
+import type { Channel, PresenceStatus, RelayEvent } from "@/shared/api/types";
 import { KIND_IO_SHAPERS } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -18,6 +18,9 @@ export type OrgAgentIdentity = {
 };
 
 export const NO_ORG_AGENT: OrgAgentIdentity = { pubkey: null, hosted: false };
+
+/** Sidebar and chat title for the member's DM with `39103.agent`. */
+export const ORG_AGENT_LABEL = "Org. Agent";
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
 
@@ -112,6 +115,51 @@ export function pinOrgAgentDmFirst<
   if (index <= 0) return channels as T[];
   const pinned = channels[index] as T;
   return [pinned, ...channels.slice(0, index), ...channels.slice(index + 1)];
+}
+
+/**
+ * Presence for a DM row or chat header. The org agent is hosted for the
+ * community and does not publish kind:20001, so its own DM stays online.
+ * Every other DM keeps the relay status (null while that read has not landed).
+ */
+export function orgAgentDmPresence(
+  channel: Pick<Channel, "channelType" | "participantPubkeys">,
+  orgAgentPubkey: string | null,
+  currentPubkey: string | null,
+  relayStatus: PresenceStatus | null,
+): PresenceStatus | null {
+  if (isOrgAgentDm(channel, orgAgentPubkey, currentPubkey)) return "online";
+  return relayStatus;
+}
+
+/**
+ * Sidebar face for the org agent's DM. The relay may omit the agent from the
+ * DM's `p` tags (Protocol §6.8); the row still shows the agent, not the member.
+ * Returns null for every other channel so the caller keeps its own participant.
+ */
+export function orgAgentSidebarFace(
+  channel: Pick<Channel, "channelType" | "participantPubkeys">,
+  orgAgentPubkey: string | null,
+  currentPubkey: string | null,
+  avatarUrl: string | null,
+): {
+  avatarUrl: string | null;
+  isAgent: true;
+  label: string;
+  pubkey: string;
+} | null {
+  if (
+    !orgAgentPubkey ||
+    !isOrgAgentDm(channel, orgAgentPubkey, currentPubkey)
+  ) {
+    return null;
+  }
+  return {
+    avatarUrl,
+    isAgent: true,
+    label: ORG_AGENT_LABEL,
+    pubkey: orgAgentPubkey,
+  };
 }
 
 /**

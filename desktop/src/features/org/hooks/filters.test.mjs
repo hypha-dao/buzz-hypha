@@ -50,7 +50,7 @@ test("workItemFilters is d, u, command trail, work log", () => {
   assert.deepEqual(filters[1]["#u"], [ITEM]);
   assert.deepEqual(filters[2].kinds, IO_COMMAND_KINDS);
   assert.equal(IO_COMMAND_KINDS[0], 50001);
-  assert.equal(IO_COMMAND_KINDS.at(-1), 50021);
+  assert.equal(IO_COMMAND_KINDS.at(-1), 50023);
   assert.deepEqual(filters[2]["#i"], [ITEM]);
   assert.deepEqual(filters[3].kinds, [50102]);
 });
@@ -59,14 +59,20 @@ test("myWorkFilters is p/n/s plus 39103, and the shaper addendum", () => {
   const member = myWorkFilters(ME);
   assert.deepEqual(
     member.map((filter) => filter.kinds[0]),
-    [39103, 39101, 50100, 39102],
+    [39103, 39101, 50100, 39102, 39102],
   );
   assert.deepEqual(member[1]["#p"], [ME]);
   assert.deepEqual(member[2]["#n"], [ME]);
   assert.deepEqual(member[3]["#s"], ["open"]);
+  assert.deepEqual(member[4]["#p"], [ME]);
+  assert.deepEqual(member[4]["#t"], ["project"]);
+  assert.deepEqual(member[4]["#s"], ["passed"]);
   const shaper = myWorkFilters(ME, true);
-  assert.equal(shaper.length, 5);
-  assert.deepEqual(shaper[4]["#n"], ["shaper"]);
+  assert.equal(shaper.length, 7);
+  assert.deepEqual(shaper[5]["#n"], ["shaper"]);
+  assert.deepEqual(shaper[6].kinds, [39101]);
+  assert.deepEqual(shaper[6]["#t"], ["project"]);
+  assert.deepEqual(shaper[6]["#s"], ["open"]);
 });
 
 test("profileFilters is the Protocol §6.5 About & skills REQ", () => {

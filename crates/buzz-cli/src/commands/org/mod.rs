@@ -272,7 +272,8 @@ pub enum WorkCmd {
         #[arg(long)]
         why: Option<String>,
     },
-    /// Move the due date (`50011`)
+    /// Move a project's review date or a ticket's due date (`50011`).
+    /// A Shaper on a project. On a ticket: the holder, the creator, or the parent holder.
     #[command(name = "set-due")]
     SetDue {
         item: String,

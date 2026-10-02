@@ -711,6 +711,16 @@ pub const KIND_IO_SHAPER_ACCEPT: u32 = 50019;
 pub const KIND_IO_SHAPER_STEP_DOWN: u32 = 50020;
 /// IO command `io_profile_set`: a member replaces their own org profile.
 pub const KIND_IO_PROFILE_SET: u32 = 50021;
+/// IO command `io_withdraw`: take a project or ticket off the live board.
+///
+/// A project only when one Shaper is seated and that Shaper sends it. A
+/// ticket only from its creator or the member who offered it.
+pub const KIND_IO_WITHDRAW: u32 = 50022;
+/// IO command `io_withdraw_propose`: open a `withdraw` proposal for a project.
+///
+/// Only when more than one Shaper is seated. Passing it runs the same
+/// removal as [`KIND_IO_WITHDRAW`].
+pub const KIND_IO_WITHDRAW_PROPOSE: u32 = 50023;
 
 // Drafts and reads (agent- or person-signed, regular, never change state). Protocol §3.3.
 /// IO read `io_draft`: a suggestion addressed to one party (`n` tag).
@@ -756,6 +766,8 @@ pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
     KIND_IO_SHAPER_ACCEPT,
     KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_PROFILE_SET,
+    KIND_IO_WITHDRAW,
+    KIND_IO_WITHDRAW_PROPOSE,
     KIND_IO_DRAFT,
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
@@ -779,13 +791,13 @@ pub const fn is_intelligent_org_state_kind(kind: u32) -> bool {
     )
 }
 
-/// Returns `true` for a registered intelligent-org **command** kind (`50001–50021`).
+/// Returns `true` for a registered intelligent-org **command** kind (`50001–50023`).
 ///
 /// Includes the reserved money and join commands (`50013`, `50014`, `50016`):
 /// they route to the executor like every other command so it can reject them
 /// with the fixed `restricted:` reasons of Protocol §3.2.
 pub const fn is_intelligent_org_command_kind(kind: u32) -> bool {
-    kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_PROFILE_SET
+    kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_WITHDRAW_PROPOSE
 }
 
 /// Returns `true` for a registered intelligent-org **draft or read** kind (`50100–50103`).
@@ -965,6 +977,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_IO_SHAPER_ACCEPT,
     KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_PROFILE_SET,
+    KIND_IO_WITHDRAW,
+    KIND_IO_WITHDRAW_PROPOSE,
     KIND_IO_DRAFT,
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
@@ -1019,7 +1033,7 @@ pub const fn is_identity_archive_request_kind(kind: u32) -> bool {
 
 /// Returns `true` if `kind` is a Buzz command kind that requires transactional execution.
 ///
-/// Intelligent-org commands (`50001–50021`) are members: they route to the
+/// Intelligent-org commands (`50001–50023`) are members: they route to the
 /// command executor, which owns their role checks and rejections
 /// (Protocol §3.2, §6.1).
 pub const fn is_command_kind(kind: u32) -> bool {
@@ -1118,7 +1132,8 @@ const _: () = assert!(is_parameterized_replaceable(KIND_IO_PROFILE)); // 39105
 const _: () =
     assert!(KIND_IO_DIRECTION >= IO_STATE_KIND_MIN && KIND_IO_PROFILE <= IO_STATE_KIND_MAX);
 const _: () = assert!(
-    KIND_IO_SHAPERS_PROPOSE > IO_COMMAND_KIND_MIN && KIND_IO_PROFILE_SET <= IO_COMMAND_KIND_MAX
+    KIND_IO_SHAPERS_PROPOSE > IO_COMMAND_KIND_MIN
+        && KIND_IO_WITHDRAW_PROPOSE <= IO_COMMAND_KIND_MAX
 );
 const _: () = assert!(KIND_IO_DRAFT >= IO_READ_KIND_MIN && KIND_IO_AGENT_NOTE <= IO_READ_KIND_MAX);
 const _: () = assert!(!is_ephemeral(KIND_IO_PROFILE_SET) && !is_replaceable(KIND_IO_PROFILE_SET));
@@ -1167,9 +1182,9 @@ mod tests {
     // ── Intelligent organization (Protocol §3, Development plan R-1) ─────
 
     const IO_STATE: [u32; 6] = [39100, 39101, 39102, 39103, 39104, 39105];
-    const IO_COMMANDS: [u32; 21] = [
+    const IO_COMMANDS: [u32; 23] = [
         50001, 50002, 50003, 50004, 50005, 50006, 50007, 50008, 50009, 50010, 50011, 50012, 50013,
-        50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021,
+        50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021, 50022, 50023,
     ];
     const IO_READS: [u32; 4] = [50100, 50101, 50102, 50103];
 
@@ -1220,8 +1235,8 @@ mod tests {
                 "{kind} is a regular event"
             );
         }
-        // 50000 is not a kind; 50022+ is reserved.
-        for kind in [50000, 50022, 50049, 50050] {
+        // 50000 is not a kind; 50024+ is reserved.
+        for kind in [50000, 50024, 50049, 50050] {
             assert!(!is_intelligent_org_command_kind(kind), "{kind}");
             assert!(!is_command_kind(kind), "{kind}");
         }

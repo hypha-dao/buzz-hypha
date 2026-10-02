@@ -28,6 +28,7 @@ import { useBakedBuildEnvQuery } from "@/features/agents/hooks";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import { excludeOrgAgent } from "@/features/org/orgAgent";
+import { isPersonalAssistantAgent } from "@/features/org/personalAssistant";
 import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
 import { Button } from "@/shared/ui/button";
 import {
@@ -51,7 +52,10 @@ export function AgentsView() {
   // key this member runs locally (Design § Where it runs).
   const orgAgentPubkey = useOrgAgentPubkey();
   const doorAgents = React.useMemo(
-    () => excludeOrgAgent(agents.managedAgents, orgAgentPubkey),
+    () =>
+      excludeOrgAgent(agents.managedAgents, orgAgentPubkey).filter(
+        (agent) => !isPersonalAssistantAgent(agent),
+      ),
     [agents.managedAgents, orgAgentPubkey],
   );
   const teamImportInputRef = React.useRef<HTMLInputElement | null>(null);

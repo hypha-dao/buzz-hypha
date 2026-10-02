@@ -50,9 +50,10 @@ import {
   WelcomeComposerGuidanceLayer,
 } from "@/features/channels/ui/WelcomeComposerBanner";
 import { useWelcomeComposerBanner } from "@/features/channels/ui/useWelcomeComposerBanner";
-import { OrgOnboardingGuide } from "@/features/org/ui/OrgOnboardingGuide";
-import { isPersonalAssistantDm } from "@/features/org/personalAssistant";
-import { usePersonalAssistantPubkey } from "@/features/org/usePersonalAssistant";
+import { OrgActsFromChat } from "@/features/org/useActFromChat";
+import { ChatProposalDrafts } from "@/features/org/ui/ChatProposalDrafts";
+import { ShapersChatProposals } from "@/features/org/ui/ShapersChatProposals";
+import { useOrgChannelChat } from "@/features/channels/ui/useOrgChannelChat";
 import {
   mentionsKnownAgent,
   selectThreadComposerBotTypingPubkeys,
@@ -237,14 +238,33 @@ export const ChannelPane = React.memo(function ChannelPane({
     agentPubkeysPending && hasOtherDmParticipant(activeChannel, currentPubkey);
   const isActiveWelcomeChannel =
     activeChannel !== null && isWelcomeExperience(activeChannel);
-  const personalAssistantPubkey = usePersonalAssistantPubkey();
-  const isActivePersonalAssistantDm =
-    activeChannel !== null &&
-    isPersonalAssistantDm(
-      activeChannel,
-      personalAssistantPubkey,
-      currentPubkey ?? null,
-    );
+  const {
+    ackOrgAgentSend,
+    composerTypingPubkeys,
+    displayMessages,
+    displayThreadHead,
+    displayThreadMessages,
+    messageFooters,
+    noteOrgAgentSendFailed,
+    onDraftFooters,
+    onDraftSentences,
+    onShapersProposalFooters,
+    orgAgentPubkey,
+    orgAgentTypingProfiles,
+    orgChatRoom,
+    shapersRoom,
+    threadComposerTypingPubkeys,
+  } = useOrgChannelChat({
+    activeChannel,
+    activeChannelId,
+    currentPubkey,
+    messages,
+    profiles,
+    threadHeadMessage,
+    threadMessages,
+    threadTypingPubkeys,
+    typingPubkeys,
+  });
   useComposerHeightPadding(
     timelineScrollRef,
     composerWrapperRef,
@@ -308,14 +328,20 @@ export const ChannelPane = React.memo(function ChannelPane({
         (containsWelcomePersonaMention(content) ||
           mentionsKnownAgent(mentionPubkeys, knownAgentPubkeys));
       messageTimelineRef.current?.scrollToBottomOnNextUpdate();
-      await onSendMessage(
-        content,
-        mentionPubkeys,
-        mediaTags,
-        channelId,
-        threadContext,
-        forceRest,
-      );
+      const orgAgentAck = ackOrgAgentSend(content, mentionPubkeys);
+      try {
+        await onSendMessage(
+          content,
+          mentionPubkeys,
+          mediaTags,
+          channelId,
+          threadContext,
+          forceRest,
+        );
+      } catch (error) {
+        if (orgAgentAck !== null) noteOrgAgentSendFailed(orgAgentAck);
+        throw error;
+      }
       if (
         channelId &&
         channelId !== activeChannelId &&
@@ -333,9 +359,29 @@ export const ChannelPane = React.memo(function ChannelPane({
       completeWelcomeComposerBanner,
       goChannel,
       isActiveWelcomeChannel,
+      ackOrgAgentSend,
       knownAgentPubkeys,
+      noteOrgAgentSendFailed,
       onSendMessage,
     ],
+  );
+  const handleSendThreadReply = React.useCallback<typeof onSendThreadReply>(
+    async (content, mentionPubkeys, mediaTags, channelId, threadContext) => {
+      const orgAgentAck = ackOrgAgentSend(content, mentionPubkeys);
+      try {
+        await onSendThreadReply(
+          content,
+          mentionPubkeys,
+          mediaTags,
+          channelId,
+          threadContext,
+        );
+      } catch (error) {
+        if (orgAgentAck !== null) noteOrgAgentSendFailed(orgAgentAck);
+        throw error;
+      }
+    },
+    [ackOrgAgentSend, noteOrgAgentSendFailed, onSendThreadReply],
   );
   const canDropInMainColumn =
     hasMainComposerOverlay &&
@@ -343,7 +389,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     !isMainDeferredEditPending &&
     acceptsMainAttachments &&
     !isSinglePanelView;
-  const hasTypingActivity = typingPubkeys.length > 0;
+  const hasTypingActivity = composerTypingPubkeys.length > 0;
   const composerWorkingBotPubkeys = useChannelWorkingAgentPubkeys(
     activeChannel?.id ?? null,
   );
@@ -363,9 +409,10 @@ export const ChannelPane = React.memo(function ChannelPane({
       buildDirectMessageIntro({
         channel: activeChannel,
         currentPubkey,
+        orgAgentPubkey,
         profiles,
       }),
-    [activeChannel, currentPubkey, profiles],
+    [activeChannel, currentPubkey, orgAgentPubkey, profiles],
   );
   const handleWelcomeAddAgent = React.useCallback(() => {
     onAddAgent?.({
@@ -387,7 +434,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     useChannelPaneMessages({
       activeChannel,
       isHuddleTranscript,
-      messages,
+      messages: displayMessages,
       profiles,
       threadSummaries,
     });
@@ -593,6 +640,14 @@ export const ChannelPane = React.memo(function ChannelPane({
       className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden"
       style={isHuddleTranscript ? HUDDLE_TRANSCRIPT_ROOT_STYLE : undefined}
     >
+      {orgChatRoom ? (
+        <OrgActsFromChat
+          currentPubkey={currentPubkey ?? null}
+          messages={messages}
+          orgAgentPubkey={orgAgentPubkey}
+          room={orgChatRoom}
+        />
+      ) : null}
       {!isSinglePanelView && !isHuddleTranscript ? (
         <div
           aria-hidden="true"
@@ -633,6 +688,20 @@ export const ChannelPane = React.memo(function ChannelPane({
             </div>
           ) : null}
           <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
+            {orgChatRoom ? (
+              <ChatProposalDrafts
+                messages={visibleMessages}
+                onFooters={onDraftFooters}
+                onSentences={onDraftSentences}
+                orgAgentPubkey={orgAgentPubkey}
+              />
+            ) : null}
+            {shapersRoom ? (
+              <ShapersChatProposals
+                messages={visibleMessages}
+                onFooters={onShapersProposalFooters}
+              />
+            ) : null}
             <MessageTimeline
               ref={messageTimelineRef}
               channelId={activeChannel?.id}
@@ -679,6 +748,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onEntranceMessageComplete={onEntranceMessageComplete}
               mainEntries={mainTimelineEntries}
               threadSummaries={threadSummaries}
+              messageFooters={messageFooters}
               messages={visibleMessages}
               firstUnreadMessageId={firstUnreadMessageId}
               unreadCount={unreadCount}
@@ -758,9 +828,6 @@ export const ChannelPane = React.memo(function ChannelPane({
                       {welcomeKickoffStage}
                     </WelcomeComposerGuidanceLayer>
                   ) : null}
-                  {isActivePersonalAssistantDm && !timeoutState.active ? (
-                    <OrgOnboardingGuide active />
-                  ) : null}
                   {timeoutState.active ? (
                     <ComposerTimeoutBanner
                       expiresAtMs={timeoutState.expiresAtMs}
@@ -816,8 +883,8 @@ export const ChannelPane = React.memo(function ChannelPane({
                     currentPubkey={currentPubkey}
                     onOpenAgentSession={onOpenAgentSession}
                     openAgentSessionPubkey={openAgentSessionPubkey}
-                    profiles={profiles}
-                    typingPubkeys={typingPubkeys}
+                    profiles={orgAgentTypingProfiles}
+                    typingPubkeys={composerTypingPubkeys}
                     visible={hasComposerBottomActivity}
                     workingBotPubkeys={composerWorkingBotPubkeys}
                   />
@@ -882,7 +949,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 onMarkRead={onMarkRead}
                 onExpandReplies={onExpandThreadReplies}
                 onSelectReplyTarget={onSelectThreadReplyTarget}
-                onSend={onSendThreadReply}
+                onSend={handleSendThreadReply}
                 onSendToChannel={
                   isComposerDisabled ? undefined : onSendToChannel
                 }
@@ -895,10 +962,10 @@ export const ChannelPane = React.memo(function ChannelPane({
                 scrollTargetHighlights={!layoutScrollTargetId}
                 scrollTargetId={layoutScrollTargetId ?? threadScrollTargetId}
                 {...searchHighlightProps.thread}
-                threadHead={threadHeadMessage}
+                threadHead={displayThreadHead}
                 videoReviewPresentation={threadVideoReviewPresentation}
                 widthPx={threadPanelWidthPx}
-                threadReplies={threadMessages}
+                threadReplies={displayThreadMessages}
                 threadRepliesPending={threadMessagesPending}
                 threadRepliesError={threadMessagesError}
                 onRetryThreadReplies={onRetryThreadReplies}
@@ -906,7 +973,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   threadHeadMessage.id,
                 )}
                 threadReplyUnreadCounts={threadReplyUnreadCounts}
-                threadTypingPubkeys={threadTypingPubkeys}
+                threadTypingPubkeys={threadComposerTypingPubkeys}
                 activityAccessoryVisible={hasThreadComposerBotActivity}
                 activityAccessoryContent={
                   hasThreadComposerBotActivity ? (

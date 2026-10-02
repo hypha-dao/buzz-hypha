@@ -8,6 +8,8 @@ import "@fontsource-variable/inter/opsz-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "@/shared/styles/globals.css";
+import { applyPaperSurface } from "@/features/org/ui/orgPaper";
+import "@/features/org/ui/orgPaper.css";
 import { UpdaterProvider } from "@/features/settings/hooks/UpdaterProvider";
 import { migrateLegacyCommunityStorageBeforeRender } from "@/features/communities/legacyCommunityStorage";
 import { CommunitiesProvider } from "@/features/communities/useCommunities";
@@ -125,6 +127,8 @@ async function installE2eBridgeIfConfigured() {
 }
 
 async function bootstrap() {
+  // Before React paints, so a reload cannot flash the previous theme canvas.
+  applyPaperSurface(document.documentElement);
   resetDevWebviewStateFromUrl();
   configureDevE2eBridgeFromUrl();
   recoverLocalStorageQuotaOnStartup();

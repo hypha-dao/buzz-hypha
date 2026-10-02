@@ -1,8 +1,9 @@
 //! Work-tree commands (`50005`–`50011`, `50018`) and `project` execution
 //! (Protocol §4.2, §5.1, §5.3).
 //!
-//! A passed `project` opens a root in `open` (or `offered` to
-//! `suggested_dri`) and creates its home room (R-9a; `home.repo` /
+//! A passed `project` opens a root in `open`, `offered` to `suggested_dri`,
+//! or `accepted` when that person already agreed, and creates its home room
+//! (R-9a; `home.repo` /
 //! `home.project` wait for R-9b). Children are created only by the parent's
 //! holder; only `offered_to` accepts or declines; only the holder marks done
 //! or releases; a Shaper (root) or the parent holder (child) sets due; the
@@ -13,10 +14,10 @@
 
 use buzz_core::intelligent_org::{
     tag, ChildrenCounts, ClosedBy, DirectionSlug, EmptyContent, Executed, ProjectProposeContent,
-    Proposal, TicketCreateContent, WhyContent, WorkItem, WorkItemState,
+    Proposal, TicketCreateContent, VoteChoice, WhyContent, WorkItem, WorkItemState,
 };
 use buzz_db::intelligent_org::{self as store, LedgerEntry, WorkItemRow};
-use sqlx::{Postgres, Transaction};
+use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use super::apply::Projection;
@@ -55,6 +56,7 @@ fn bump_children(
                 counts.accepted = counts.accepted.saturating_sub(1);
             }
             WorkItemState::Done => counts.done = counts.done.saturating_sub(1),
+            WorkItemState::Withdrawn => {}
         }
     }
     if let Some(to) = to {
@@ -63,6 +65,7 @@ fn bump_children(
             WorkItemState::Offered => counts.offered += 1,
             WorkItemState::Accepted | WorkItemState::InReview => counts.accepted += 1,
             WorkItemState::Done => counts.done += 1,
+            WorkItemState::Withdrawn => {}
         }
     }
 }
@@ -119,7 +122,7 @@ fn with_child_delta(
 pub(super) fn orphan_child_for_closed_root(
     mut child: WorkItem,
 ) -> Option<(WorkItemState, WorkItem)> {
-    if child.state == WorkItemState::Done {
+    if matches!(child.state, WorkItemState::Done | WorkItemState::Withdrawn) {
         return None;
     }
     let from = child.state;
@@ -241,7 +244,7 @@ fn return_open_child(
     actor: &str,
     at: u64,
 ) -> Option<(WorkItemState, WorkItem)> {
-    if child.state == WorkItemState::Done {
+    if matches!(child.state, WorkItemState::Done | WorkItemState::Withdrawn) {
         return None;
     }
     let from = child.state;
@@ -268,6 +271,7 @@ fn return_open_child(
             child.dri = None;
             child.offered_to = Some(p.to_owned());
             child.offered_by = Some(actor.to_owned());
+            child.offered_by_member = Some(actor.to_owned());
             child.offered_at = Some(at);
         }
         None => {
@@ -284,8 +288,18 @@ fn return_open_child(
     Some((from, child))
 }
 
+/// The suggested holder already agreed, so the root is theirs.
+fn dri_already_agreed(proposal: &Proposal, dri: &str) -> bool {
+    proposal
+        .votes
+        .iter()
+        .any(|vote| vote.vote == VoteChoice::Agree && vote.p.eq_ignore_ascii_case(dri))
+}
+
 /// §5.3 `project`: create the root in `open`, or `offered` to
-/// `suggested_dri`. `approved_at` is the passing vote. R-9a creates the
+/// `suggested_dri`. A suggested holder who already agreed holds it
+/// (`accepted`) in the same transaction — the chat yes is not a second
+/// Accept on My Work. `approved_at` is the passing vote. R-9a creates the
 /// home room in the same transaction and writes `home.channel`; `repo` /
 /// `project` wait for R-9b. `opening_receipt` is the `50004` that opened
 /// the proposal — `created_from` on the root — supplied by `settle`
@@ -311,12 +325,19 @@ pub(super) async fn execute_project(
     // would miss the head.
     let created_from = opening_receipt.to_owned();
     let id = Uuid::new_v4();
-    let offered_to = payload.suggested_dri.clone();
-    let state = if offered_to.is_some() {
+    let named = payload.suggested_dri.clone();
+    let holds = named
+        .as_deref()
+        .is_some_and(|dri| dri_already_agreed(proposal, dri));
+    let state = if holds {
+        WorkItemState::Accepted
+    } else if named.is_some() {
         WorkItemState::Offered
     } else {
         WorkItemState::Open
     };
+    let dri = if holds { named.clone() } else { None };
+    let offered_to = if holds { None } else { named };
     let room =
         home::create_project_room(tx, cmd.tenant.community(), &payload.title, &cmd.actor_bytes)
             .await?;
@@ -329,10 +350,12 @@ pub(super) async fn execute_project(
         title: payload.title.clone(),
         brief: payload.brief,
         state,
-        dri: None,
+        dri: dri.clone(),
         offered_to: offered_to.clone(),
         offered_by: offered_to.as_ref().map(|_| proposal.opened_by.clone()),
         offered_at: offered_to.as_ref().map(|_| cmd.at),
+        created_by: None,
+        offered_by_member: offered_to.as_ref().map(|_| proposal.opened_by.clone()),
         due_at: payload.due_at,
         approved_at: Some(cmd.at),
         objective_ref: payload.objective_ref,
@@ -358,6 +381,7 @@ pub(super) async fn execute_project(
                     "proposal": proposal.id,
                     "state": state,
                     "offered_to": offered_to,
+                    "dri": dri,
                 }),
             )?,
             cmd.ledger(
@@ -420,6 +444,8 @@ pub(super) async fn create(cmd: &Command<'_>) -> Result<IngestResult, IngestErro
         offered_to: offer_to.clone(),
         offered_by: offer_to.as_ref().map(|_| cmd.actor_hex.clone()),
         offered_at: offer_to.as_ref().map(|_| cmd.at),
+        created_by: Some(cmd.actor_hex.clone()),
+        offered_by_member: offer_to.as_ref().map(|_| cmd.actor_hex.clone()),
         due_at: content.due_at,
         approved_at: None,
         objective_ref: None,
@@ -487,6 +513,7 @@ pub(super) async fn offer(cmd: &Command<'_>) -> Result<IngestResult, IngestError
     next.state = WorkItemState::Offered;
     next.offered_to = Some(to.clone());
     next.offered_by = Some(cmd.actor_hex.clone());
+    next.offered_by_member = Some(cmd.actor_hex.clone());
     next.offered_at = Some(cmd.at);
     let mut projections = vec![work_projection(next.clone(), cmd.receipt_hex())];
     if let Some(parent) = parent {
@@ -807,9 +834,216 @@ pub(super) async fn reopen(cmd: &Command<'_>) -> Result<IngestResult, IngestErro
     .await
 }
 
+/// How many nodes one removal may rewrite. A larger tree is refused
+/// rather than walked without a bound.
+const MAX_WITHDRAW_NODES: usize = 200;
+
+/// `io_withdraw` (`50022`). A sole Shaper removes a project. The ticket's
+/// creator, or the member who offered it, removes a ticket. Descendants
+/// leave the live board with it.
+pub(super) async fn withdraw(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let item_id = item_id(cmd)?;
+    let raw = content_value(cmd.event)?;
+    authorize::money_fields(&raw)?;
+    let content: WhyContent = parse_content(cmd.event)?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let item = load_item(&mut tx, cmd, item_id, "item").await?;
+    if item.parent.is_none() {
+        authorize::withdraw_project(&item, &shapers, &cmd.actor_hex)?;
+    } else {
+        let creator = if item.created_by.is_none() {
+            creating_author(&mut tx, cmd, &item.created_from).await?
+        } else {
+            None
+        };
+        authorize::withdraw_ticket(&item, &cmd.actor_hex, creator.as_deref())?;
+    }
+    let execution = withdraw_loaded(cmd, &mut tx, item, content.why).await?;
+    persist(
+        cmd,
+        tx,
+        execution.projections,
+        execution.rows,
+        serde_json::json!({ "removed": true }).to_string(),
+    )
+    .await
+}
+
+/// A passed `withdraw` proposal. Refuses if the project is already gone,
+/// so the vote stays open rather than passing with no effect.
+pub(super) async fn execute_withdraw_proposal(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let item_id = proposal
+        .payload
+        .get("i")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| IngestError::Rejected("invalid: withdraw proposal has no item".into()))?;
+    let id = Uuid::parse_str(item_id).map_err(|error| internal("withdraw item id", error))?;
+    let item = load_item(tx, cmd, id, "item").await?;
+    if item.parent.is_some() {
+        return Err(IngestError::Rejected(
+            "invalid: a ticket is removed by its creator or the person who offered it".into(),
+        ));
+    }
+    if item.state == WorkItemState::Withdrawn {
+        return Err(IngestError::Rejected("invalid: already removed".into()));
+    }
+    let why = proposal
+        .payload
+        .get("why")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    withdraw_loaded(cmd, tx, item, why).await
+}
+
+async fn withdraw_loaded(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    item: WorkItem,
+    why: Option<String>,
+) -> Result<Execution, IngestError> {
+    let parent = load_parent(tx, cmd, &item).await?;
+    let from = item.state;
+    let nodes = collect_subtree(tx, cmd, item).await?;
+    let channels = project_home_channels(&nodes);
+    for channel in &channels {
+        home::archive_home_channel(&mut **tx, cmd.tenant.community(), *channel).await?;
+    }
+    let ids: Vec<String> = nodes.iter().map(|node| node.id.clone()).collect();
+    let root_id = ids.first().cloned().unwrap_or_default();
+    let mut projections = Vec::with_capacity(nodes.len().saturating_add(1));
+    for mut node in nodes {
+        node.state = WorkItemState::Withdrawn;
+        node.children = ChildrenCounts::default();
+        projections.push(work_projection(node, cmd.receipt_hex()));
+    }
+    if let Some(parent) = parent {
+        projections.push(work_projection(
+            with_child_delta(parent, Some(from), Some(WorkItemState::Withdrawn)),
+            cmd.receipt_hex(),
+        ));
+    }
+    let rows = vec![cmd.ledger(
+        "item_withdrawn",
+        object::WORK_ITEM,
+        &root_id,
+        serde_json::json!({
+            "ids": ids,
+            "why": why,
+            "channels": channels.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        }),
+    )?];
+    Ok(Execution {
+        executed: executed_work_item(&root_id),
+        projections,
+        rows,
+        room_created: None,
+    })
+}
+
+async fn collect_subtree(
+    tx: &mut Transaction<'static, Postgres>,
+    cmd: &Command<'_>,
+    root: WorkItem,
+) -> Result<Vec<WorkItem>, IngestError> {
+    let mut pending = vec![root];
+    let mut nodes = Vec::new();
+    while let Some(node) = pending.pop() {
+        if nodes.len() >= MAX_WITHDRAW_NODES {
+            return Err(IngestError::Rejected(
+                "invalid: too many pieces to remove at once".into(),
+            ));
+        }
+        let children = load_children(tx, cmd, &node.id).await?;
+        for child in children {
+            if child.state != WorkItemState::Withdrawn {
+                pending.push(child);
+            }
+        }
+        nodes.push(node);
+    }
+    Ok(nodes)
+}
+
+/// Home rooms of the projects in a withdrawn tree. Tickets have no room of
+/// their own, so a ticket removal leaves the project's channel up.
+fn project_home_channels(nodes: &[WorkItem]) -> Vec<Uuid> {
+    let mut channels = Vec::new();
+    for node in nodes {
+        if node.parent.is_some() {
+            continue;
+        }
+        let Some(channel) = node.home.as_ref().map(|home| home.channel.as_str()) else {
+            continue;
+        };
+        let Ok(id) = Uuid::parse_str(channel) else {
+            continue;
+        };
+        if !channels.contains(&id) {
+            channels.push(id);
+        }
+    }
+    channels
+}
+
+async fn creating_author(
+    tx: &mut Transaction<'static, Postgres>,
+    cmd: &Command<'_>,
+    created_from: &str,
+) -> Result<Option<String>, IngestError> {
+    let Ok(id) = hex::decode(created_from) else {
+        return Ok(None);
+    };
+    if id.len() != 32 {
+        return Ok(None);
+    }
+    let row = sqlx::query(
+        "SELECT pubkey FROM events WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
+    )
+    .bind(cmd.tenant.community().as_uuid())
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| internal("read creating command", error))?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let pubkey: Vec<u8> = row
+        .try_get("pubkey")
+        .map_err(|error| internal("creating command pubkey", error))?;
+    if pubkey.len() != 32 {
+        return Ok(None);
+    }
+    Ok(Some(hex::encode(pubkey)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn withdrawing_a_project_names_its_home_room_and_a_ticket_does_not() {
+        let room = Uuid::parse_str("0532e77b-04c5-4443-8225-331c7d7ae833").unwrap();
+        let mut project = child(WorkItemState::Open, None);
+        project.parent = None;
+        project.home = Some(home_channel_only(room));
+        let ticket = child(WorkItemState::Accepted, None);
+        assert_eq!(project_home_channels(&[project, ticket]), vec![room]);
+
+        let mut bare = child(WorkItemState::Open, None);
+        bare.parent = None;
+        assert!(project_home_channels(&[bare]).is_empty());
+    }
 
     #[test]
     fn branch_for_uses_the_first_four_of_the_uuid_and_a_slug() {
@@ -867,6 +1101,8 @@ mod tests {
             offered_to: None,
             offered_by: None,
             offered_at: None,
+            created_by: None,
+            offered_by_member: None,
             due_at: 1,
             approved_at: None,
             objective_ref: None,

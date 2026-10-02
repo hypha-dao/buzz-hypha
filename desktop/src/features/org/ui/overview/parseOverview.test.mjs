@@ -178,9 +178,57 @@ test("projectHolds reads root 39101s and skips tickets", () => {
   assert.deepEqual(
     holds.map((hold) => [hold.title, hold.dri]),
     [
-      ["Harvest", null],
       ["Weekday hall", HOLDER],
+      ["Harvest", null],
     ],
+  );
+});
+
+test("projectHolds drops a project that was withdrawn", () => {
+  const holds = projectHolds([
+    event(
+      39101,
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Weekday hall",
+        dri: HOLDER,
+        state: "accepted",
+      },
+      [
+        ["t", "project"],
+        ["s", "accepted"],
+      ],
+      1,
+    ),
+    event(
+      39101,
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Weekday hall",
+        state: "withdrawn",
+      },
+      [
+        ["t", "project"],
+        ["s", "withdrawn"],
+      ],
+      2,
+    ),
+    event(
+      39101,
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "Still live",
+        state: "open",
+      },
+      [
+        ["t", "project"],
+        ["s", "open"],
+      ],
+    ),
+  ]);
+  assert.deepEqual(
+    holds.map((hold) => hold.title),
+    ["Still live"],
   );
 });
 

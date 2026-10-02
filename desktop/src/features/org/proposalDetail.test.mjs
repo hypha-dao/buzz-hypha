@@ -1,0 +1,270 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { KIND_IO_PROPOSAL } from "../../shared/constants/kinds.ts";
+import {
+  chatProposalPreview,
+  currentDirectionProposals,
+  proposalDetail,
+  proposalMessageId,
+} from "./proposalDetail.ts";
+
+const PROPOSAL = "33333333-3333-4333-8333-333333333333";
+
+function proposal(content, tags = [["d", PROPOSAL]]) {
+  return {
+    kind: KIND_IO_PROPOSAL,
+    content: JSON.stringify(content),
+    tags,
+  };
+}
+
+test("a project proposal expands to its brief", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "project",
+      payload: {
+        title: "Weekday hall",
+        brief: "Book the hall on weekdays.",
+        due_at: 1_700_000_000,
+      },
+    }),
+  );
+  assert.equal(detail.title, "Weekday hall");
+  assert.equal(detail.body, "Book the hall on weekdays.");
+  assert.equal(detail.dueAt, 1_700_000_000);
+});
+
+test("a direction proposal expands to its sentence", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "direction",
+      payload: { slug: "mission", body: "We host the hall for the town." },
+    }),
+  );
+  assert.equal(detail.slug, "mission");
+  assert.equal(detail.body, "We host the hall for the town.");
+});
+
+test("the card hangs on the agent message that asked for it", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "project",
+      payload: { title: "Weekday hall", brief: "Book it.", due_at: 10 },
+    }),
+  );
+  const messageId = proposalMessageId(
+    [
+      {
+        id: "older",
+        createdAt: 1,
+        tags: [["project", "Something else", "no"]],
+      },
+      {
+        id: "match",
+        createdAt: 2,
+        tags: [
+          ["project", "Weekday hall", "Book it."],
+          ["due", "10"],
+        ],
+      },
+    ],
+    detail,
+  );
+  assert.equal(messageId, "match");
+  const preview = chatProposalPreview({
+    id: "match",
+    createdAt: 2,
+    tags: [
+      ["project", "Weekday hall", "Book it."],
+      ["due", "10"],
+    ],
+  });
+  assert.equal(preview.title, "Weekday hall");
+  assert.equal(preview.body, "Book it.");
+  assert.equal(preview.dueAt, 10);
+});
+
+test("without a matching tag the card sits on the nearest chat line", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "project",
+      payload: { title: "Weekday hall", brief: "Book it.", due_at: 10 },
+    }),
+  );
+  const messageId = proposalMessageId(
+    [
+      { id: "ask", createdAt: 100, tags: [] },
+      { id: "later", createdAt: 500, tags: [] },
+    ],
+    detail,
+    120,
+  );
+  assert.equal(messageId, "ask");
+});
+
+test("a revise sits on the message that names that proposal", () => {
+  const detail = proposalDetail(
+    proposal(
+      {
+        kind: "direction",
+        payload: { slug: "mission", body: "We host the river." },
+      },
+      [["d", PROPOSAL]],
+    ),
+  );
+  const messageId = proposalMessageId(
+    [
+      {
+        id: "first",
+        createdAt: 1,
+        tags: [["direction", "mission", "We host the hall."]],
+      },
+      {
+        id: "revised",
+        createdAt: 2,
+        tags: [
+          ["revise", PROPOSAL, "direction", "mission", "We host the river."],
+        ],
+      },
+    ],
+    detail,
+  );
+  assert.equal(messageId, "revised");
+});
+
+test("a new objectives draft does not collect earlier versions", () => {
+  const firstId = "11111111-1111-4111-8111-111111111111";
+  const secondId = "22222222-2222-4222-8222-222222222222";
+  const first = proposalDetail(
+    proposal(
+      {
+        kind: "direction",
+        payload: {
+          slug: "objectives",
+          body: "Start using the tool internally in Hypha.",
+        },
+      },
+      [["d", firstId]],
+    ),
+  );
+  const second = proposalDetail(
+    proposal(
+      {
+        kind: "direction",
+        payload: {
+          slug: "objectives",
+          body: "Start using the tool internally in Hypha. Make the UI impressive.",
+        },
+      },
+      [["d", secondId]],
+    ),
+  );
+  const messages = [
+    {
+      id: "v1",
+      createdAt: 1,
+      tags: [
+        [
+          "direction",
+          "objectives",
+          "Start using the tool internally in Hypha.",
+        ],
+      ],
+    },
+    {
+      id: "draft",
+      createdAt: 9,
+      tags: [
+        [
+          "direction",
+          "objectives",
+          "Start using the tool internally in Hypha. Make the UI impressive.",
+        ],
+      ],
+    },
+  ];
+  assert.equal(proposalMessageId(messages, first, 2), "v1");
+  assert.equal(proposalMessageId(messages, second, 8), "draft");
+  assert.equal(
+    proposalMessageId(
+      [{ id: "draft", createdAt: 9, tags: messages[1].tags }],
+      first,
+      2,
+    ),
+    null,
+  );
+});
+
+test("chat keeps the current direction and every project", () => {
+  const older = "11111111-1111-4111-8111-111111111111";
+  const newer = "22222222-2222-4222-8222-222222222222";
+  const project = "33333333-3333-4333-8333-333333333333";
+  const shown = currentDirectionProposals([
+    {
+      ...proposal(
+        {
+          kind: "direction",
+          payload: { slug: "objectives", body: "Ship the first cut." },
+        },
+        [["d", older]],
+      ),
+      created_at: 1,
+    },
+    {
+      ...proposal(
+        {
+          kind: "direction",
+          payload: {
+            slug: "objectives",
+            body: "Ship the first cut. Then the UI.",
+          },
+        },
+        [["d", newer]],
+      ),
+      created_at: 2,
+    },
+    {
+      ...proposal(
+        {
+          kind: "project",
+          payload: { title: "Weekday hall", brief: "Book it.", due_at: 10 },
+        },
+        [["d", project]],
+      ),
+      created_at: 3,
+    },
+  ]);
+  assert.deepEqual(
+    shown.map((event) => event.tags.find((tag) => tag[0] === "d")?.[1]),
+    [project, newer],
+  );
+});
+
+test("a publish announcement in #shapers carries the proposal", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "project",
+      payload: { title: "Fix the hall", brief: "The roof leaks.", due_at: 1 },
+    }),
+  );
+  const messageId = proposalMessageId(
+    [
+      {
+        id: "older",
+        createdAt: 1,
+        body: "something else",
+        tags: [],
+      },
+      {
+        id: "announced",
+        createdAt: 5,
+        body: "Opened a project proposal: Fix the hall.\n\n[Open it in My work](/org/my-work)",
+        tags: [],
+      },
+    ],
+    detail,
+    4,
+  );
+  assert.equal(messageId, "announced");
+});
