@@ -103,11 +103,20 @@ fn run(cfg: &Config) -> ExitCode {
         eprintln!("run: BUZZ_RELAY_URL and BUZZ_PRIVATE_KEY are required");
         return ExitCode::from(1);
     }
-    println!(
-        "run: skeleton only — would connect to {} (no live relay in A-1 tests)",
-        cfg.relay_url.as_deref().unwrap_or("")
-    );
-    ExitCode::SUCCESS
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("run: {error}");
+            return ExitCode::from(1);
+        }
+    };
+    match runtime.block_on(buzz_org_agent::dm_chat::serve(cfg)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("run: {error}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 fn load_snapshot(dir: &PathBuf) -> OrgState {

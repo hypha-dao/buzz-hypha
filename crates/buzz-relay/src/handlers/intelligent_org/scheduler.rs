@@ -213,17 +213,28 @@ async fn finish_scheduler(state: &Arc<AppState>, tenant: &TenantContext, applied
         )
         .await;
     }
+    // Same order as `finish`: write 39002 before 44100 so a sidebar
+    // refetch triggered by the notice already sees the new member.
     let mut rooms: Vec<Uuid> = Vec::new();
     for (room, change) in &applied.roster {
         if !rooms.contains(room) {
             rooms.push(*room);
         }
         state.invalidate_membership(tenant, *room, change.pubkey());
+    }
+    for room in rooms {
+        if let Err(e) =
+            super::super::side_effects::emit_group_discovery_events(tenant, state, room).await
+        {
+            warn!(room = %room, error = %e, "io_scheduler: discovery update failed");
+        }
+    }
+    let actor = state.relay_keypair.public_key().to_bytes();
+    for (room, change) in &applied.roster {
         let notification = match change {
             RosterChange::Added { .. } => KIND_MEMBER_ADDED_NOTIFICATION,
             RosterChange::Removed { .. } => KIND_MEMBER_REMOVED_NOTIFICATION,
         };
-        let actor = state.relay_keypair.public_key().to_bytes();
         if let Err(e) = super::super::side_effects::emit_membership_notification(
             tenant,
             state,
@@ -235,13 +246,6 @@ async fn finish_scheduler(state: &Arc<AppState>, tenant: &TenantContext, applied
         .await
         {
             warn!(room = %room, error = %e, "io_scheduler: membership notification failed");
-        }
-    }
-    for room in rooms {
-        if let Err(e) =
-            super::super::side_effects::emit_group_discovery_events(tenant, state, room).await
-        {
-            warn!(room = %room, error = %e, "io_scheduler: discovery update failed");
         }
     }
 }

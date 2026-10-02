@@ -86,7 +86,7 @@ impl StreamReq {
             },
             StreamReq {
                 id: "commands".into(),
-                kinds: (50001..=50021).collect(),
+                kinds: (50001..=50023).collect(),
                 since: since(Stream::Commands),
             },
             StreamReq {

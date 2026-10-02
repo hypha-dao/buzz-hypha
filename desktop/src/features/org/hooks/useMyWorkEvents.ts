@@ -36,7 +36,7 @@ export function viewerIsShaper(
   }
 }
 
-/** My Work door — Protocol §6.5. Shaper drafts join once `39103` names me. */
+/** My Work door — Protocol §6.5. Shaper drafts and open projects join once `39103` names me. */
 export function useMyWorkEvents() {
   const pubkey = useIdentityQuery().data?.pubkey ?? null;
   const [includeShaperDrafts, setIncludeShaperDrafts] = React.useState(false);

@@ -137,6 +137,30 @@ export function isWelcomeChannel(channel: Channel | null | undefined) {
   );
 }
 
+const omittedPrivateWelcomeChannelIds = new Set<string>();
+
+/** True when this id was dropped as the private Block-era Welcome channel. */
+export function isOmittedPrivateWelcomeChannelId(channelId: string) {
+  return omittedPrivateWelcomeChannelIds.has(channelId);
+}
+
+/**
+ * Removes the private Welcome channel from a desktop channel list. That room
+ * is not part of this app; callers still record its id so an open route can
+ * leave it.
+ */
+export function omitPrivateWelcomeChannels(channels: Channel[]) {
+  const kept: Channel[] = [];
+  for (const channel of channels) {
+    if (isWelcomeChannel(channel)) {
+      omittedPrivateWelcomeChannelIds.add(channel.id);
+      continue;
+    }
+    kept.push(channel);
+  }
+  return kept;
+}
+
 export function isStarterWelcomeChannel(channel: Channel | null | undefined) {
   return (
     channel !== null &&

@@ -81,6 +81,8 @@ abstract final class EventKind {
   static const ioShaperAccept = 50019;
   static const ioShaperStepDown = 50020;
   static const ioProfileSet = 50021;
+  static const ioWithdraw = 50022;
+  static const ioWithdrawPropose = 50023;
   // Drafts and reads (agent- or person-signed; never change state).
   static const ioDraft = 50100;
   static const ioHealth = 50101;

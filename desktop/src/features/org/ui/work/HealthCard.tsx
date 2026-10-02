@@ -1,14 +1,19 @@
+import type { CSSProperties } from "react";
+
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
+import { cn } from "@/shared/lib/cn";
 
 import type { WorkHealth } from "../../work/model";
 
 type HealthCardProps = {
+  className?: string;
   health: WorkHealth;
+  style?: CSSProperties;
 };
 
 const BAND_LEFT: Record<string, string> = {
@@ -17,15 +22,16 @@ const BAND_LEFT: Record<string, string> = {
   healthy: "88%",
 };
 
-export function HealthCard({ health }: HealthCardProps) {
+export function HealthCard({ className, health, style }: HealthCardProps) {
   const left = BAND_LEFT[health.band] ?? `${Math.round(health.pct * 100)}%`;
 
   return (
     <section
       aria-labelledby="org-health-heading"
-      className="rounded-xl border border-border bg-card p-4"
+      className={cn("rounded-xl border border-border bg-card p-4", className)}
       data-band={health.band}
       data-testid="org-health-card"
+      style={style}
     >
       <div className="flex items-center justify-between gap-3">
         <h2
@@ -44,7 +50,7 @@ export function HealthCard({ health }: HealthCardProps) {
 
       <div
         aria-hidden="true"
-        className="relative mt-4 mb-1 h-2.5 rounded-full bg-gradient-to-r from-red-400 via-amber-300 to-emerald-500"
+        className="relative mt-4 mb-1 h-2.5 rounded-full bg-gradient-to-r from-foreground/20 via-foreground/45 to-foreground"
       >
         <span
           className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground bg-background"

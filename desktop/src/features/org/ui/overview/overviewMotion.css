@@ -1,0 +1,153 @@
+/*
+ * Overview card entrance, matched to the org-preview direction cards:
+ * the card settles, a rule draws under the title, lines write in
+ * left to right, and the footer stamp lands last. Hover lifts the card
+ * on a wrapper so the settle transform does not cancel the lift.
+ */
+
+.org-overview-lift {
+  transition: transform 0.25s cubic-bezier(0.21, 0.6, 0.35, 1);
+}
+
+.org-overview-lift:hover,
+.org-overview-lift:focus-within {
+  transform: translateY(-0.125rem);
+}
+
+.org-overview-settle {
+  animation: org-dir-settle 0.55s cubic-bezier(0.21, 0.6, 0.35, 1) both;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.org-overview-lift:hover .org-overview-settle,
+.org-overview-lift:focus-within .org-overview-settle {
+  border-color: hsl(var(--foreground) / 0.28);
+  box-shadow: 0 1rem 2.25rem -1.25rem hsl(var(--foreground) / 0.35);
+}
+
+@keyframes org-dir-settle {
+  from {
+    opacity: 0;
+    transform: translateY(0.875rem) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.org-dir-rule {
+  transform-origin: left;
+  animation: org-dir-draw-x 0.6s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes org-dir-draw-x {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.org-dir-line {
+  animation: org-dir-write 0.9s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes org-dir-write {
+  0% {
+    opacity: 0;
+    transform: translateY(0.3125rem);
+    clip-path: inset(0 100% 0 0);
+  }
+
+  35% {
+    opacity: 1;
+    transform: none;
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.org-dir-stamp {
+  animation: org-dir-stamp 0.45s cubic-bezier(0.34, 1.3, 0.64, 1) both;
+}
+
+@keyframes org-dir-stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(0.97);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.org-dir-mark {
+  transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.org-overview-lift:hover .org-dir-mark,
+.org-overview-lift:focus-within .org-dir-mark {
+  transform: rotate(8deg) scale(1.06);
+}
+
+.org-dir-mark path,
+.org-dir-mark circle,
+.org-dir-mark line {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: org-dir-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: inherit;
+}
+
+@keyframes org-dir-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-overview-lift,
+  .org-overview-lift:hover,
+  .org-overview-lift:focus-within {
+    transform: none;
+    transition: none;
+  }
+
+  .org-overview-settle,
+  .org-dir-rule,
+  .org-dir-line,
+  .org-dir-stamp,
+  .org-dir-mark path,
+  .org-dir-mark circle,
+  .org-dir-mark line {
+    animation: none;
+  }
+
+  .org-dir-mark path,
+  .org-dir-mark circle,
+  .org-dir-mark line {
+    stroke-dashoffset: 0;
+  }
+
+  .org-overview-lift:hover .org-dir-mark,
+  .org-overview-lift:focus-within .org-dir-mark {
+    transform: none;
+  }
+}

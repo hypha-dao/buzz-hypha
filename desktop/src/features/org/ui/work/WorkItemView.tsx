@@ -6,15 +6,20 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { Button } from "@/shared/ui/button";
 
 import { useOrgCommands } from "../../useOrgCommands";
+import { OrgMotionFrame, motionDelay } from "../OrgMotionFrame";
 import {
+  overviewCardDelayMs,
+  overviewLineDelayMs,
+  overviewRuleDelayMs,
+} from "../overview/overviewMotion";
+import {
+  canChangeTicketDue,
   canMarkDone,
-  canRelease,
   formatChildrenCounts,
   formatWorkDate,
   homeChannel,
   type WorkHealth,
   type WorkItem,
-  type WorkTrailEntry,
 } from "../../work/model";
 import { HealthCard } from "./HealthCard";
 import { HolderName } from "./HolderName";
@@ -24,7 +29,6 @@ type WorkItemViewProps = {
   item: WorkItem;
   parent: WorkItem | null;
   childItems: WorkItem[];
-  trail: WorkTrailEntry[];
   health: WorkHealth | null;
 };
 
@@ -32,7 +36,6 @@ export function WorkItemView({
   item,
   parent,
   childItems,
-  trail,
   health,
 }: WorkItemViewProps) {
   const viewer = useIdentityQuery().data?.pubkey ?? null;
@@ -40,10 +43,12 @@ export function WorkItemView({
   const { goChannel } = useAppNavigation();
   const [error, setError] = React.useState<string | null>(null);
   const [dueDraft, setDueDraft] = React.useState("");
+  const [editingDue, setEditingDue] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const room = homeChannel(item);
   const holder = item.state === "offered" ? item.offeredTo : item.dri;
-  const dueLabel = item.state === "in_review" ? "Review" : "Due";
+  const dateLabel = item.type === "project" ? "Review" : "Due";
+  const canEditDue = canChangeTicketDue(item, viewer);
 
   const run = React.useCallback(
     async (name: string, action: () => Promise<unknown>) => {
@@ -61,7 +66,7 @@ export function WorkItemView({
   );
 
   return (
-    <article className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
+    <article className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-8 py-10">
       <nav aria-label="Breadcrumb" data-testid="org-item-breadcrumb">
         <ol className="flex flex-wrap items-center gap-1 text-2xs text-muted-foreground">
           <li>
@@ -94,14 +99,18 @@ export function WorkItemView({
         </ol>
       </nav>
 
-      <header className="space-y-2">
+      <header
+        className="org-overview-settle space-y-3"
+        style={motionDelay(overviewCardDelayMs(0))}
+      >
         <p className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
           {item.type === "project" ? "Project" : "Ticket"}
         </p>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1
-            className="text-xl font-semibold tracking-tight"
+            className="org-dir-line text-xl font-semibold tracking-tight"
             data-testid="org-item-title"
+            style={motionDelay(overviewLineDelayMs(0, 0))}
           >
             {item.title}
           </h1>
@@ -110,28 +119,108 @@ export function WorkItemView({
       </header>
 
       {item.brief ? (
-        <section aria-labelledby="org-item-brief-heading">
+        <section
+          aria-labelledby="org-item-brief-heading"
+          className="org-overview-settle space-y-3"
+          style={motionDelay(overviewCardDelayMs(1))}
+        >
           <h2
             className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
             id="org-item-brief-heading"
           >
             Brief
           </h2>
+          <span
+            aria-hidden="true"
+            className="org-dir-rule block h-px w-10 bg-foreground/45"
+            style={motionDelay(overviewRuleDelayMs(1))}
+          />
           <p
-            className="mt-2 whitespace-pre-wrap text-sm leading-relaxed"
+            className="org-dir-line whitespace-pre-wrap text-sm leading-relaxed"
             data-testid="org-item-brief"
+            style={motionDelay(overviewLineDelayMs(1, 0))}
           >
             {item.brief}
           </p>
         </section>
       ) : null}
 
-      <dl className="grid gap-3 sm:grid-cols-2" data-testid="org-item-facts">
-        <Fact label={item.state === "offered" ? "Offered to" : "Holds it"}>
+      <dl className="grid gap-4 sm:grid-cols-2" data-testid="org-item-facts">
+        <Fact
+          enterIndex={2}
+          label={item.state === "offered" ? "Offered to" : "Holds it"}
+        >
           <HolderName pubkey={holder} />
         </Fact>
-        {item.dueAt !== null ? (
-          <Fact label={dueLabel}>
+        <Fact
+          action={
+            canEditDue && !editingDue ? (
+              <Button
+                aria-label={`Modify ${dateLabel.toLowerCase()} date`}
+                data-testid="org-modify-due"
+                onClick={() => {
+                  setDueDraft(
+                    item.dueAt !== null ? unixToDateInput(item.dueAt) : "",
+                  );
+                  setEditingDue(true);
+                }}
+                size="xs"
+                type="button"
+                variant="ghost"
+              >
+                Modify
+              </Button>
+            ) : null
+          }
+          enterIndex={3}
+          label={dateLabel}
+        >
+          {editingDue ? (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const dueAt = dateInputToUnix(dueDraft);
+                if (dueAt === null) return;
+                void run("due", async () => {
+                  await commands.publish(
+                    commands.buildIoSetDue(item.id, dueAt),
+                  );
+                  setEditingDue(false);
+                });
+              }}
+            >
+              <label className="sr-only" htmlFor="org-set-due-date">
+                {dateLabel} date
+              </label>
+              <input
+                className="h-8 rounded-lg border border-input bg-background px-2 text-sm"
+                data-testid="org-set-due-date"
+                id="org-set-due-date"
+                onChange={(event) => setDueDraft(event.target.value)}
+                type="date"
+                value={dueDraft}
+              />
+              <Button
+                aria-label={`Save ${dateLabel.toLowerCase()} date`}
+                data-testid="org-set-due"
+                disabled={busy !== null || dueDraft.length === 0}
+                size="xs"
+                type="submit"
+              >
+                Save
+              </Button>
+              <Button
+                disabled={busy !== null}
+                onClick={() => setEditingDue(false)}
+                size="xs"
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+            </form>
+          ) : item.dueAt !== null ? (
             <time
               data-testid="org-item-due"
               data-ts={item.dueAt}
@@ -139,10 +228,14 @@ export function WorkItemView({
             >
               {formatWorkDate(item.dueAt)}
             </time>
-          </Fact>
-        ) : null}
+          ) : (
+            <span className="text-muted-foreground" data-testid="org-item-due">
+              Not set
+            </span>
+          )}
+        </Fact>
         {item.approvedAt !== null ? (
-          <Fact label="Approved">
+          <Fact enterIndex={4} label="Approved">
             <time
               data-testid="org-item-approved"
               data-ts={item.approvedAt}
@@ -155,8 +248,9 @@ export function WorkItemView({
       </dl>
 
       <div
-        className="flex flex-wrap items-center gap-2"
+        className="org-dir-stamp flex flex-wrap items-center gap-3"
         data-testid="org-item-actions"
+        style={motionDelay(overviewCardDelayMs(3))}
       >
         {room ? (
           <Button
@@ -167,7 +261,7 @@ export function WorkItemView({
             type="button"
             variant="outline"
           >
-            Open room
+            Open channel
           </Button>
         ) : null}
         {canMarkDone(item, viewer) ? (
@@ -184,50 +278,6 @@ export function WorkItemView({
             Mark done
           </Button>
         ) : null}
-        {canRelease(item, viewer) ? (
-          <Button
-            data-testid="org-release"
-            disabled={busy !== null}
-            onClick={() => {
-              void run("release", () =>
-                commands.publish(commands.buildIoRelease(item.id)),
-              );
-            }}
-            type="button"
-            variant="outline"
-          >
-            Release
-          </Button>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
-              Set due
-            </span>
-            <input
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
-              data-testid="org-set-due-date"
-              onChange={(event) => setDueDraft(event.target.value)}
-              type="date"
-              value={dueDraft}
-            />
-          </label>
-          <Button
-            data-testid="org-set-due"
-            disabled={busy !== null || dueDraft.length === 0}
-            onClick={() => {
-              const dueAt = dateInputToUnix(dueDraft);
-              if (dueAt === null) return;
-              void run("due", () =>
-                commands.publish(commands.buildIoSetDue(item.id, dueAt)),
-              );
-            }}
-            type="button"
-            variant="outline"
-          >
-            Set due
-          </Button>
-        </div>
       </div>
       {error ? (
         <p
@@ -240,11 +290,21 @@ export function WorkItemView({
       ) : null}
 
       {item.type === "project" && health ? (
-        <HealthCard health={health} />
+        <div className="org-overview-lift">
+          <HealthCard
+            className="org-overview-settle"
+            health={health}
+            style={motionDelay(overviewCardDelayMs(4))}
+          />
+        </div>
       ) : null}
 
-      <section aria-labelledby="org-item-children-heading">
-        <div className="mb-2 flex items-center justify-between gap-3">
+      <section
+        aria-labelledby="org-item-children-heading"
+        className="org-overview-settle space-y-4"
+        style={motionDelay(overviewCardDelayMs(5))}
+      >
+        <div className="flex items-center justify-between gap-3">
           <h2
             className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
             id="org-item-children-heading"
@@ -259,18 +319,21 @@ export function WorkItemView({
           </p>
         </div>
         {childItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing here.</p>
+          <p className="text-sm text-muted-foreground">
+            No tickets created yet
+          </p>
         ) : (
           <ul
             className="divide-y divide-border rounded-xl border border-border"
             data-testid="org-item-children"
           >
-            {childItems.map((child) => (
+            {childItems.map((child, index) => (
               <li key={child.id}>
                 <Link
-                  className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted/60 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  className="org-dir-line flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-muted/60 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                   data-testid={`org-item-child-${child.id}`}
                   params={{ itemId: child.id }}
+                  style={motionDelay(overviewLineDelayMs(5, index))}
                   to="/org/work/$itemId"
                 >
                   <span className="min-w-0 truncate text-sm">
@@ -283,60 +346,43 @@ export function WorkItemView({
           </ul>
         )}
       </section>
-
-      <section aria-labelledby="org-item-trail-heading">
-        <h2
-          className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
-          id="org-item-trail-heading"
-        >
-          Trail
-        </h2>
-        {trail.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">Nothing here.</p>
-        ) : (
-          <ol className="mt-2 space-y-2" data-testid="org-item-trail">
-            {trail.map((entry) => (
-              <li
-                className="flex items-baseline justify-between gap-3 text-sm"
-                data-kind={entry.kind}
-                data-testid="org-trail-row"
-                key={entry.id}
-              >
-                <span>{entry.label}</span>
-                <time
-                  className="text-2xs text-muted-foreground"
-                  dateTime={iso(entry.createdAt)}
-                >
-                  {formatWorkDate(entry.createdAt)}
-                </time>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
     </article>
   );
 }
 
 function Fact({
   label,
+  action,
   children,
+  enterIndex,
 }: {
   label: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
+  enterIndex: number;
 }) {
   return (
-    <div className="rounded-xl border border-border px-3 py-2">
-      <dt className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm font-medium">{children}</dd>
-    </div>
+    <OrgMotionFrame
+      className="rounded-xl border border-border px-4 py-4"
+      enterIndex={enterIndex}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <dt className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </dt>
+        {action}
+      </div>
+      <dd className="mt-3 text-sm font-medium">{children}</dd>
+    </OrgMotionFrame>
   );
 }
 
 function iso(unix: number): string {
   return new Date(unix * 1000).toISOString();
+}
+
+function unixToDateInput(unix: number): string {
+  return new Date(unix * 1000).toISOString().slice(0, 10);
 }
 
 function dateInputToUnix(value: string): number | null {

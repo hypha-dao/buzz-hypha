@@ -17,7 +17,7 @@ use buzz_core::kind::{
     KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
     KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
-    KIND_IO_WORK_ITEM,
+    KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE, KIND_IO_WORK_ITEM,
 };
 use buzz_sdk::{
     build_io_accept, build_io_agent_note, build_io_decline, build_io_direction_propose,
@@ -66,6 +66,8 @@ const IO_COMMAND_KINDS: &[u32] = &[
     KIND_IO_SHAPER_ACCEPT,
     KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_PROFILE_SET,
+    KIND_IO_WITHDRAW,
+    KIND_IO_WITHDRAW_PROPOSE,
 ];
 
 /// Wave 6 — `org progress note` is C-4. Do not change this string.
@@ -664,6 +666,7 @@ fn plan_profile(cmd: &ProfileCmd, me: &str) -> Result<OrgPlan, CliError> {
             let content = ProfileSetContent {
                 about: about.clone(),
                 skills: skill.clone(),
+                socials: Vec::new(),
                 open_limit: *limit,
             };
             write(build_io_profile_set(&content, draft_id(draft.as_deref())?))

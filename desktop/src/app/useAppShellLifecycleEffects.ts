@@ -1,7 +1,11 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "@tanstack/react-router";
 
+import { deriveShellRoute } from "@/app/AppShell.helpers";
+import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { startBootWarm } from "@/features/agents/acpRuntimesQuery";
+import { isOmittedPrivateWelcomeChannelId } from "@/features/onboarding/welcome";
 import { setDesktopAppBadge } from "@/features/notifications/lib/desktop";
 import { useForegroundQueryRefresh } from "@/features/workflows/hooks";
 import { relayClient } from "@/shared/api/relayClient";
@@ -20,6 +24,20 @@ export function useAppShellLifecycleEffects({
   topLevelUnreadChannelIds,
   unreadChannelNotificationCount,
 }: AppShellLifecycleEffectsOptions) {
+  const location = useLocation();
+  const { goOrg } = useAppNavigation();
+  const { selectedChannelId, selectedView } = deriveShellRoute(
+    location.pathname,
+  );
+  const selectedPrivateWelcome =
+    selectedView === "channel" &&
+    selectedChannelId !== null &&
+    isOmittedPrivateWelcomeChannelId(selectedChannelId);
+  React.useEffect(() => {
+    if (!selectedPrivateWelcome) return;
+    void goOrg({ replace: true });
+  }, [goOrg, selectedPrivateWelcome]);
+
   // Event-driven reconnect: network online / focus / visibility short-circuit
   // the backoff timer when the relay session is degraded (CMD+R gap G1).
   useRelayResumeTriggers();

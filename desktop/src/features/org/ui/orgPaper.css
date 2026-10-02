@@ -1,0 +1,110 @@
+/*
+ * The whole app follows the org-preview canvas: paper white, ink, and gray.
+ * The class sits on the document root so every door and portaled dialog
+ * inherits it. Theme colors are inline on that same element, so these
+ * tokens are !important. The Hypha shell also locks the content surface
+ * to --buzz-content-dark in dark mode; the surface rules below sit closer.
+ *
+ * Preview tokens: paper #ffffff, wash #f7f7f4, chip #f0f0ea,
+ * hair #e9e9e3, ink #1b1b15, sub #6c6c62.
+ */
+
+:root.org-paper,
+.org-paper {
+  /* Opaque canvas. Glass sets an inline transparent background so vibrancy
+   * can show through; without this the window falls back to the dark native
+   * backing and light ink disappears into it. */
+  background-color: #ffffff !important;
+  --background: 0 0% 100% !important;
+  --foreground: 60 12.5% 9.41% !important;
+  --card: 0 0% 100% !important;
+  --card-foreground: 60 12.5% 9.41% !important;
+  --popover: 0 0% 100% !important;
+  --popover-foreground: 60 12.5% 9.41% !important;
+  --primary: 60 12.5% 9.41% !important;
+  --primary-foreground: 0 0% 100% !important;
+  --secondary: 60 8% 93% !important;
+  --secondary-foreground: 60 12.5% 9.41% !important;
+  --muted: 60 8% 93% !important;
+  --muted-foreground: 60 4.85% 40.39% !important;
+  --accent: 60 8% 93% !important;
+  --accent-foreground: 60 12.5% 9.41% !important;
+  --border: 60 6% 90.2% !important;
+  --input: 60 6% 90.2% !important;
+  --ring: 60 12.5% 9.41% !important;
+  --sidebar: 60 9% 96.27% !important;
+  --sidebar-background: 60 9% 96.27% !important;
+  --sidebar-foreground: 60 4.85% 40.39% !important;
+  --sidebar-primary: 60 12.5% 9.41% !important;
+  --sidebar-primary-foreground: 0 0% 100% !important;
+  --sidebar-active: 0 0% 100% !important;
+  --sidebar-active-foreground: 60 12.5% 9.41% !important;
+  --sidebar-accent: 0 0% 100% !important;
+  --sidebar-accent-foreground: 60 12.5% 9.41% !important;
+  --sidebar-border: 60 6% 90.2% !important;
+  --sidebar-ring: 60 12.5% 9.41% !important;
+  --buzz-gradient-top: #f7f7f4 !important;
+  --buzz-gradient-bottom: #f7f7f4 !important;
+  --buzz-gradient-light-top: #f7f7f4 !important;
+  --buzz-gradient-light-bottom: #f7f7f4 !important;
+  --buzz-gradient-dark-top: #141414 !important;
+  --buzz-gradient-dark-bottom: #141414 !important;
+  --buzz-active-foreground: 60 12.5% 9.41% !important;
+  --buzz-chrome-foreground: rgb(27 27 21 / 50%) !important;
+  --buzz-muted-foreground: rgb(108 108 98) !important;
+  color: hsl(var(--foreground));
+}
+
+:root.dark.org-paper,
+.dark.org-paper,
+.dark .org-paper {
+  background-color: #171717 !important;
+  --background: 0 0% 9% !important;
+  --foreground: 0 0% 96% !important;
+  --card: 0 0% 9% !important;
+  --card-foreground: 0 0% 96% !important;
+  --popover: 0 0% 11% !important;
+  --popover-foreground: 0 0% 96% !important;
+  --primary: 0 0% 96% !important;
+  --primary-foreground: 0 0% 9% !important;
+  --secondary: 0 0% 16% !important;
+  --secondary-foreground: 0 0% 96% !important;
+  --muted: 0 0% 16% !important;
+  --muted-foreground: 0 0% 64% !important;
+  --accent: 0 0% 16% !important;
+  --accent-foreground: 0 0% 96% !important;
+  --border: 0 0% 20% !important;
+  --input: 0 0% 20% !important;
+  --ring: 0 0% 96% !important;
+  --sidebar: 0 0% 8% !important;
+  --sidebar-background: 0 0% 8% !important;
+  --sidebar-foreground: 0 0% 72% !important;
+  --sidebar-primary: 0 0% 96% !important;
+  --sidebar-primary-foreground: 0 0% 9% !important;
+  --sidebar-active: 0 0% 14% !important;
+  --sidebar-active-foreground: 0 0% 96% !important;
+  --sidebar-accent: 0 0% 14% !important;
+  --sidebar-accent-foreground: 0 0% 96% !important;
+  --sidebar-border: 0 0% 20% !important;
+  --sidebar-ring: 0 0% 96% !important;
+  --buzz-gradient-top: #141414 !important;
+  --buzz-gradient-bottom: #141414 !important;
+  --buzz-active-foreground: 0 0% 96% !important;
+  --buzz-chrome-foreground: rgb(255 255 255 / 50%) !important;
+  --buzz-muted-foreground: rgb(255 255 255 / 64%) !important;
+  color: hsl(var(--foreground));
+}
+
+:root[data-buzz-sidebar]:not(.dark).org-paper [data-buzz-content-surface],
+:root[data-buzz-sidebar]:not(.dark) .org-paper [data-buzz-content-surface] {
+  --background: 0 0% 100%;
+  --foreground: 60 12.5% 9.41%;
+  background-color: hsl(var(--background));
+}
+
+:root[data-buzz-sidebar].dark.org-paper [data-buzz-content-surface],
+:root[data-buzz-sidebar].dark .org-paper [data-buzz-content-surface] {
+  --background: 0 0% 9%;
+  --foreground: 0 0% 96%;
+  background-color: hsl(var(--background));
+}

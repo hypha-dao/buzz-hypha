@@ -23,6 +23,19 @@ test("deriveShellRoute treats every /org path as the org view", () => {
     selectedChannelId: null,
     selectedView: "org",
   });
+  assert.deepEqual(deriveShellRoute("/org/profile"), {
+    selectedChannelId: null,
+    selectedView: "org",
+  });
+  assert.deepEqual(
+    deriveShellRoute(
+      "/org/profile/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    {
+      selectedChannelId: null,
+      selectedView: "org",
+    },
+  );
 });
 
 test("deriveShellRoute does not steal Inbox for other paths", () => {

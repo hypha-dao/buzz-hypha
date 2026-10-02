@@ -32,6 +32,21 @@ export async function fetchOrgAgentIdentity(): Promise<OrgAgentIdentity> {
 }
 
 /**
+ * Whether this community has already passed the first-Shaper bootstrap.
+ * A missing `39103` is not the same as a `39103` whose `agent` is still null.
+ */
+export async function fetchShapersSnapshot(): Promise<{
+  identity: OrgAgentIdentity;
+  bootstrapped: boolean;
+}> {
+  const events = await relayClient.fetchEvents(SHAPERS_FILTER);
+  return {
+    identity: parseOrgAgentFromShapers(events),
+    bootstrapped: events.length > 0,
+  };
+}
+
+/**
  * The community's org agent identity. The query client is keyed per
  * community (`App.tsx`), so this never leaks across a community switch.
  */

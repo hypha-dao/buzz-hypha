@@ -54,6 +54,7 @@ import {
   channelMembersQueryKey,
 } from "@/features/channels/rosterFreshness";
 import { dmVisibilityQueryKeyFor } from "@/features/channels/useHiddenDmIds";
+import { omitPrivateWelcomeChannels } from "@/features/onboarding/welcome";
 
 export const channelsQueryKey = ["channels"] as const;
 /** Keeps focused polling at the established one-minute cadence. */
@@ -392,7 +393,7 @@ export async function refreshChannelsQuery({
     if (relayUrl && ownerPubkey) {
       persistSnapshot(relayUrl, ownerPubkey, pair.channels, pair.hash);
     }
-    return sorted;
+    return omitPrivateWelcomeChannels(sorted);
   }
 
   const authoritativeChannels = sortChannels(
@@ -427,7 +428,7 @@ export async function refreshChannelsQuery({
   if (relayUrl && ownerPubkey) {
     persistSnapshot(relayUrl, ownerPubkey, pair.channels, pair.hash);
   }
-  return sorted;
+  return omitPrivateWelcomeChannels(sorted);
 }
 
 export function useChannelsQuery(options?: { enabled?: boolean }) {
@@ -479,7 +480,9 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     // Paint the complete persisted list immediately. `initialDataUpdatedAt: 0`
     // deliberately keeps it stale so every boot still validates against the
     // relay; queryFn reads the matching hash from the same atomic document.
-    initialData: initialSnapshotPair?.channels,
+    initialData: initialSnapshotPair
+      ? omitPrivateWelcomeChannels(initialSnapshotPair.channels)
+      : undefined,
     initialDataUpdatedAt: 0,
     refetchInterval,
     ...channelsFocusRefetchPolicy,

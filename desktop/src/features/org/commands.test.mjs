@@ -76,6 +76,20 @@ test("shapers propose agent without p is the hosted default", () => {
   assert.equal(event.content, "{}");
 });
 
+test("direction propose can revise an open proposal without voting", () => {
+  const event = buildIoDirectionPropose({
+    slug: "mission",
+    base: 1,
+    body: "We host the hall and the garden.",
+    revises: PROPOSAL,
+  });
+  assert.deepEqual(event.tags, [
+    ["d", "mission"],
+    ["base", "1"],
+    ["e", PROPOSAL, "", "revises"],
+  ]);
+});
+
 test("direction propose carries d, base, draft e, vote — §4.8 50002", () => {
   const event = buildIoDirectionPropose({
     slug: "mission",

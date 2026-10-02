@@ -21,3 +21,6 @@ export function refreshChannelsWhenIdle(deps: RefreshDeps): void {
   }
   deps.invalidate();
 }
+
+/** Quiet window before retrying a channel-list refresh that lost the race. */
+export const CHANNEL_LIST_REFRESH_RETRY_MS = 50;

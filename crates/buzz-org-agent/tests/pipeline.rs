@@ -46,6 +46,8 @@ fn held_root(title: &str) -> WorkItem {
         offered_to: None,
         offered_by: None,
         offered_at: None,
+        created_by: None,
+        offered_by_member: None,
         due_at: 2_000_000_000,
         approved_at: None,
         objective_ref: None,

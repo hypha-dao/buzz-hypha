@@ -466,6 +466,7 @@ fn profile_changed() {
         version: 1,
         about: "hi".into(),
         skills: vec![],
+        socials: vec![],
         open_limit: None,
         updated_at: 1,
         receipt: "ff".repeat(32),

@@ -59,6 +59,8 @@ export type ShapersState = {
   agentHosted: boolean;
   decisionWindowSecs: number | null;
   offerWindowSecs: number | null;
+  /** `#shapers` channel id (`39103.room`). */
+  room: string | null;
 };
 
 export type ProjectHold = {
@@ -258,6 +260,7 @@ export function parseShapersState(
     agentHosted: content?.agent_hosted === true,
     decisionWindowSecs: asNumber(content?.decision_window_secs),
     offerWindowSecs: asNumber(content?.offer_window_secs),
+    room: asString(content?.room),
   };
 }
 
@@ -313,7 +316,13 @@ export function projectHolds(
   }
   return [...byId.values()]
     .map((entry) => entry.hold)
-    .sort((left, right) => left.title.localeCompare(right.title));
+    .filter((hold) => hold.state !== "withdrawn")
+    .sort((left, right) => {
+      const leftOpen = left.dri ? 0 : 1;
+      const rightOpen = right.dri ? 0 : 1;
+      if (leftOpen !== rightOpen) return leftOpen - rightOpen;
+      return left.title.localeCompare(right.title);
+    });
 }
 
 function parseCounts(value: unknown): Record<string, number> {

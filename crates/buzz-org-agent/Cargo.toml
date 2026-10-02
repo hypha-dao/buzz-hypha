@@ -45,6 +45,7 @@ chrono-tz = "0.10"
 clap = { version = "4", features = ["derive", "env"] }
 sha2 = { workspace = true }
 hex = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 nostr = { workspace = true }

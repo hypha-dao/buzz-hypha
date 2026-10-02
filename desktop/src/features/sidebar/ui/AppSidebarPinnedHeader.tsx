@@ -15,6 +15,12 @@ import {
 import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
 import { ProtectedBestieSidebarEntry } from "@protected-feature-components";
 
+/**
+ * Inbox and Agents stay in the product. The Hypha shell hides their sidebar
+ * doors until those surfaces are ready to come back.
+ */
+const SHOW_INBOX_AND_AGENTS = false;
+
 type SidebarSelectedView =
   | "home"
   | "channel"
@@ -109,26 +115,28 @@ export function AppSidebarPrimaryMenu({
         data-testid="sidebar-primary-menu"
       >
         <SidebarMenu className="sidebar-primary-menu pb-2">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="data-[active=true]:font-normal"
-              isActive={selectedView === "home"}
-              onClick={onSelectHome}
-              tooltip="Inbox"
-              type="button"
-            >
-              <Inbox className="h-4 w-4" />
-              <SidebarMenuLabel>Inbox</SidebarMenuLabel>
-            </SidebarMenuButton>
-            {homeBadgeCount > 0 ? (
-              <SidebarMenuBadge
-                className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
-                data-testid="sidebar-home-count"
+          {SHOW_INBOX_AND_AGENTS ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="data-[active=true]:font-normal"
+                isActive={selectedView === "home"}
+                onClick={onSelectHome}
+                tooltip="Inbox"
+                type="button"
               >
-                {Math.min(homeBadgeCount, 99)}
-              </SidebarMenuBadge>
-            ) : null}
-          </SidebarMenuItem>
+                <Inbox className="h-4 w-4" />
+                <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+              </SidebarMenuButton>
+              {homeBadgeCount > 0 ? (
+                <SidebarMenuBadge
+                  className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
+                  data-testid="sidebar-home-count"
+                >
+                  {Math.min(homeBadgeCount, 99)}
+                </SidebarMenuBadge>
+              ) : null}
+            </SidebarMenuItem>
+          ) : null}
           <FeatureGate feature="org">
             <OrgSidebarGroup />
           </FeatureGate>
@@ -160,19 +168,21 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="data-[active=true]:font-normal"
-              data-testid="open-agents-view"
-              isActive={selectedView === "agents"}
-              onClick={onSelectAgents}
-              tooltip="Agents"
-              type="button"
-            >
-              <Bot className="h-4 w-4" />
-              <SidebarMenuLabel>Agents</SidebarMenuLabel>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {SHOW_INBOX_AND_AGENTS ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="data-[active=true]:font-normal"
+                data-testid="open-agents-view"
+                isActive={selectedView === "agents"}
+                onClick={onSelectAgents}
+                tooltip="Agents"
+                type="button"
+              >
+                <Bot className="h-4 w-4" />
+                <SidebarMenuLabel>Agents</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
           <ProtectedBestieSidebarEntry />
           <FeatureGate feature="workflows">
             <SidebarMenuItem>

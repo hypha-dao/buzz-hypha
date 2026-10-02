@@ -3,14 +3,17 @@ import test from "node:test";
 
 import {
   assembleWorkDoor,
+  canChangeTicketDue,
   childrenOf,
   formatChildrenCounts,
+  formatReviewDate,
   homeChannel,
   itemById,
   latestHealth,
   parseWorkItem,
   stateChipLabel,
   trailForItem,
+  workBoardColumn,
 } from "./model.ts";
 
 const ROOT = "11111111-1111-4111-8111-111111111111";
@@ -115,17 +118,92 @@ const grandEvent = itemEvent(
   ],
 );
 
-test("assembleWorkDoor is roots plus one level — depth 3 stays off the door", () => {
-  const tree = assembleWorkDoor([rootEvent, childEvent, grandEvent]);
+test("assembleWorkDoor lists projects and leaves tickets off the door", () => {
+  const loose = "77777777-7777-4777-8777-777777777777";
+  const looseTicket = itemEvent(
+    loose,
+    {
+      id: loose,
+      parent: null,
+      root: loose,
+      title: "Loose ticket",
+      state: "open",
+    },
+    [
+      ["s", "open"],
+      ["t", "ticket"],
+    ],
+  );
+  const tree = assembleWorkDoor([
+    rootEvent,
+    childEvent,
+    grandEvent,
+    looseTicket,
+  ]);
   assert.equal(tree.length, 1);
   assert.equal(tree[0].item.title, "Weekday hall");
-  assert.deepEqual(
-    tree[0].children.map((row) => row.title),
-    ["Electrics"],
+  assert.equal(tree[0].item.type, "project");
+  assert.deepEqual(tree[0].children, []);
+  assert.equal(
+    tree.some((row) => row.item.id === CHILD || row.item.id === GRAND),
+    false,
   );
   assert.equal(
-    tree[0].children.some((row) => row.id === GRAND),
+    tree.some((row) => row.item.id === loose),
     false,
+  );
+});
+
+test("withdrawn work leaves the live board", () => {
+  const gone = "55555555-5555-4555-8555-555555555555";
+  const withdrawnChild = itemEvent(
+    gone,
+    {
+      id: gone,
+      parent: ROOT,
+      root: ROOT,
+      title: "Old tiles",
+      state: "withdrawn",
+    },
+    [
+      ["s", "withdrawn"],
+      ["u", ROOT],
+      ["t", "ticket"],
+    ],
+  );
+  const withdrawnRoot = itemEvent(
+    "66666666-6666-4666-8666-666666666666",
+    {
+      id: "66666666-6666-4666-8666-666666666666",
+      parent: null,
+      root: "66666666-6666-4666-8666-666666666666",
+      title: "Duplicate hall",
+      state: "withdrawn",
+    },
+    [
+      ["s", "withdrawn"],
+      ["t", "project"],
+    ],
+  );
+  const tree = assembleWorkDoor([
+    rootEvent,
+    childEvent,
+    withdrawnChild,
+    withdrawnRoot,
+  ]);
+  assert.deepEqual(
+    tree.map((row) => row.item.title),
+    ["Weekday hall"],
+  );
+  assert.deepEqual(tree[0].children, []);
+  assert.equal(
+    tree.some((row) => row.item.title === "Electrics"),
+    false,
+  );
+  assert.equal(childrenOf([withdrawnChild], ROOT).length, 0);
+  assert.equal(
+    stateChipLabel({ state: "withdrawn", type: "ticket" }),
+    "removed",
   );
 });
 
@@ -263,4 +341,54 @@ test("latestHealth is the newest 50101 for that item", () => {
   const health = latestHealth([stale, fresh], ROOT);
   assert.equal(health?.band, "wobbly");
   assert.equal(health?.sentences[0]?.rows[1], "row-2");
+});
+
+test("review dates read as day month year", () => {
+  assert.equal(formatReviewDate(1_785_000_000), "25 Jul 2026");
+});
+
+test("a ticket due date moves for the holder and the creator", () => {
+  const held = parseWorkItem(childEvent);
+  assert.equal(held?.type, "ticket");
+  assert.equal(canChangeTicketDue(held, HOLDER), true);
+  assert.equal(canChangeTicketDue(held, "c".repeat(64)), false);
+  assert.equal(canChangeTicketDue(parseWorkItem(rootEvent), HOLDER), false);
+
+  const creator = "c".repeat(64);
+  const offered = parseWorkItem(
+    itemEvent(
+      CHILD,
+      {
+        id: CHILD,
+        parent: ROOT,
+        root: ROOT,
+        depth: 1,
+        path: [ROOT],
+        title: "Electrics",
+        brief: "Wire it.",
+        state: "offered",
+        dri: null,
+        created_by: creator,
+        children: { open: 0, offered: 0, accepted: 0, done: 0 },
+      },
+      [
+        ["s", "offered"],
+        ["root", ROOT],
+        ["u", ROOT],
+        ["t", "ticket"],
+      ],
+    ),
+  );
+  assert.equal(canChangeTicketDue(offered, creator), true);
+  assert.equal(canChangeTicketDue(offered, HOLDER), false);
+  assert.ok(held);
+  assert.equal(canChangeTicketDue({ ...held, state: "done" }, HOLDER), false);
+});
+
+test("open and offered sit in not-accepted; held work is ongoing", () => {
+  assert.equal(workBoardColumn({ state: "open" }), "waiting");
+  assert.equal(workBoardColumn({ state: "offered" }), "waiting");
+  assert.equal(workBoardColumn({ state: "accepted" }), "ongoing");
+  assert.equal(workBoardColumn({ state: "in_review" }), "ongoing");
+  assert.equal(workBoardColumn({ state: "done" }), "ongoing");
 });

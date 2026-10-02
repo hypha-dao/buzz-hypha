@@ -383,7 +383,14 @@ async function expectWelcomeView(page: Page) {
   await expect(page.getByTestId("chat-ephemeral-badge")).toHaveCount(0);
   await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
 
-  // Preferred Hypha path: Personal Assistant DM + org onboarding guide.
+  // Preferred Hypha path: the hosted org agent's DM. The welcome is chat
+  // messages from that agent, not a card under the composer.
+  const orgTitle = page.getByTestId("chat-title");
+  if ((await orgTitle.filter({ hasText: "Org. Agent" }).count()) > 0) {
+    await expect(page.getByTestId("message-composer")).toBeVisible();
+    return;
+  }
+
   const paGuide = page.getByTestId("org-onboarding-guide");
   if ((await paGuide.count()) > 0) {
     await expect(paGuide).toBeVisible();

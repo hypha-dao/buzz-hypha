@@ -5,6 +5,9 @@ import {
   excludeOrgAgent,
   isOrgAgentDm,
   NO_ORG_AGENT,
+  ORG_AGENT_LABEL,
+  orgAgentDmPresence,
+  orgAgentSidebarFace,
   parseOrgAgentFromShapers,
   pinOrgAgentDmFirst,
 } from "./orgAgent.ts";
@@ -141,6 +144,33 @@ test("pinOrgAgentDmFirst returns the same array when nothing moves", () => {
   assert.equal(pinOrgAgentDmFirst(noAgentDm, AGENT, ME), noAgentDm);
   assert.equal(pinOrgAgentDmFirst([alice, agent], null, ME).length, 2);
   assert.equal(pinOrgAgentDmFirst([alice, agent], null, ME)[0], alice);
+});
+
+test("orgAgentDmPresence keeps the org agent online and leaves other DMs alone", () => {
+  const agentDm = dm("agent", [AGENT, ME]);
+  const memberOnly = dm("agent", [ME]);
+  const alice = dm("alice", [ALICE, ME]);
+
+  assert.equal(orgAgentDmPresence(agentDm, AGENT, ME, "offline"), "online");
+  assert.equal(orgAgentDmPresence(agentDm, AGENT, ME, null), "online");
+  assert.equal(orgAgentDmPresence(memberOnly, AGENT, ME, "offline"), "online");
+  assert.equal(orgAgentDmPresence(alice, AGENT, ME, "away"), "away");
+  assert.equal(orgAgentDmPresence(alice, AGENT, ME, null), null);
+  assert.equal(orgAgentDmPresence(agentDm, null, ME, "offline"), "offline");
+});
+
+test("orgAgentSidebarFace is the org agent, including when the DM lists only the member", () => {
+  const face = orgAgentSidebarFace(dm("agent", [ME]), AGENT, ME, "https://a");
+  assert.deepEqual(face, {
+    avatarUrl: "https://a",
+    isAgent: true,
+    label: ORG_AGENT_LABEL,
+    pubkey: AGENT,
+  });
+  assert.equal(
+    orgAgentSidebarFace(dm("alice", [ALICE, ME]), AGENT, ME, null),
+    null,
+  );
 });
 
 test("excludeOrgAgent drops the org agent from a member's agents", () => {

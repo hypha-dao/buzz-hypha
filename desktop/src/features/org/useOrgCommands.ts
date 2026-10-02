@@ -1,5 +1,8 @@
 import * as React from "react";
 
+import { useChannelListRefresh } from "@/features/channels/useChannelListRefresh";
+
+import { afterOrgCommandPublished } from "./channelListRefresh";
 import {
   buildIoAccept,
   buildIoDecline,
@@ -80,7 +83,21 @@ const COMMANDS: OrgCommands = {
 
 /** Stable command publishers — build, then `sign_event` + EVENT. */
 export function useOrgCommands(): OrgCommands {
-  return COMMANDS;
+  const refreshChannelList = useChannelListRefresh();
+  return React.useMemo(
+    () => ({
+      ...COMMANDS,
+      publish: async (command) => {
+        const event = await publishOrgCommand(command);
+        // The relay writes the room roster before it accepts the command.
+        // Refetch so the project channel is in the sidebar even when the
+        // membership notice is missed.
+        afterOrgCommandPublished(command.kind, refreshChannelList);
+        return event;
+      },
+    }),
+    [refreshChannelList],
+  );
 }
 
 declare global {

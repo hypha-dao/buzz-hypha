@@ -34,12 +34,15 @@ import {
   KIND_IO_SHAPERS_PROPOSE,
   KIND_IO_TICKET_CREATE,
   KIND_IO_VOTE,
+  KIND_IO_WITHDRAW,
+  KIND_IO_WITHDRAW_PROPOSE,
 } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import {
   draftTag,
   receiptTag,
+  revisesTag,
   TAG_BAND,
   TAG_BASE,
   TAG_DUE,
@@ -125,6 +128,12 @@ function optionalVoteAgree(tags: string[][], voteAgree?: boolean): void {
   if (voteAgree) tags.push([TAG_VOTE, "agree"]);
 }
 
+function optionalRevises(tags: string[][], proposalId?: string): void {
+  if (proposalId !== undefined) {
+    tags.push(revisesTag(requireUuid(proposalId, "revises")));
+  }
+}
+
 export type ShapersProposal =
   | { op: "add" | "remove"; pubkey: string; why?: string }
   | {
@@ -171,12 +180,14 @@ export function buildIoDirectionPropose(input: {
   why?: string;
   draftId?: string;
   voteAgree?: boolean;
+  revises?: string;
 }): UnsignedOrgCommand {
   const tags: string[][] = [
     ["d", input.slug],
     [TAG_BASE, String(input.base)],
   ];
   optionalDraft(tags, input.draftId);
+  optionalRevises(tags, input.revises);
   optionalVoteAgree(tags, input.voteAgree);
   const content: Record<string, unknown> = {
     body: requireNonEmpty(input.body, "body"),
@@ -228,10 +239,12 @@ export function buildIoProjectPropose(input: {
   suggestedDri?: string;
   draftId?: string;
   voteAgree?: boolean;
+  revises?: string;
 }): UnsignedOrgCommand {
   requireNonEmpty(input.title, "title");
   const tags: string[][] = [];
   optionalDraft(tags, input.draftId);
+  optionalRevises(tags, input.revises);
   optionalVoteAgree(tags, input.voteAgree);
   const content: Record<string, unknown> = {
     title: input.title,
@@ -467,6 +480,7 @@ export function buildIoHealthRate(input: {
 export function buildIoProfileSet(input: {
   about: string;
   skills: string[];
+  socials?: { network: string; url: string }[];
   openLimit?: number;
   draftId?: string;
 }): UnsignedOrgCommand {
@@ -476,8 +490,35 @@ export function buildIoProfileSet(input: {
     about: input.about,
     skills: input.skills,
   };
+  if (input.socials && input.socials.length > 0)
+    content.socials = input.socials;
   if (input.openLimit !== undefined) content.open_limit = input.openLimit;
   return { kind: KIND_IO_PROFILE_SET, tags, content: JSON.stringify(content) };
+}
+
+export function buildIoWithdraw(input: {
+  item: string;
+  why?: string;
+}): UnsignedOrgCommand {
+  return {
+    kind: KIND_IO_WITHDRAW,
+    tags: [[TAG_ITEM, requireUuid(input.item, "i")]],
+    content: whyJson(input.why),
+  };
+}
+
+export function buildIoWithdrawPropose(input: {
+  item: string;
+  why?: string;
+  voteAgree?: boolean;
+}): UnsignedOrgCommand {
+  const tags: string[][] = [[TAG_ITEM, requireUuid(input.item, "i")]];
+  optionalVoteAgree(tags, input.voteAgree);
+  return {
+    kind: KIND_IO_WITHDRAW_PROPOSE,
+    tags,
+    content: whyJson(input.why),
+  };
 }
 
 /**

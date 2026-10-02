@@ -16,6 +16,7 @@ export const WORK_ITEM_STATES = [
   "accepted",
   "in_review",
   "done",
+  "withdrawn",
 ] as const;
 
 export type WorkItemState = (typeof WORK_ITEM_STATES)[number];
@@ -49,6 +50,8 @@ export type WorkItem = {
   dri: string | null;
   offeredTo: string | null;
   offeredBy: string | null;
+  createdBy: string | null;
+  offeredByMember: string | null;
   dueAt: number | null;
   approvedAt: number | null;
   children: WorkChildrenCounts;
@@ -113,6 +116,8 @@ const COMMAND_LABELS: Record<number, string> = {
   50019: "io_shaper_accept",
   50020: "io_shaper_step_down",
   50021: "io_profile_set",
+  50022: "io_withdraw",
+  50023: "io_withdraw_propose",
 };
 
 function tagValue(tags: readonly string[][], name: string): string | null {
@@ -258,6 +263,8 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
     dri,
     offeredTo,
     offeredBy: asString(content.offered_by),
+    createdBy: asString(content.created_by),
+    offeredByMember: asString(content.offered_by_member),
     dueAt: asUnix(content.due_at),
     approvedAt: asUnix(content.approved_at),
     children,
@@ -272,29 +279,19 @@ export function isRootItem(item: WorkItem): boolean {
   );
 }
 
-/** Roots + one level — the Work door. Deeper rows stay for the item page. */
+/** Projects on the Work door. Tickets stay on the project page. */
 export function assembleWorkDoor(
   events: readonly RelayEvent[],
 ): WorkTreeNode[] {
-  const items = [...latestWorkItems(events).values()]
+  return [...latestWorkItems(events).values()]
     .map(parseWorkItem)
-    .filter((item): item is WorkItem => item !== null);
-  const byParent = new Map<string, WorkItem[]>();
-  for (const item of items) {
-    if (!item.parent) continue;
-    const siblings = byParent.get(item.parent) ?? [];
-    siblings.push(item);
-    byParent.set(item.parent, siblings);
-  }
-  for (const siblings of byParent.values()) {
-    siblings.sort((left, right) => left.title.localeCompare(right.title));
-  }
-  return items
+    .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.state !== "withdrawn" && item.type === "project")
     .filter(isRootItem)
     .sort((left, right) => left.title.localeCompare(right.title))
     .map((item) => ({
       item,
-      children: byParent.get(item.id) ?? [],
+      children: [],
     }));
 }
 
@@ -305,6 +302,7 @@ export function childrenOf(
   return [...latestWorkItems(events).values()]
     .map(parseWorkItem)
     .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.state !== "withdrawn")
     .filter((item) => item.parent === parentId)
     .sort((left, right) => left.title.localeCompare(right.title));
 }
@@ -329,6 +327,8 @@ export function stateChipLabel(item: Pick<WorkItem, "state" | "type">): string {
       return "waiting on a yes";
     case "open":
       return item.type === "project" ? "needs a DRI" : "open";
+    case "withdrawn":
+      return "removed";
     default:
       return item.state;
   }
@@ -451,10 +451,47 @@ export function canRelease(item: WorkItem, viewer: string | null): boolean {
   return canMarkDone(item, viewer);
 }
 
+/**
+ * A ticket's due date can move while it is still live.
+ * The holder and the person who created it may change it.
+ */
+export function canChangeTicketDue(
+  item: WorkItem,
+  viewer: string | null,
+): boolean {
+  if (!viewer || item.type !== "ticket") return false;
+  if (item.state === "done" || item.state === "withdrawn") return false;
+  const me = viewer.toLowerCase();
+  const holds =
+    (item.state === "accepted" || item.state === "in_review") &&
+    (item.dri ?? "").toLowerCase() === me;
+  const created = (item.createdBy ?? "").toLowerCase() === me;
+  return holds || created;
+}
+
 export function formatWorkDate(unix: number): string {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   }).format(new Date(unix * 1000));
+}
+
+/** Review line on the Work board. `due_at` is the review date, shown in UTC so every member sees the same day. */
+export function formatReviewDate(unix: number): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(unix * 1000));
+}
+
+/** Open and offered projects have not been accepted yet. */
+export function workBoardColumn(
+  item: Pick<WorkItem, "state">,
+): "waiting" | "ongoing" {
+  return item.state === "open" || item.state === "offered"
+    ? "waiting"
+    : "ongoing";
 }

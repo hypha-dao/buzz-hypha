@@ -411,6 +411,7 @@ async fn holder_receipt_skill_and_open_limit_and_profile_needs() {
             slug: "grant-writing".into(),
             label: "grant writing".into(),
         }],
+        socials: vec![],
         open_limit: None,
         updated_at: 1,
         receipt: receipt.clone(),

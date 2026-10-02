@@ -109,7 +109,7 @@ export function OrgOnboardingGuide({ active }: OrgOnboardingGuideProps) {
   return (
     <section
       aria-label="Organization onboarding"
-      className="pointer-events-auto mx-3 mb-2 rounded-xl border border-border/70 bg-card/95 px-4 py-3 shadow-sm"
+      className="pointer-events-auto relative z-10 mx-3 mb-2 rounded-xl border border-border/70 bg-card px-4 py-3 shadow-sm"
       data-testid="org-onboarding-guide"
     >
       {stage === "welcome" || stage === "shaper-choice" ? (

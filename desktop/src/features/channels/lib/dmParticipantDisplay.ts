@@ -2,6 +2,7 @@ import {
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
+import { isOrgAgentDm, ORG_AGENT_LABEL } from "@/features/org/orgAgent";
 import type { Channel } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -55,14 +56,35 @@ export function formatDmParticipantDisplayName(
 export function buildDirectMessageIntro({
   channel,
   currentPubkey,
+  orgAgentPubkey,
   profiles,
 }: {
   channel: Channel | null;
   currentPubkey?: string;
+  orgAgentPubkey?: string | null;
   profiles?: UserProfileLookup;
 }): DirectMessageIntro | null {
   if (channel?.channelType !== "dm") {
     return null;
+  }
+
+  if (
+    orgAgentPubkey &&
+    isOrgAgentDm(channel, orgAgentPubkey, currentPubkey ?? null)
+  ) {
+    const profile = profiles?.[normalizePubkey(orgAgentPubkey)] ?? null;
+    const displayName = ORG_AGENT_LABEL;
+    return {
+      displayName,
+      participants: [
+        {
+          avatarUrl: profile?.avatarUrl ?? null,
+          displayName,
+          isAgent: true,
+          pubkey: orgAgentPubkey,
+        },
+      ],
+    };
   }
 
   const participants = channel.participantPubkeys.map((pubkey, index) => ({

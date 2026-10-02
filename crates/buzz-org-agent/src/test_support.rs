@@ -39,6 +39,8 @@ pub fn item(id: &str, parent: Option<&str>, state: WorkItemState, dri: Option<&s
         offered_to: None,
         offered_by: None,
         offered_at: None,
+        created_by: None,
+        offered_by_member: None,
         due_at: 2_000_000_000,
         approved_at: None,
         objective_ref: None,
@@ -103,6 +105,7 @@ fn wire_state(s: WorkItemState) -> &'static str {
         WorkItemState::Accepted => "accepted",
         WorkItemState::InReview => "in_review",
         WorkItemState::Done => "done",
+        WorkItemState::Withdrawn => "withdrawn",
     }
 }
 

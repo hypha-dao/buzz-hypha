@@ -3,6 +3,12 @@ import * as React from "react";
 import { useEphemeralChannelDisplay } from "@/features/channels/useEphemeralChannelDisplay";
 import { usePresenceQuery } from "@/features/presence/hooks";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
+import {
+  isOrgAgentDm,
+  ORG_AGENT_LABEL,
+  orgAgentDmPresence,
+} from "@/features/org/orgAgent";
+import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import type { Channel, PresenceStatus } from "@/shared/api/types";
@@ -38,10 +44,16 @@ export function useActiveChannelHeader(
           normalizePubkey(participant.pubkey) !== normalizedCurrentPubkey,
       );
   }, [activeChannel, currentPubkey]);
-  const activeDmParticipantPubkeys = React.useMemo(
-    () => activeDmParticipants.map((participant) => participant.pubkey),
-    [activeDmParticipants],
-  );
+  const orgAgentPubkey = useOrgAgentPubkey();
+  const isAgentDm =
+    activeChannel !== null &&
+    isOrgAgentDm(activeChannel, orgAgentPubkey, currentPubkey ?? null);
+  const activeDmParticipantPubkeys = React.useMemo(() => {
+    if (isAgentDm && orgAgentPubkey && activeDmParticipants.length === 0) {
+      return [orgAgentPubkey];
+    }
+    return activeDmParticipants.map((participant) => participant.pubkey);
+  }, [activeDmParticipants, isAgentDm, orgAgentPubkey]);
   const activeDmPresenceQuery = usePresenceQuery(activeDmParticipantPubkeys, {
     enabled: activeDmParticipantPubkeys.length > 0,
   });
@@ -50,48 +62,78 @@ export function useActiveChannelHeader(
   });
   const activeChannelEphemeralDisplay =
     useEphemeralChannelDisplay(activeChannel);
-  const activeDmPresenceStatus: PresenceStatus | null =
+  const relayDmPresence: PresenceStatus | null =
     activeDmParticipantPubkeys.length > 0
       ? (activeDmPresenceQuery.data?.[
           activeDmParticipantPubkeys[0]?.toLowerCase()
         ] ?? null)
       : null;
+  const activeDmPresenceStatus: PresenceStatus | null = activeChannel
+    ? orgAgentDmPresence(
+        activeChannel,
+        orgAgentPubkey,
+        currentPubkey ?? null,
+        relayDmPresence,
+      )
+    : null;
   const activeDmAvatarUrl =
     activeDmParticipantPubkeys.length > 0
       ? (activeDmProfilesQuery.data?.profiles?.[
           normalizePubkey(activeDmParticipantPubkeys[0] ?? "")
         ]?.avatarUrl ?? null)
       : null;
-  const activeDmHeaderParticipants = React.useMemo(
-    () =>
-      activeDmParticipants.map((participant) => {
-        const profile =
-          activeDmProfilesQuery.data?.profiles?.[
-            normalizePubkey(participant.pubkey)
-          ] ?? null;
-
-        return {
-          pubkey: participant.pubkey,
-          displayName: resolveUserLabel({
-            currentPubkey,
-            fallbackName: participant.fallbackName,
-            profiles: activeDmProfilesQuery.data?.profiles,
-            pubkey: participant.pubkey,
-          }),
+  const activeDmHeaderParticipants = React.useMemo(() => {
+    if (isAgentDm && orgAgentPubkey) {
+      const profile =
+        activeDmProfilesQuery.data?.profiles?.[
+          normalizePubkey(orgAgentPubkey)
+        ] ?? null;
+      const displayName = ORG_AGENT_LABEL;
+      return [
+        {
+          pubkey: orgAgentPubkey,
+          displayName,
           avatarUrl: profile?.avatarUrl ?? null,
-          ...(profile?.isAgent === true ? { isAgent: true } : {}),
-        };
-      }),
-    [activeDmParticipants, activeDmProfilesQuery.data?.profiles, currentPubkey],
-  );
+          isAgent: true,
+        },
+      ];
+    }
+    return activeDmParticipants.map((participant) => {
+      const profile =
+        activeDmProfilesQuery.data?.profiles?.[
+          normalizePubkey(participant.pubkey)
+        ] ?? null;
+
+      return {
+        pubkey: participant.pubkey,
+        displayName: resolveUserLabel({
+          currentPubkey,
+          fallbackName: participant.fallbackName,
+          profiles: activeDmProfilesQuery.data?.profiles,
+          pubkey: participant.pubkey,
+        }),
+        avatarUrl: profile?.avatarUrl ?? null,
+        ...(profile?.isAgent === true ? { isAgent: true } : {}),
+      };
+    });
+  }, [
+    activeDmParticipants,
+    activeDmProfilesQuery.data?.profiles,
+    currentPubkey,
+    isAgentDm,
+    orgAgentPubkey,
+  ]);
 
   return {
     activeChannelTitle: activeChannel
-      ? resolveChannelDisplayLabel(
-          activeChannel,
-          currentPubkey,
-          activeDmProfilesQuery.data?.profiles,
-        )
+      ? isAgentDm
+        ? ORG_AGENT_LABEL
+        : resolveChannelDisplayLabel(
+            activeChannel,
+            currentPubkey,
+            activeDmProfilesQuery.data?.profiles,
+            orgAgentPubkey,
+          )
       : "Channels",
     activeDmAvatarUrl,
     activeDmHeaderParticipants,

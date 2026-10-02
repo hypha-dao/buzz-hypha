@@ -138,8 +138,11 @@ can no longer pass — too many declines — is rejected. One that nobody finish
 passed, it executes: the version is confirmed, the project goes live, the DRI is named, the
 Shaper is added.
 
-**Four things are proposals** in the first version, and only these: **project**, **DRI**,
-**direction**, and **Shapers** — the set itself, its rules, and which org agent it uses. Two more come later: **money**,
+**Five things are proposals** in the first version: **project**, **DRI**,
+**direction**, **Shapers** — the set itself, its rules, and which org agent it uses — and
+**removing a project** when more than one Shaper is seated. One seated Shaper removes a
+project directly in chat with the org agent. A ticket is removed only by the person who
+created it or the person who offered it, and that is one tap, not a proposal. Two more come later: **money**,
 when the treasury contract lands (feature 7), and **join**, when an org wants a door people
 can knock on (feature 6a). Everything else in the org is one person's tap on their own work.
 
@@ -270,7 +273,9 @@ until something changed.
 Anyone can also **publish** from their **DM with the org agent** (the
 _Personal Assistant_): draft a direction, project, or DRI-naming proposal
 (and, once the treasury lands, a money-out one); create a ticket (for
-themselves or someone else); mark their own ticket done; ask the org
+themselves or someone else); mark their own ticket done; remove a ticket
+they created or offered; a Shaper can remove a project (a proposal when
+more than one Shaper is seated, direct when they are the only one); ask the org
 anything. The same works in **any DM or channel** by tagging the agent —
 it is already there (feature 2). Shapers do the same in the Shapers room.
 The agent drafts; a person opens it; the Shapers decide.
@@ -384,7 +389,7 @@ on cards.
 | **Overview**   | Who are we? Mission, vision, objectives, strategy, established, founder, Shapers and the rule they decide by, the org agent and who hosts it, members, who holds which job. Each direction card opens to its full text, every version, and the proofs behind each line — with receipts. |
 | **Work**       | Who is working on what? Every project and ticket, DRI or _open_, dates visible, when each piece last moved; on each project page its room, its repository, and the agent's **health read** (feature 8a); on each ticket the **work log** (feature 5a). |
 | **Decisions**  | What the Shapers decide: **Work** (project approval and **project DRI**), **Direction**, **Shapers** (add, remove, rules, agent) — later **Money** (out only) and **Join** (people only). Each card shows agrees so far against the rule. Anyone can read; only Shapers vote. |
-| **My Work**    | What needs my tap — including AI cards — what I hold, what I offered (**You offered**), and what is finished. Waiting-on-me stays in the first column. Shapers also see open decision cards here. |
+| **My Work**    | What needs my tap — including AI cards — what I hold, what I offered (**You offered**), and what is finished. Waiting-on-me stays in the first column. Shapers also see open decision cards here, and any live project that still needs a DRI. |
 | **My Profile** | Who I am in this community — **about and skills** I wrote myself (the agent and DRIs read them when suggesting or offering work), current work, earlier work, recent decisions; later, what I have been paid. Identity is one keypair across communities; the profile is per community. |
 
 The board door is called **Work**, not _Projects_: Buzz already has a Projects surface for git
