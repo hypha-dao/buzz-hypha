@@ -18,6 +18,7 @@ pub mod jobs;
 pub mod jobs_impl;
 pub mod judge;
 pub mod pipeline;
+pub mod plan;
 mod profile_fit;
 mod project_fit;
 pub mod relay;

@@ -2908,6 +2908,10 @@ async fn protocol_section_9_direction_to_done_through_c1_builders() {
         why: "gap on the hall line".into(),
         gaps: vec![],
         matched: None,
+        gap: None,
+        options: vec![],
+        change: None,
+        plan: vec![],
     });
     let draft_cmd = signed_sdk(
         &c.agent,

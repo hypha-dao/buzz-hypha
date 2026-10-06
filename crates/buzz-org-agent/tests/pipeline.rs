@@ -11,6 +11,7 @@ use buzz_org_agent::judge::{Draft, JudgeReason};
 use buzz_org_agent::pipeline::{HandleOutcome, OrgAgent};
 use buzz_org_agent::relay::{FakeRelay, Permitted};
 use buzz_org_agent::state::{DirectionHead, OrgState, Transition};
+use buzz_org_agent::think::model::{ModelOutput, Usage};
 use buzz_org_agent::think::{ContextBundle, Recorded};
 use nostr::{EventBuilder, Keys, Kind, Tag};
 
@@ -248,4 +249,145 @@ fn direction_confirmed_coalesces_and_a_late_finish_is_stale() {
             if key == "direction:objectives" && generation == "v2"
     )));
     assert!(agent.link.io().published().is_empty());
+}
+
+fn plan_value() -> serde_json::Value {
+    serde_json::json!({
+        "title": "Weekday hall trial",
+        "brief": "A short trial of a weekday night.",
+        "objective_ref": "objectives@1#line-a",
+        "due_at": 1785488400,
+        "suggested_dri": null,
+        "why": "learn whether weekday buyers come",
+        "gaps": [],
+        "gap": { "ref": "objectives@1#line-a", "verdict": "uncovered" },
+        "options": [
+            { "title": "Weekday hall trial", "mechanism": "tests demand before a weekly booking", "kept": true },
+            { "title": "Apply for a city grant", "mechanism": "a grant round pays the hall", "kept": false, "why_not": "strategy refusal" }
+        ],
+        "change": {
+            "from": "no weekday night",
+            "to": "a trial has answered whether buyers come",
+            "done_when": ["sessions held"],
+            "moves": ["objectives@1#line-a"]
+        },
+        "plan": [
+            { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] },
+            { "piece": "Book the nights", "kind": "ops", "gate": false, "held": "after the licence", "after": ["Evening licence application"] }
+        ]
+    })
+}
+
+#[tokio::test]
+async fn direction_confirmed_publishes_one_project_draft() {
+    let gen = "ab".repeat(32);
+    let mut state = OrgState::new();
+    let mut head = objectives_head(&gen);
+    head.artifact.lines[0].done_when = Some("sessions held".into());
+    state.direction.insert("objectives".into(), head);
+    state.direction.insert(
+        "situation".into(),
+        DirectionHead {
+            artifact: buzz_core::intelligent_org::DirectionArtifact {
+                slug: DirectionSlug::Situation,
+                version: 1,
+                body: "What is stuck is whether weekday buyers will come.".into(),
+                lines: vec![],
+                confirmed_by: "aa".repeat(32),
+                confirmed_at: 1,
+                proposed_by: "bb".repeat(32),
+                proposal: "11111111-1111-4111-8111-111111111111".into(),
+                prev: None,
+            },
+            event_id: "cd".repeat(32),
+        },
+    );
+    state.direction.insert(
+        "strategy".into(),
+        DirectionHead {
+            artifact: buzz_core::intelligent_org::DirectionArtifact {
+                slug: DirectionSlug::Strategy,
+                version: 1,
+                body: "How we get there.".into(),
+                lines: vec![buzz_core::intelligent_org::DirectionLine {
+                    n: 1,
+                    id: "s1".into(),
+                    text: "The stall funds the hall, not a grant round.".into(),
+                    date: None,
+                    done_when: None,
+                    line_type: Some(buzz_core::intelligent_org::StrategyLineType::Refusal),
+                }],
+                confirmed_by: "aa".repeat(32),
+                confirmed_at: 1,
+                proposed_by: "bb".repeat(32),
+                proposal: "22222222-2222-4222-8222-222222222222".into(),
+                prev: None,
+            },
+            event_id: "ef".repeat(32),
+        },
+    );
+    state.shapers = Some(buzz_core::intelligent_org::Shapers {
+        founder: "aa".repeat(32),
+        shapers: vec!["aa".repeat(32)],
+        offered: vec![],
+        room: Some("shapers-room".into()),
+        agent: None,
+        agent_hosted: false,
+        rules: Default::default(),
+        decision_window_secs: 60,
+        offer_window_secs: 60,
+        updated_at: 1,
+        receipt: "11".repeat(32),
+    });
+    let (mut agent, _dir) = agent(state);
+    agent.link.connect(&Default::default()).expect("connect");
+    agent.move_1 = true;
+    agent.model.push(ModelOutput {
+        value: plan_value(),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    agent
+        .handle(confirm(&gen), None, ContextBundle::default())
+        .expect("enqueue");
+    assert_eq!(agent.jobs.len(), 1);
+    let published = agent.run_jobs().await.expect("jobs");
+    assert_eq!(published, 1);
+    let drafts: Vec<_> = agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+        .collect();
+    assert_eq!(drafts.len(), 1);
+    assert!(drafts[0].content.contains("\"gate\":true"));
+    assert!(drafts[0].content.contains("Evening licence application"));
+    assert!(agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .any(|event| event.kind.as_u16() == 9 && event.content.contains("My work")));
+
+    agent.model.push(ModelOutput {
+        value: plan_value(),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    agent
+        .handle(confirm(&gen), None, ContextBundle::default())
+        .expect("again");
+    let again = agent.run_jobs().await.expect("second");
+    assert_eq!(again, 0, "an open draft for the gap is not drafted again");
+    assert_eq!(
+        agent
+            .link
+            .io()
+            .published()
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .count(),
+        1
+    );
 }

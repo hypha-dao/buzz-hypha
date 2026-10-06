@@ -1063,6 +1063,10 @@ mod tests {
             why: "w".into(),
             gaps: vec![],
             matched: None,
+            gap: None,
+            options: vec![],
+            change: None,
+            plan: vec![],
         });
         let rcpts = receipts();
         let note = AgentNote::BudgetExhausted {

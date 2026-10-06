@@ -380,6 +380,87 @@ pub struct ProjectDraft {
     /// Evidence for `suggested_dri`, when named.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched: Option<HolderMatch>,
+    /// The compiler verdict this draft claims. The judge checks it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<PlanGap>,
+    /// Options the planner kept or dropped. Two or three.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<PlanOption>,
+    /// From, to, and the checks that say the change happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<PlanChange>,
+    /// The step list. Gates come first. Held steps are not drafted yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<PlanStep>,
+}
+
+/// The gap a change plan restates from the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanGap {
+    /// `objectives@<version>#<line-id>`.
+    #[serde(rename = "ref")]
+    pub line_ref: String,
+    /// `uncovered`, `partly`, or `covered`.
+    pub verdict: String,
+}
+
+/// One option the planner considered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanOption {
+    /// Short name.
+    pub title: String,
+    /// Why this option would move the objective.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mechanism: String,
+    /// Kept options are the ones the plan may do.
+    pub kept: bool,
+    /// Why a dropped option was dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why_not: Option<String>,
+}
+
+/// The change a project draft promises.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanChange {
+    /// Where things stand.
+    pub from: String,
+    /// Where they stand when this is done.
+    pub to: String,
+    /// Checks a person could answer yes or no.
+    pub done_when: Vec<String>,
+    /// Objective refs this change moves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moves: Vec<String>,
+}
+
+/// One step of a change plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanStep {
+    /// What this step is.
+    pub piece: String,
+    /// `code`, `research`, `writing`, `outreach`, `design`, or `ops`.
+    pub kind: String,
+    /// Its outcome decides later steps.
+    #[serde(default)]
+    pub gate: bool,
+    /// The open question this gate answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<String>,
+    /// Skill slugs or one-line capabilities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    /// Piece titles this step follows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<String>,
+    /// Why this step cannot start yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<String>,
+    /// A range in words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    /// `done_when` lines this step produces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub produces: Vec<String>,
 }
 
 /// `t = dri` payload.

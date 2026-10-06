@@ -42,6 +42,8 @@ pub struct OrgAgent<M, R> {
     pub keys: Keys,
     /// Verdict jobs. They compile and record. They do not publish.
     pub jobs: JobQueue,
+    /// When false, uncovered objectives are compiled and not drafted.
+    pub move_1: bool,
     /// Hook the fencing test uses: run after the job snaps generation
     /// and before JUDGE, so a newer event can land mid-THINK.
     pub mid_think: Option<MidThinkHook>,
@@ -67,6 +69,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             outbox: Outbox::open(&state_dir)?,
             keys,
             jobs: JobQueue::new(),
+            move_1: crate::plan::move_1_enabled(),
             mid_think: None,
         })
     }
@@ -128,7 +131,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         Ok(())
     }
 
-    fn try_send(&mut self, event: &buzz_core::Event) -> Result<(), PublishError> {
+    pub(crate) fn try_send(&mut self, event: &buzz_core::Event) -> Result<(), PublishError> {
         let id = event.id.to_hex();
         match self.link.io().publish(event.clone()) {
             Ok(ack) if ack.accepted => self.outbox.ack(&id),
