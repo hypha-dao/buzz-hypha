@@ -551,15 +551,19 @@ impl Board {
                 names.join(", ")
             ));
         }
-        lines.push("Direction:".to_string());
-        for slug in ["mission", "vision", "situation", "objectives", "strategy"] {
-            match self.direction.get(slug) {
-                Some(head) if !head.body.trim().is_empty() => {
-                    lines.push(format!("- {slug} v{}: {}", head.version, head.body.trim()));
-                }
-                _ => lines.push(format!("- {slug}: not set")),
-            }
-        }
+        let direction = crate::compile::render_board_direction(
+            ["mission", "vision", "situation", "objectives", "strategy"].map(|slug| {
+                self.direction.get(slug).and_then(|head| {
+                    let body = head.body.trim();
+                    if body.is_empty() {
+                        None
+                    } else {
+                        Some((head.version, body.to_string()))
+                    }
+                })
+            }),
+        );
+        lines.push(direction);
         lines.push("Open proposals:".to_string());
         let mut open: Vec<&OpenProposal> = self.proposals.values().collect();
         open.sort_by(|left, right| left.kind.cmp(&right.kind).then(left.id.cmp(&right.id)));
@@ -3385,7 +3389,21 @@ mod tests {
 
     #[test]
     fn overview_names_direction_and_work_without_inventing() {
-        let text = board().overview();
+        let live = board();
+        let text = live.overview();
+        let direction = crate::compile::render_board_direction(
+            ["mission", "vision", "situation", "objectives", "strategy"].map(|slug| {
+                live.direction.get(slug).and_then(|head| {
+                    let body = head.body.trim();
+                    if body.is_empty() {
+                        None
+                    } else {
+                        Some((head.version, body.to_string()))
+                    }
+                })
+            }),
+        );
+        assert!(text.contains(&direction));
         assert!(text.contains("mission v1: We exist so organizations can run themselves."));
         assert!(text.contains("vision: not set"));
         assert!(text.contains("Hall roof"));

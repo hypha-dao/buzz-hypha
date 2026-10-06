@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod chat_act;
+pub mod compile;
 pub mod config;
 pub mod dm_chat;
 pub mod error;
