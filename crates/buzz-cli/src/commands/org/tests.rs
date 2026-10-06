@@ -297,6 +297,53 @@ fn direction_propose_args_build_50002() {
     assert_eq!(content(&event)["body"], "A river through the city.");
 }
 
+#[test]
+fn direction_propose_sends_done_when_and_strategy_type() {
+    let (keys, me) = keys_and_me();
+    let event = sign(
+        plan(
+            &parse_org(&[
+                "org",
+                "direction",
+                "propose",
+                "objectives",
+                "--base",
+                "1",
+                "--body",
+                "This season.",
+                "--lines",
+                r#"[{"text":"A weekday hall is open before August.","date":1780000000,"done_when":"four weekday nights have been held"}]"#,
+            ]),
+            &me,
+        )
+        .unwrap(),
+        &keys,
+    );
+    let line = &content(&event)["lines"][0];
+    assert_eq!(line["done_when"], "four weekday nights have been held");
+    assert_eq!(line["date"], 1_780_000_000);
+    let strategy = sign(
+        plan(
+            &parse_org(&[
+                "org",
+                "direction",
+                "propose",
+                "strategy",
+                "--base",
+                "0",
+                "--body",
+                "How we get there.",
+                "--lines",
+                r#"[{"text":"No brand money.","type":"refusal"}]"#,
+            ]),
+            &me,
+        )
+        .unwrap(),
+        &keys,
+    );
+    assert_eq!(content(&strategy)["lines"][0]["type"], "refusal");
+}
+
 // ── proposals ───────────────────────────────────────────────────────────────
 
 #[test]

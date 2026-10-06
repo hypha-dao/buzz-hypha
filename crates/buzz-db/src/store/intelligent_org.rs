@@ -2018,6 +2018,8 @@ mod postgres_tests {
                     id: "l_1".into(),
                     text: "Ship".into(),
                     date: None,
+                    done_when: None,
+                    line_type: None,
                 }],
                 confirmed_by: hex_id(1),
                 confirmed_at: 1_700_000_000 + u64::from(n),

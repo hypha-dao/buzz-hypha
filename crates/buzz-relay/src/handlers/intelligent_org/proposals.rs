@@ -855,6 +855,8 @@ fn direction_lines(
             id,
             text: input.text.clone(),
             date: input.date,
+            done_when: input.done_when.clone(),
+            line_type: input.line_type,
         });
     }
     Ok(lines)

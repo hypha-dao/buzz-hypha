@@ -1821,7 +1821,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &c.owner,
             "objectives",
             0,
-            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
             false,
         )
         .await;
@@ -2019,7 +2019,7 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         &c.owner,
         "objectives",
         0,
-        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
         true,
     )
     .await;
@@ -2866,7 +2866,9 @@ async fn protocol_section_9_direction_to_done_through_c1_builders() {
         lines: Some(vec![DirectionLineInput {
             id: Some("l_7f3a".into()),
             text: "Weekday hall".into(),
-            date: None,
+            date: Some(1_780_000_000),
+            done_when: Some("the hall has hosted a weekday night".into()),
+            line_type: None,
         }]),
         why: Some("first confirm".into()),
     };

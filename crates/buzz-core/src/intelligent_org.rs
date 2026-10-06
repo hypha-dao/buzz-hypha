@@ -86,6 +86,21 @@ pub enum DirectionSlug {
     Strategy,
 }
 
+/// How a strategy line binds the organization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StrategyLineType {
+    /// A bet the organization is making.
+    Bet,
+    /// A rule the work must follow.
+    Rule,
+    /// A refusal written so it can be checked.
+    Refusal,
+}
+
+/// Maximum characters in an objective line's `done_when`.
+pub const DONE_WHEN_MAX_CHARS: usize = 200;
+
 /// One numbered line of an `objectives` or `strategy` artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DirectionLine {
@@ -95,8 +110,14 @@ pub struct DirectionLine {
     pub id: String,
     /// The line.
     pub text: String,
-    /// Target date, when the line has one.
+    /// Target date. Required on an objectives line.
     pub date: Option<Timestamp>,
+    /// A check a person could answer yes or no. Required on objectives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+    /// `bet`, `rule`, or `refusal`. Required on a strategy line.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub line_type: Option<StrategyLineType>,
 }
 
 /// Content of `kind:39100` — the latest confirmed version of one artifact.
@@ -1447,8 +1468,14 @@ pub struct DirectionLineInput {
     pub id: Option<String>,
     /// The line.
     pub text: String,
-    /// Target date, when it has one.
+    /// Target date. Required when the artifact is `objectives`.
     pub date: Option<Timestamp>,
+    /// Checkable completion. Required when the artifact is `objectives`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+    /// `bet`, `rule`, or `refusal`. Required when the artifact is `strategy`.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub line_type: Option<StrategyLineType>,
 }
 
 /// `50002` content — the whole new version.

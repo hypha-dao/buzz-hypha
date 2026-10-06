@@ -136,7 +136,7 @@ pub enum DirectionCmd {
         /// New body. Use '-' to read from stdin
         #[arg(long)]
         body: String,
-        /// JSON array of `{id?, text, date?}` lines
+        /// JSON array of `{id?, text, date?, done_when?, type?}` lines
         #[arg(long)]
         lines: Option<String>,
         /// Draft event id this command settles

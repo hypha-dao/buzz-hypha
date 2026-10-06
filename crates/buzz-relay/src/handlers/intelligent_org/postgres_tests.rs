@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use buzz_auth::Scope;
 use buzz_core::intelligent_org::{
-    DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers, VoteChoice, WorkItem,
-    WorkItemState,
+    DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers, StrategyLineType,
+    VoteChoice, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
     KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION,
@@ -2015,7 +2015,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &h.owner,
             "objectives",
             0,
-            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
             false,
         )
         .await
@@ -2052,6 +2052,11 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
     assert_eq!(objectives.lines.len(), 1);
     assert_eq!(objectives.lines[0].id, "l_7f3a");
     assert_eq!(objectives.lines[0].n, 1);
+    assert_eq!(objectives.lines[0].date, Some(1_780_000_000));
+    assert_eq!(
+        objectives.lines[0].done_when.as_deref(),
+        Some("the hall has hosted a weekday night")
+    );
     assert_eq!(objectives.confirmed_by, second.public_key().to_hex());
 
     // A second confirm of the same slug: base must be 1; prev is the v1 id.
@@ -2067,7 +2072,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &h.owner,
             "objectives",
             1,
-            r#"{"body":"the lines, updated","lines":[{"id":"l_7f3a","text":"Weekday hall booked"},{"text":"Stall running"}]}"#,
+            r#"{"body":"the lines, updated","lines":[{"id":"l_7f3a","text":"Weekday hall booked","date":1780000000,"done_when":"the hall has hosted a weekday night"},{"text":"Stall running","date":1782000000,"done_when":"the stall has run every Saturday this season"}]}"#,
             true,
         )
         .await
@@ -2154,6 +2159,69 @@ async fn a_passed_situation_writes_39100_without_lines() {
     assert_eq!(head.version, 1);
     assert!(head.body.starts_with("A working prototype"));
     assert!(head.lines.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn objectives_need_done_when_and_strategy_lines_need_a_type() {
+    let h = harness().await;
+    h.bootstrap().await;
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "objectives",
+                0,
+                r#"{"body":"the lines","lines":[{"text":"be more visible","date":1780000000}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: objective line needs done_when"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "objectives",
+                0,
+                r#"{"body":"the lines","lines":[{"text":"A weekday hall is open.","done_when":"four nights held"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: objective line needs a date"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "strategy",
+                0,
+                r#"{"body":"how","lines":[{"text":"no brand money"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: strategy line needs a type"
+    );
+    let reply = h
+        .direction(
+            &h.owner,
+            "strategy",
+            0,
+            r#"{"body":"how","lines":[{"text":"No brand money.","type":"refusal"},{"text":"Borrow before we buy.","type":"bet"}]}"#,
+            true,
+        )
+        .await
+        .expect("open strategy");
+    assert_eq!(reply["status"], "passed");
+    let head = h
+        .direction_head(DirectionSlug::Strategy)
+        .await
+        .expect("39100 strategy");
+    assert_eq!(head.lines[0].line_type, Some(StrategyLineType::Refusal));
+    assert_eq!(head.lines[1].line_type, Some(StrategyLineType::Bet));
 }
 
 #[tokio::test]
@@ -2386,7 +2454,7 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         &h.owner,
         "objectives",
         0,
-        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
         true,
     )
     .await

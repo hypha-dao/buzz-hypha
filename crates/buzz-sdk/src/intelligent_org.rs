@@ -1364,12 +1364,16 @@ mod tests {
                 DirectionLineInput {
                     id: Some("l_7f3a".into()),
                     text: "kept".into(),
-                    date: None,
+                    date: Some(1),
+                    done_when: Some("the hall has hosted four nights".into()),
+                    line_type: None,
                 },
                 DirectionLineInput {
                     id: None,
                     text: "new".into(),
                     date: Some(1),
+                    done_when: Some("a second night is booked".into()),
+                    line_type: None,
                 },
             ]),
             why: Some("w".into()),

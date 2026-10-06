@@ -182,7 +182,8 @@ pub fn stale_base(base: u32, head_version: Option<u32>) -> Result<(), IngestErro
 }
 
 /// The content of a `direction` proposal (§4.1): only `objectives` and
-/// `strategy` have `lines`.
+/// `strategy` have `lines`. An objectives line needs a date and `done_when`.
+/// A strategy line needs a `type`.
 pub fn direction_content(
     slug: DirectionSlug,
     content: &DirectionProposeContent,
@@ -195,6 +196,42 @@ pub fn direction_content(
             .is_some_and(|lines| !lines.is_empty())
     {
         return Err(invalid("only objectives and strategy have lines"));
+    }
+    match slug {
+        DirectionSlug::Objectives => validate_objective_lines(content),
+        DirectionSlug::Strategy => validate_strategy_lines(content),
+        _ => Ok(()),
+    }
+}
+
+fn validate_objective_lines(content: &DirectionProposeContent) -> Result<(), IngestError> {
+    let lines = content.lines.as_deref().unwrap_or(&[]);
+    if lines.is_empty() {
+        return Err(invalid("objectives need lines"));
+    }
+    for line in lines {
+        if line.date.is_none() {
+            return Err(invalid("objective line needs a date"));
+        }
+        let done = line.done_when.as_deref().map(str::trim).unwrap_or("");
+        if done.is_empty() {
+            return Err(invalid("objective line needs done_when"));
+        }
+        if done.chars().count() > buzz_core::intelligent_org::DONE_WHEN_MAX_CHARS {
+            return Err(invalid("done_when is too long"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_strategy_lines(content: &DirectionProposeContent) -> Result<(), IngestError> {
+    let Some(lines) = content.lines.as_deref() else {
+        return Ok(());
+    };
+    for line in lines {
+        if line.line_type.is_none() {
+            return Err(invalid("strategy line needs a type"));
+        }
     }
     Ok(())
 }
@@ -957,6 +994,8 @@ mod tests {
                 id: None,
                 text: "a line".into(),
                 date: None,
+                done_when: None,
+                line_type: None,
             }]),
             why: None,
         };
@@ -969,7 +1008,89 @@ mod tests {
             message(direction_content(DirectionSlug::Situation, &lined)),
             "invalid: only objectives and strategy have lines"
         );
-        assert!(direction_content(DirectionSlug::Objectives, &lined).is_ok());
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &lined)),
+            "invalid: objective line needs a date"
+        );
+    }
+
+    #[test]
+    fn objective_lines_need_done_when_and_strategy_lines_need_a_type() {
+        use buzz_core::intelligent_org::{
+            DirectionLineInput, DirectionProposeContent, StrategyLineType,
+        };
+        let dated = |done_when: Option<&str>| DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "Weekday hall".into(),
+                date: Some(1_780_000_000),
+                done_when: done_when.map(str::to_string),
+                line_type: None,
+            }]),
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &dated(None))),
+            "invalid: objective line needs done_when"
+        );
+        assert_eq!(
+            message(direction_content(
+                DirectionSlug::Objectives,
+                &dated(Some("   "))
+            )),
+            "invalid: objective line needs done_when"
+        );
+        let long = "x".repeat(buzz_core::intelligent_org::DONE_WHEN_MAX_CHARS + 1);
+        assert_eq!(
+            message(direction_content(
+                DirectionSlug::Objectives,
+                &dated(Some(&long))
+            )),
+            "invalid: done_when is too long"
+        );
+        assert!(direction_content(
+            DirectionSlug::Objectives,
+            &dated(Some("four weekday nights have been held"))
+        )
+        .is_ok());
+        let bare = DirectionProposeContent {
+            body: "b".into(),
+            lines: None,
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &bare)),
+            "invalid: objectives need lines"
+        );
+        let untyped = DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "no brand money".into(),
+                date: None,
+                done_when: None,
+                line_type: None,
+            }]),
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Strategy, &untyped)),
+            "invalid: strategy line needs a type"
+        );
+        let typed = DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "no brand money".into(),
+                date: None,
+                done_when: None,
+                line_type: Some(StrategyLineType::Refusal),
+            }]),
+            why: None,
+        };
+        assert!(direction_content(DirectionSlug::Strategy, &typed).is_ok());
+        assert!(direction_content(DirectionSlug::Strategy, &bare).is_ok());
     }
 
     #[test]
@@ -1076,6 +1197,8 @@ mod tests {
                 id: "l_7f3a".into(),
                 text: "Weekday hall".into(),
                 date: None,
+                done_when: None,
+                line_type: None,
             }],
             confirmed_by: pk(1),
             confirmed_at: 1,
