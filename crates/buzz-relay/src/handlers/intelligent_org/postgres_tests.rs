@@ -14,13 +14,13 @@ use buzz_core::intelligent_org::{
     VoteChoice, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
-    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION,
-    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE,
-    KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS,
-    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_GIT_REPO_ANNOUNCEMENT, KIND_IO_ACCEPT, KIND_IO_DECLINE,
+    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
+    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA, KIND_PROJECT,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::CommunityId;
@@ -2407,6 +2407,31 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     assert!(item.offered_at.is_none());
 }
 
+async fn announcement_tags(h: &Harness, kind: u32) -> Vec<Vec<String>> {
+    let rows = sqlx::query(
+        "SELECT tags FROM events \
+         WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL \
+         ORDER BY created_at",
+    )
+    .bind(h.community().as_uuid())
+    .bind(kind as i32)
+    .fetch_all(&h.pool)
+    .await
+    .expect("announcement events");
+    let tags: serde_json::Value = rows.last().expect("one announcement").get("tags");
+    tags.as_array()
+        .expect("tags")
+        .iter()
+        .map(|tag| {
+            tag.as_array()
+                .expect("tag")
+                .iter()
+                .map(|part| part.as_str().unwrap_or("").to_owned())
+                .collect()
+        })
+        .collect()
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn a_passed_project_opens_a_root_in_open_or_offered() {
@@ -2488,17 +2513,24 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
     assert_eq!(root.state, WorkItemState::Open);
     assert_eq!(root.title, "Weekday hall");
     assert!(root.approved_at.is_some());
-    let home = root.home.as_ref().expect("R-9a writes home.channel");
+    let home = root.home.as_ref().expect("pass writes home.channel");
     let home_room = Uuid::parse_str(&home.channel).expect("home.channel uuid");
-    assert!(home.repo.is_none(), "repo is R-9b");
-    assert!(home.project.is_none(), "project is R-9b");
+    let repo = home.repo.as_deref().expect("home.repo");
+    let project = home.project.as_deref().expect("home.project");
+    assert!(repo.starts_with("30617:"), "{repo}");
+    assert!(project.starts_with("30621:"), "{project}");
+    let owner_and_slug = repo.trim_start_matches("30617:");
+    let (repo_owner, repo_slug) = owner_and_slug.split_once(':').expect("30617:owner:slug");
+    assert_eq!(repo_owner, h.state.relay_keypair.public_key().to_hex());
+    assert_eq!(repo_slug, "weekday-hall");
+    assert_eq!(project, format!("30621:{repo_owner}:{repo_slug}"));
     assert!(root.dri.is_none());
     assert_eq!(root.path, Vec::<String>::new());
     let live = h.live_state(KIND_IO_WORK_ITEM).await;
     assert_eq!(live.len(), 1, "one live 39101 for the new root");
     assert_eq!(live[0].1["state"], "open");
     assert_eq!(live[0].1["home"]["channel"], home.channel);
-    assert!(live[0].1["home"].get("repo").is_none());
+    assert_eq!(live[0].1["home"]["repo"], repo);
     let channel_row = sqlx::query(
         "SELECT name, visibility::text AS visibility, description FROM channels \
          WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
@@ -2532,7 +2564,60 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
             "proposal_passed",
             "item_created",
             "home_created",
+            "context_seed",
+            "context_seeded",
         ]
+    );
+    let paths = super::home_repo::list_seeded_paths(&h.state, &h.tenant, repo_owner, repo_slug)
+        .await
+        .expect("list seeded paths")
+        .expect("seeded repo");
+    assert_eq!(
+        paths,
+        vec![
+            "context/README.md".to_owned(),
+            "context/decisions.md".to_owned(),
+            "context/links.md".to_owned(),
+        ]
+    );
+    let readme = super::home_repo::read_seeded_file(
+        &h.state,
+        &h.tenant,
+        repo_owner,
+        repo_slug,
+        "context/README.md",
+    )
+    .await
+    .expect("read README")
+    .expect("README");
+    assert!(readme.contains("Weekday hall"));
+    assert!(readme.contains("Book it"));
+    assert!(!readme.contains("context/drafts"));
+    let tags = announcement_tags(&h, KIND_GIT_REPO_ANNOUNCEMENT).await;
+    let protect = tags
+        .iter()
+        .find(|tag| tag.first().map(String::as_str) == Some("buzz-protect"))
+        .expect("buzz-protect");
+    assert!(protect.iter().any(|part| part == "push:admin"));
+    let parsed = buzz_core::git_perms::parse_protection_tags(&tags).expect("parse protect");
+    let update = buzz_core::git_perms::RefUpdate {
+        ref_name: "refs/heads/main".into(),
+        kind: buzz_core::git_perms::UpdateKind::FastForward,
+        old_oid: "a".repeat(40),
+        new_oid: "b".repeat(40),
+    };
+    assert!(buzz_core::git_perms::evaluate_ref_update(
+        &update,
+        buzz_core::channel::MemberRole::Member,
+        &parsed.rules,
+    )
+    .is_err());
+    let project_tags = announcement_tags(&h, KIND_PROJECT).await;
+    assert!(
+        project_tags
+            .iter()
+            .any(|tag| tag.first().map(String::as_str) == Some("buzz-channel")),
+        "30621 points at the room"
     );
 
     let (_, offered) = h
@@ -2551,8 +2636,11 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         Some("objectives@1#l_7f3a")
     );
     assert!(
-        offered.home.as_ref().is_some_and(|h| h.repo.is_none()),
-        "offered root also gets a home room; repo is R-9b"
+        offered.home.as_ref().is_some_and(|home| home
+            .repo
+            .as_deref()
+            .is_some_and(|repo| repo.starts_with("30617:"))),
+        "offered root also gets a home room and a repository"
     );
     assert_eq!(
         h.roster(Uuid::parse_str(&offered.home.as_ref().unwrap().channel).unwrap())
@@ -2562,6 +2650,147 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         "suggested_dri is not yet a member; accept promotes them"
     );
     assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_rolled_back_project_announcement_leaves_no_repo() {
+    let h = harness().await;
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    let announced = super::home_repo::announce_home(
+        &super::home_repo::AnnounceCtx {
+            community: h.community(),
+            host: h.tenant.host(),
+            relay: &h.state.relay_keypair,
+            db: &h.state.db,
+            created_at: 1_700_000_000,
+        },
+        &mut tx,
+        &super::home_repo::AnnounceRequest {
+            title: "Weekday hall",
+            brief: "Book it",
+            room: Uuid::new_v4(),
+            item_id: Uuid::new_v4(),
+            dri: None,
+            payload: &serde_json::json!({ "title": "Weekday hall", "brief": "Book it" }),
+        },
+        true,
+    )
+    .await
+    .expect("announce inside the pass transaction");
+    assert!(announced.home.repo.is_some());
+    tx.rollback().await.expect("rollback");
+    let names: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM git_repo_names WHERE community_id = $1")
+            .bind(h.community().as_uuid())
+            .fetch_one(&h.pool)
+            .await
+            .expect("repo names");
+    assert_eq!(names, 0, "a rolled-back pass leaves no repo name");
+    let events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events \
+         WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL",
+    )
+    .bind(h.community().as_uuid())
+    .bind(KIND_GIT_REPO_ANNOUNCEMENT as i32)
+    .fetch_one(&h.pool)
+    .await
+    .expect("30617 rows");
+    assert_eq!(events, 0, "a rolled-back pass leaves no 30617");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_relay_without_object_storage_skips_the_repo() {
+    let h = harness().await;
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    let announced = super::home_repo::announce_home(
+        &super::home_repo::AnnounceCtx {
+            community: h.community(),
+            host: h.tenant.host(),
+            relay: &h.state.relay_keypair,
+            db: &h.state.db,
+            created_at: 1_700_000_000,
+        },
+        &mut tx,
+        &super::home_repo::AnnounceRequest {
+            title: "Weekday hall",
+            brief: "Book it",
+            room: Uuid::new_v4(),
+            item_id: Uuid::new_v4(),
+            dri: None,
+            payload: &serde_json::json!({ "title": "Weekday hall" }),
+        },
+        false,
+    )
+    .await
+    .expect("skip");
+    assert!(announced.home.repo.is_none());
+    assert!(announced.home.project.is_none());
+    assert!(announced.seed.is_none());
+    assert!(!announced.home.channel.is_empty());
+    tx.rollback().await.expect("rollback");
+    let names: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM git_repo_names WHERE community_id = $1")
+            .bind(h.community().as_uuid())
+            .fetch_one(&h.pool)
+            .await
+            .expect("repo names");
+    assert_eq!(names, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_failed_context_seed_stays_pending() {
+    let h = harness().await;
+    let item = Uuid::new_v4();
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    store::insert_ledger(
+        &mut tx,
+        h.community(),
+        &store::LedgerEntry {
+            at: chrono::Utc::now(),
+            actor: store::LEDGER_ACTOR_RELAY.to_owned(),
+            verb: "context_seed".into(),
+            object_type: "work_item".into(),
+            object_id: item.to_string(),
+            receipt_event_id: None,
+            detail: serde_json::json!({
+                "repo_id": "",
+                "owner": "zz",
+                "readme": "x",
+                "decisions": "y",
+                "links": "z",
+            }),
+        },
+    )
+    .await
+    .expect("insert seed");
+    tx.commit().await.expect("commit seed");
+    super::home_repo::retry_pending(&h.state, &h.tenant)
+        .await
+        .expect("retry");
+    let verbs = h.ledger_verbs().await;
+    assert!(verbs.contains(&"context_seed".to_owned()));
+    assert!(
+        !verbs.iter().any(|verb| verb == "context_seeded"),
+        "a failed seed leaves the retry row: {verbs:?}"
+    );
 }
 
 #[tokio::test]

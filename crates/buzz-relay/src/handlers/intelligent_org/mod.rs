@@ -27,6 +27,7 @@ mod drafts;
 #[path = "drafts_postgres_tests.rs"]
 mod drafts_postgres_tests;
 mod home;
+mod home_repo;
 #[cfg(test)]
 mod postgres_tests;
 mod profiles;
@@ -313,6 +314,9 @@ async fn persist_write_inner(
     };
     let applied = apply::apply(&cmd.state.db, &mut tx, &ctx, &projections, &mut rows).await?;
     commit(tx).await?;
+    // The pass is durable. A failed context seed leaves its ledger row and
+    // does not roll the project back.
+    home_repo::seed_committed(cmd, &rows).await;
     finish(cmd, applied, room_created).await;
     Ok(cmd.accepted(message))
 }

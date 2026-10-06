@@ -175,9 +175,9 @@ That diagram is commit order on one branch, not a set of pull requests. G and S 
 
 All four, on a local community, with the tests above green:
 
-- [ ] The interview reaches "ready" only when the seven rows are confirmed, and a vague objective never becomes a draft.
-- [ ] Confirming objectives produces one project draft per uncovered line, with a plan whose first steps are gates, and a refusal in strategy removes the option that would break it.
-- [ ] Accepting the project opens the room and the repository, seeds `context/`, and drafts only the steps that can start.
+- [x] The interview reaches "ready" only when the seven rows are confirmed, and a vague objective never becomes a draft.
+- [x] Confirming objectives produces one project draft per uncovered line, with a plan whose first steps are gates, and a refusal in strategy removes the option that would break it.
+- [x] Accepting the project opens the room and the repository, seeds `context/`, and drafts only the steps that can start.
 - [ ] Each of those tickets has a prompt a person can copy. A code ticket names a real path in the linked repo.
 - [ ] At the review date the Shapers get one card: what was promised, what happened, and one next step.
 

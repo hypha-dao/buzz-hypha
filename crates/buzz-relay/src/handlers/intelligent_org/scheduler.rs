@@ -118,6 +118,9 @@ pub async fn sweep_community(
     sweep_drafts(state, tenant, now).await?;
     sweep_proposals(state, tenant, now).await?;
     sweep_seat_lapses(state, tenant, now).await?;
+    if let Err(e) = super::home_repo::retry_pending(state, tenant).await {
+        warn!("io_scheduler: context seed retry failed: {e}");
+    }
     Ok(())
 }
 

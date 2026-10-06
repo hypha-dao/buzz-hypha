@@ -1,11 +1,12 @@
-//! Project home — the room half of Protocol §6.7 (R-9a).
+//! Project home — the room half of Protocol §6.7.
 //!
 //! On a passed `project` the relay creates an open NIP-29 room named from the
 //! title slug, puts `39103.agent` in it (via [`relay_rooms::create_room`]),
-//! and writes `home.channel` on the root `39101`. Repo / `30617` / `30621`
-//! wait for R-9b. Accept, release, and a passed `dri` keep the roster equal
-//! to the tree: root holder → admin, child holders → member, NIP-OA-attested
-//! agents → bot; talk joiners are never removed.
+//! and writes `home.channel` on the root `39101`. The repository half
+//! (`30617` / `30621` / context files) lives in [`super::home_repo`]. Accept,
+//! release, and a passed `dri` keep the roster equal to the tree: root holder
+//! → admin, child holders → member, NIP-OA-attested agents → bot; talk
+//! joiners are never removed.
 
 use buzz_core::channel::{ChannelType, ChannelVisibility, MemberRole};
 use buzz_core::intelligent_org::{ProjectHome, WorkItem};
@@ -96,7 +97,7 @@ pub(super) async fn archive_home_channel(
     Ok(())
 }
 
-/// `39101.home` for R-9a — channel only; `repo` / `project` wait for R-9b.
+/// `39101.home` when the relay has no object storage: the room, and no repository.
 pub(super) fn home_channel_only(channel: Uuid) -> ProjectHome {
     ProjectHome {
         channel: channel.to_string(),

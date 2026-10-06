@@ -3,8 +3,8 @@
 //!
 //! A passed `project` opens a root in `open`, `offered` to `suggested_dri`,
 //! or `accepted` when that person already agreed, and creates its home room
-//! (R-9a; `home.repo` /
-//! `home.project` wait for R-9b). Children are created only by the parent's
+//! and, when object storage is configured, its repository (`home.repo` /
+//! `home.project`). Children are created only by the parent's
 //! holder; only `offered_to` accepts or declines; only the holder marks done
 //! or releases; a Shaper (root) or the parent holder (child) sets due; the
 //! `dri` of a `done` item may reopen within seven days. Each command stores
@@ -21,7 +21,8 @@ use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use super::apply::Projection;
-use super::home::{self, home_channel_only};
+use super::home;
+use super::home_repo::{self, AnnounceCtx};
 use super::proposals::Execution;
 use super::{
     authorize, begin, content_value, current_shapers, internal, object, parse_content,
@@ -299,9 +300,9 @@ fn dri_already_agreed(proposal: &Proposal, dri: &str) -> bool {
 /// §5.3 `project`: create the root in `open`, or `offered` to
 /// `suggested_dri`. A suggested holder who already agreed holds it
 /// (`accepted`) in the same transaction — the chat yes is not a second
-/// Accept on My Work. `approved_at` is the passing vote. R-9a creates the
-/// home room in the same transaction and writes `home.channel`; `repo` /
-/// `project` wait for R-9b. `opening_receipt` is the `50004` that opened
+/// Accept on My Work. `approved_at` is the passing vote. The home room, and
+/// the repository when object storage is configured, are created in the same
+/// transaction. `opening_receipt` is the `50004` that opened
 /// the proposal — `created_from` on the root — supplied by `settle`
 /// because a D1 opener-pass has not written the `39102` yet.
 pub(super) async fn execute_project(
@@ -341,6 +342,26 @@ pub(super) async fn execute_project(
     let room =
         home::create_project_room(tx, cmd.tenant.community(), &payload.title, &cmd.actor_bytes)
             .await?;
+    let announced = home_repo::announce_home(
+        &AnnounceCtx {
+            community: cmd.tenant.community(),
+            host: cmd.tenant.host(),
+            relay: &cmd.state.relay_keypair,
+            db: &cmd.state.db,
+            created_at: cmd.at.max(super::wall_clock()),
+        },
+        tx,
+        &home_repo::AnnounceRequest {
+            title: &payload.title,
+            brief: &payload.brief,
+            room,
+            item_id: id,
+            dri: dri.as_deref(),
+            payload: &proposal.payload,
+        },
+        home_repo::object_storage_enabled(&cmd.state.config.media.s3_endpoint),
+    )
+    .await?;
     let item = WorkItem {
         id: id.to_string(),
         parent: None,
@@ -364,37 +385,46 @@ pub(super) async fn execute_project(
         done_receipt: None,
         closed_by: None,
         children: ChildrenCounts::default(),
-        home: Some(home_channel_only(room)),
+        home: Some(announced.home.clone()),
         branch: None,
         after: vec![],
         last_progress: None,
     };
+    let mut rows = vec![
+        cmd.ledger(
+            "item_created",
+            object::WORK_ITEM,
+            &item.id,
+            serde_json::json!({
+                "proposal": proposal.id,
+                "state": state,
+                "offered_to": offered_to,
+                "dri": dri,
+            }),
+        )?,
+        cmd.ledger(
+            "home_created",
+            object::WORK_ITEM,
+            &item.id,
+            serde_json::json!({
+                "channel": room,
+                "repo": announced.home.repo,
+                "project": announced.home.project,
+            }),
+        )?,
+    ];
+    if let Some(seed) = &announced.seed {
+        rows.push(cmd.ledger(
+            "context_seed",
+            object::WORK_ITEM,
+            &item.id,
+            home_repo::seed_detail(seed),
+        )?);
+    }
     Ok(Execution {
         executed: executed_work_item(&item.id),
         projections: vec![work_projection(item.clone(), cmd.receipt_hex())],
-        rows: vec![
-            cmd.ledger(
-                "item_created",
-                object::WORK_ITEM,
-                &item.id,
-                serde_json::json!({
-                    "proposal": proposal.id,
-                    "state": state,
-                    "offered_to": offered_to,
-                    "dri": dri,
-                }),
-            )?,
-            cmd.ledger(
-                "home_created",
-                object::WORK_ITEM,
-                &item.id,
-                serde_json::json!({
-                    "channel": room,
-                    "repo": null,
-                    "project": null,
-                }),
-            )?,
-        ],
+        rows,
         room_created: Some(room),
     })
 }
@@ -917,7 +947,7 @@ async fn withdraw_loaded(
     let nodes = collect_subtree(tx, cmd, item).await?;
     let channels = project_home_channels(&nodes);
     for channel in &channels {
-        home::archive_home_channel(&mut **tx, cmd.tenant.community(), *channel).await?;
+        home::archive_home_channel(tx, cmd.tenant.community(), *channel).await?;
     }
     let ids: Vec<String> = nodes.iter().map(|node| node.id.clone()).collect();
     let root_id = ids.first().cloned().unwrap_or_default();
@@ -1036,7 +1066,7 @@ mod tests {
         let room = Uuid::parse_str("0532e77b-04c5-4443-8225-331c7d7ae833").unwrap();
         let mut project = child(WorkItemState::Open, None);
         project.parent = None;
-        project.home = Some(home_channel_only(room));
+        project.home = Some(home::home_channel_only(room));
         let ticket = child(WorkItemState::Accepted, None);
         assert_eq!(project_home_channels(&[project, ticket]), vec![room]);
 
