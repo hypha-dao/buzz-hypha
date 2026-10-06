@@ -142,6 +142,28 @@ test("project propose draft tag is the settle marker", () => {
   ]);
 });
 
+test("project propose copies the change plan onto 50004", () => {
+  const change = {
+    from: "no weekday night",
+    to: "a trial has answered whether buyers come",
+    done_when: ["sessions held"],
+  };
+  const plan = [
+    { piece: "Evening licence application", gate: true },
+    { piece: "Book the nights", held: "after the licence" },
+  ];
+  const event = buildIoProjectPropose({
+    title: "Weekday hall trial",
+    brief: "A short trial.",
+    dueAt: 1_785_488_400,
+    change,
+    plan,
+  });
+  const content = JSON.parse(event.content);
+  assert.deepEqual(content.change, change);
+  assert.deepEqual(content.plan, plan);
+});
+
 test("ticket create is u, optional p, optional draft", () => {
   const event = buildIoTicketCreate({
     parent: PARENT,

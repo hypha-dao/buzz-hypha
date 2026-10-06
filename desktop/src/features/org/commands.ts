@@ -242,6 +242,8 @@ export function buildIoProjectPropose(input: {
   dueAt: number;
   objectiveRef?: string;
   suggestedDri?: string;
+  change?: unknown;
+  plan?: unknown;
   draftId?: string;
   voteAgree?: boolean;
   revises?: string;
@@ -261,6 +263,8 @@ export function buildIoProjectPropose(input: {
   if (input.suggestedDri !== undefined) {
     content.suggested_dri = requireHex64(input.suggestedDri, "suggested_dri");
   }
+  if (input.change !== undefined) content.change = input.change;
+  if (input.plan !== undefined) content.plan = input.plan;
   return {
     kind: KIND_IO_PROJECT_PROPOSE,
     tags,

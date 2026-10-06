@@ -57,6 +57,8 @@ export type WorkItem = {
   children: WorkChildrenCounts;
   home: WorkItemHome | null;
   lastProgress: string | null;
+  /** Original content when it carries a change plan. */
+  planContent: string | null;
 };
 
 export type WorkHealthSentence = {
@@ -270,6 +272,10 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
     children,
     home,
     lastProgress: asString(content.last_progress),
+    planContent:
+      content.plan !== undefined || content.change !== undefined
+        ? event.content
+        : null,
   };
 }
 

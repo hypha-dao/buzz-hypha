@@ -20,6 +20,8 @@ pub enum RawAct {
         brief: String,
         due_days: u32,
         who: Option<String>,
+        /// The change-plan object. Absent on a free-text title.
+        plan: Option<Value>,
     },
     /// `50009` — only if the speaker holds the ticket.
     Done { item: String },
@@ -182,6 +184,7 @@ struct Item {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SeenLine {
+    id: String,
     text: String,
     date: Option<u64>,
     done_when: Option<String>,
@@ -273,9 +276,13 @@ impl Board {
                     .and_then(Value::as_array)
                     .map(|rows| {
                         rows.iter()
-                            .filter_map(|row| {
+                            .enumerate()
+                            .filter_map(|(index, row)| {
                                 let text = text_field(row, "text")?;
+                                let id = text_field(row, "id")
+                                    .unwrap_or_else(|| format!("line-{}", index + 1));
                                 Some(SeenLine {
+                                    id,
                                     text,
                                     date: row.get("date").and_then(Value::as_u64),
                                     done_when: text_field(row, "done_when"),
@@ -997,6 +1004,82 @@ pub fn parse_model_reply(raw: &str) -> (String, Option<String>, Option<String>, 
     (say, direction, body, act)
 }
 
+fn board_as_org_state(board: &Board) -> crate::state::OrgState {
+    use crate::state::{DirectionHead as StateHead, OrgState};
+    use buzz_core::intelligent_org::{
+        DirectionArtifact, DirectionLine, DirectionSlug, StrategyLineType,
+    };
+
+    let mut state = OrgState::new();
+    for (slug, head) in &board.direction {
+        let Some(parsed) = (match slug.as_str() {
+            "mission" => Some(DirectionSlug::Mission),
+            "vision" => Some(DirectionSlug::Vision),
+            "situation" => Some(DirectionSlug::Situation),
+            "objectives" => Some(DirectionSlug::Objectives),
+            "strategy" => Some(DirectionSlug::Strategy),
+            _ => None,
+        }) else {
+            continue;
+        };
+        state.direction.insert(
+            slug.clone(),
+            StateHead {
+                artifact: DirectionArtifact {
+                    slug: parsed,
+                    version: head.version,
+                    body: head.body.clone(),
+                    lines: head
+                        .lines
+                        .iter()
+                        .enumerate()
+                        .map(|(index, line)| DirectionLine {
+                            n: (index as u32) + 1,
+                            id: line.id.clone(),
+                            text: line.text.clone(),
+                            date: line.date,
+                            done_when: line.done_when.clone(),
+                            line_type: match line.line_type.as_deref() {
+                                Some("bet") => Some(StrategyLineType::Bet),
+                                Some("rule") => Some(StrategyLineType::Rule),
+                                Some("refusal") => Some(StrategyLineType::Refusal),
+                                _ => None,
+                            },
+                        })
+                        .collect(),
+                    confirmed_by: "aa".repeat(32),
+                    confirmed_at: head.created_at,
+                    proposed_by: "bb".repeat(32),
+                    proposal: "11111111-1111-4111-8111-111111111111".into(),
+                    prev: None,
+                },
+                event_id: "cc".repeat(32),
+            },
+        );
+    }
+    state
+}
+
+/// A chat project is a draft only when the change plan passes the same judge
+/// the gap scan uses. A free-text title does not.
+fn project_plan_ok(board: &Board, raw: &Value) -> bool {
+    let state = board_as_org_state(board);
+    let snapshot = crate::compile::compile(&state);
+    let wanted = raw
+        .get("gap")
+        .and_then(|gap| gap.get("ref"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let Some(card) = snapshot
+        .objectives
+        .iter()
+        .find(|card| format!("objectives@{}#{}", card.version, card.line_id) == wanted)
+    else {
+        return false;
+    };
+    crate::plan::judge_change_plan(&state, card, raw).is_ok()
+}
+
 /// Turn a parsed act into tags, or nothing when the overview does not support it.
 pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Option<ResolvedAct> {
     let speaker = speaker.trim().to_ascii_lowercase();
@@ -1006,9 +1089,17 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
             brief,
             due_days,
             who,
+            plan,
         } => {
-            let title = clean_title(title)?;
-            let brief = clean_brief(brief, &title);
+            let plan = plan.as_ref()?;
+            if !project_plan_ok(board, plan) {
+                return None;
+            }
+            let title = clean_title(plan.get("title").and_then(Value::as_str).unwrap_or(title))?;
+            let brief = clean_brief(
+                plan.get("brief").and_then(Value::as_str).unwrap_or(brief),
+                &title,
+            );
             let suggested = match who.as_deref() {
                 Some(name) => resolve_who(name, board, &speaker),
                 None => board.suggest_holder(&title, &brief),
@@ -1949,6 +2040,7 @@ fn project_from_sentences(say: &str) -> Option<RawAct> {
         brief,
         due_days: 14,
         who: None,
+        plan: None,
     })
 }
 
@@ -1973,6 +2065,7 @@ fn project_from_request(user: &str) -> Option<RawAct> {
         brief,
         due_days: 14,
         who: None,
+        plan: None,
     })
 }
 
@@ -2361,6 +2454,7 @@ fn parse_act(value: &Value) -> Option<RawAct> {
                 .to_string(),
             due_days: due_days(value.get("due_days")),
             who: optional_who(value.get("who")),
+            plan: Some(value.clone()),
         }),
         "done" => Some(RawAct::Done {
             item: value.get("item").and_then(Value::as_str)?.to_string(),
@@ -3369,6 +3463,49 @@ mod tests {
         board
     }
 
+    /// An uncovered objective so a chat project can pass `judge_change_plan`.
+    fn with_objective(mut board: Board) -> Board {
+        board.observe(
+            39100,
+            "relay",
+            20,
+            Some("objectives"),
+            r#"{"version":1,"body":"A hall.","lines":[{"id":"line-a","text":"The roof is dry","date":1785488400,"done_when":"roof is dry"}]}"#,
+        );
+        board
+    }
+
+    /// Attach a change plan the judge accepts. Title, brief, due_days, and who stay.
+    fn judged_project(mut act: Value) -> Value {
+        let extra = json!({
+            "objective_ref": "objectives@1#line-a",
+            "due_at": 1785488400,
+            "suggested_dri": null,
+            "why": "the roof leaks",
+            "gaps": [],
+            "gap": { "ref": "objectives@1#line-a", "verdict": "uncovered" },
+            "options": [
+                { "title": "Repair the roof", "mechanism": "patch the leak", "kept": true },
+                { "title": "Leave the leak", "mechanism": "wait", "kept": false }
+            ],
+            "change": {
+                "from": "the roof leaks",
+                "to": "the roof is dry",
+                "done_when": ["roof is dry"],
+                "moves": ["objectives@1#line-a"]
+            },
+            "plan": [
+                { "piece": "Patch the roof", "kind": "ops", "gate": false, "produces": ["roof is dry"] }
+            ]
+        });
+        if let (Some(obj), Some(fields)) = (act.as_object_mut(), extra.as_object()) {
+            for (key, value) in fields {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+        act
+    }
+
     #[test]
     fn the_shapers_room_is_known_from_bootstrap() {
         let board = board();
@@ -3413,17 +3550,22 @@ mod tests {
 
     #[test]
     fn a_project_act_becomes_a_proposal_tag() {
-        let raw = act_json(json!({
+        let raw = act_json(judged_project(json!({
             "kind": "project",
             "title": "Fix the hall",
             "brief": "The roof leaks when it rains.",
             "due_days": 21,
             "who": "Ada"
-        }));
+        })));
         let (_, direction, _, act) = parse_model_reply(&raw);
         assert!(direction.is_none());
-        let resolved =
-            resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+        let resolved = resolve_act(
+            act.as_ref().expect("act"),
+            &with_objective(board()),
+            ME,
+            NOW,
+        )
+        .expect("resolved");
         match resolved {
             ResolvedAct::Project {
                 title,
@@ -3444,16 +3586,21 @@ mod tests {
         let brief = "Daily suggestions for the desktop app. ".repeat(20);
         assert!(brief.chars().count() > 400);
         assert!(brief.chars().count() < MAX_BRIEF_CHARS);
-        let raw = act_json(json!({
+        let raw = act_json(judged_project(json!({
             "kind": "project",
             "title": "Daily task suggestions",
             "brief": brief,
             "due_days": 14,
             "who": null
-        }));
+        })));
         let (_, _, _, act) = parse_model_reply(&raw);
-        let resolved =
-            resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+        let resolved = resolve_act(
+            act.as_ref().expect("act"),
+            &with_objective(board()),
+            ME,
+            NOW,
+        )
+        .expect("resolved");
         let ResolvedAct::Project { brief: kept, .. } = resolved else {
             panic!("unexpected {resolved:?}");
         };
@@ -3464,16 +3611,21 @@ mod tests {
     fn a_runaway_brief_stops_at_the_cap() {
         let brief = "word ".repeat(2_000);
         assert!(brief.chars().count() > MAX_BRIEF_CHARS);
-        let raw = act_json(json!({
+        let raw = act_json(judged_project(json!({
             "kind": "project",
             "title": "Daily task suggestions",
             "brief": brief,
             "due_days": 14,
             "who": null
-        }));
+        })));
         let (_, _, _, act) = parse_model_reply(&raw);
-        let resolved =
-            resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+        let resolved = resolve_act(
+            act.as_ref().expect("act"),
+            &with_objective(board()),
+            ME,
+            NOW,
+        )
+        .expect("resolved");
         let ResolvedAct::Project { brief: kept, .. } = resolved else {
             panic!("unexpected {resolved:?}");
         };
@@ -3484,16 +3636,21 @@ mod tests {
     #[test]
     fn a_project_without_a_named_holder_has_nobody() {
         for who in [json!(null), json!(""), json!("nobody"), json!("none")] {
-            let raw = act_json(json!({
+            let raw = act_json(judged_project(json!({
                 "kind": "project",
                 "title": "Fix the hall",
                 "brief": "The roof leaks when it rains.",
                 "due_days": 14,
                 "who": who
-            }));
+            })));
             let (_, _, _, act) = parse_model_reply(&raw);
-            let resolved =
-                resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+            let resolved = resolve_act(
+                act.as_ref().expect("act"),
+                &with_objective(board()),
+                ME,
+                NOW,
+            )
+            .expect("resolved");
             let ResolvedAct::Project { suggested, .. } = &resolved else {
                 panic!("unexpected {resolved:?}");
             };
@@ -4439,17 +4596,75 @@ mod tests {
     }
 
     #[test]
-    fn a_publish_question_still_opens_the_draft() {
+    fn a_publish_question_without_a_plan_is_not_a_draft() {
         let say = "Build the Best Website. Design and build the best website for the organization. Want me to publish this proposal?";
         let act =
             recover_project("create a new project build the best website", say).expect("project");
-        let resolved = resolve_act(&act, &board(), ME, NOW).expect("resolved");
-        let tags = act_tags(&resolved, ME);
-        assert!(tags.iter().any(|tag| {
-            tag.len() >= 2 && tag[0] == "project" && tag[1] == "Build the Best Website"
-        }));
-        assert!(draft_say(&resolved).contains("Open the draft"));
+        assert!(resolve_act(&act, &board(), ME, NOW).is_none());
         assert!(recover_project("what is a project?", "A project is a piece of work.").is_none());
+    }
+
+    #[test]
+    fn a_chat_project_goes_through_the_change_plan_judge() {
+        let mut board = board();
+        board.observe(
+            39100,
+            "relay",
+            20,
+            Some("situation"),
+            r#"{"version":1,"body":"What is stuck is whether weekday buyers will come."}"#,
+        );
+        board.observe(
+            39100,
+            "relay",
+            21,
+            Some("objectives"),
+            r#"{"version":1,"body":"A hall.","lines":[{"id":"line-a","text":"A weekday hall","date":1785488400,"done_when":"sessions held"}]}"#,
+        );
+        board.observe(
+            39100,
+            "relay",
+            22,
+            Some("strategy"),
+            r#"{"version":1,"body":"How.","lines":[{"id":"s1","text":"not a grant round","type":"refusal"}]}"#,
+        );
+        let plan = json!({
+            "kind": "project",
+            "title": "Weekday hall trial",
+            "brief": "A short trial of a weekday night.",
+            "due_days": 14,
+            "objective_ref": "objectives@1#line-a",
+            "due_at": 1785488400,
+            "suggested_dri": null,
+            "why": "learn whether weekday buyers come",
+            "gaps": [],
+            "gap": { "ref": "objectives@1#line-a", "verdict": "uncovered" },
+            "options": [
+                { "title": "Weekday hall trial", "mechanism": "tests demand", "kept": true },
+                { "title": "Apply for a city grant", "mechanism": "a grant round", "kept": false, "why_not": "refusal" }
+            ],
+            "change": {
+                "from": "no weekday night",
+                "to": "a trial has answered whether buyers come",
+                "done_when": ["sessions held"],
+                "moves": ["objectives@1#line-a"]
+            },
+            "plan": [
+                { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] }
+            ]
+        });
+        let (_, _, _, act) =
+            parse_model_reply(&json!({ "say": "Here is the plan.", "act": plan }).to_string());
+        let resolved = resolve_act(act.as_ref().unwrap(), &board, ME, NOW).expect("plan");
+        let tags = act_tags(&resolved, ME);
+        assert!(tags
+            .iter()
+            .any(|tag| tag.first().map(String::as_str) == Some("project")));
+        let kept = plan.clone();
+        let mut bad = kept;
+        bad["options"][1]["kept"] = json!(true);
+        let (_, _, _, refused) = parse_model_reply(&json!({ "say": "no", "act": bad }).to_string());
+        assert!(resolve_act(refused.as_ref().unwrap(), &board, ME, NOW).is_none());
     }
 
     #[test]
@@ -4627,15 +4842,16 @@ mod tests {
             Some(ADA),
             r#"{"about":"I cook.","skills":[{"slug":"cooking","label":"cooking"}],"open_limit":1}"#,
         );
-        let raw = act_json(json!({
+        let raw = act_json(judged_project(json!({
             "kind": "project",
             "title": "Write the grant",
             "brief": "The community needs a grant.",
             "due_days": 14,
             "who": null
-        }));
+        })));
         let (_, _, _, act) = parse_model_reply(&raw);
-        let resolved = resolve_act(act.as_ref().expect("act"), &live, ME, NOW).expect("resolved");
+        let resolved = resolve_act(act.as_ref().expect("act"), &with_objective(live), ME, NOW)
+            .expect("resolved");
         match resolved {
             ResolvedAct::Project { suggested, .. } => assert_eq!(suggested.as_deref(), Some(LEA)),
             other => panic!("{other:?}"),

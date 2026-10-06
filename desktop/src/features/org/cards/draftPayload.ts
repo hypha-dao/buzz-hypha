@@ -20,6 +20,8 @@ export function projectProposeInput(model: OrgCardModel, title?: string) {
     dueAt: asNumber(content?.due_at) ?? 0,
     objectiveRef: asString(content?.objective_ref) ?? undefined,
     suggestedDri: asString(content?.suggested_dri) ?? undefined,
+    change: content?.change,
+    plan: Array.isArray(content?.plan) ? content.plan : undefined,
     draftId: model.event.id,
     voteAgree: true,
   };

@@ -15,6 +15,8 @@ import {
   overviewStampDelayMs,
 } from "@/features/org/ui/overview/overviewMotion";
 import { formatWorkDate } from "@/features/org/work/model";
+
+import { PlanSteps } from "./PlanSteps";
 import { KIND_IO_PROPOSAL } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 
@@ -295,6 +297,9 @@ function CardFace({
               {formatWorkDate(model.dueAt)}
             </time>
           </p>
+        ) : null}
+        {model.draftKind === "project" || model.itemKind === "project" ? (
+          <PlanSteps content={model.event.content} />
         ) : null}
         {model.facts.length > 0 ? (
           <div

@@ -182,6 +182,7 @@ export default defineConfig({
         "**/org-overview.spec.ts",
         "**/org-context.spec.ts",
         "**/org-my-work.spec.ts",
+        "**/org-plan.spec.ts",
         "**/org-work.spec.ts",
         "**/org-about-skills.spec.ts",
         "**/org-loop.spec.ts",

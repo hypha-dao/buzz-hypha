@@ -21,6 +21,7 @@ import {
   type WorkHealth,
   type WorkItem,
 } from "../../work/model";
+import { PlanSteps } from "../../cards/PlanSteps";
 import { HealthCard } from "./HealthCard";
 import { HolderName } from "./HolderName";
 import { StateChip } from "./StateChip";
@@ -144,6 +145,8 @@ export function WorkItemView({
           </p>
         </section>
       ) : null}
+
+      {item.planContent ? <PlanSteps content={item.planContent} /> : null}
 
       <dl className="grid gap-4 sm:grid-cols-2" data-testid="org-item-facts">
         <Fact
