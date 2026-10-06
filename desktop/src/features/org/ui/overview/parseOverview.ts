@@ -582,9 +582,7 @@ function peopleReady(
   if (shapers.length === 0) return false;
   return shapers.every((pubkey) => {
     const profile = newestProfile(events, pubkey);
-    return (
-      profile.about.trim().length >= 12 && profile.skills.length > 0
-    );
+    return profile.about.trim().length >= 12 && profile.skills.length > 0;
   });
 }
 

@@ -292,7 +292,9 @@ test.describe("Org My Work — the card set (D-2)", () => {
     ).toBeVisible();
     await expect(review.locator("dt", { hasText: "Next" })).toBeVisible();
     await expect(
-      review.locator("dd", { hasText: "follow-up project. the trial answered" }),
+      review.locator("dd", {
+        hasText: "follow-up project. the trial answered",
+      }),
     ).toBeVisible();
     const stopped = page.getByTestId(`org-card-${STOP_REVIEW_ID}`);
     await expect(

@@ -59,7 +59,11 @@ function parseObjective(row: string): DirectionCommandLine | null {
     .trim()
     .replace(/[.\s]+$/, "");
   const after = row.slice(mark + "done when:".length).trim();
-  const check = after.split(/\.?\s*by:/i)[0]?.trim().replace(/\.+$/, "") ?? "";
+  const check =
+    after
+      .split(/\.?\s*by:/i)[0]
+      ?.trim()
+      .replace(/\.+$/, "") ?? "";
   if (text.length < 3 || check.length < 8 || check.length > DONE_WHEN_MAX) {
     return null;
   }
