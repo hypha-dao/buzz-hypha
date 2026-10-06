@@ -55,6 +55,7 @@ use buzz_core::kind::{
     KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
     KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_WORK_PROMPT,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -147,6 +148,7 @@ pub async fn handle_read(
         KIND_IO_DRAFT => drafts::ingest_draft(&cmd).await,
         KIND_IO_HEALTH => drafts::ingest_health(&cmd).await,
         KIND_IO_AGENT_NOTE => drafts::ingest_note(&cmd).await,
+        KIND_IO_WORK_PROMPT => drafts::ingest_work_prompt(&cmd).await,
         _ => Err(IngestError::Rejected(format!("unknown read kind: {kind}"))),
     }
 }

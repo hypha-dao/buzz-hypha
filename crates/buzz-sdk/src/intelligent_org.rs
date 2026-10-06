@@ -42,7 +42,7 @@ use buzz_core::kind::{
     KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROGRESS, KIND_IO_PROJECT_PROPOSE,
     KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
-    KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE, KIND_IO_WORK_PROMPT,
 };
 use nostr::{EventBuilder, EventId, Kind, Tag};
 use serde::Serialize;
@@ -878,6 +878,44 @@ pub fn build_io_agent_note(note: &AgentNote, item: Option<Uuid>) -> Result<Event
     Ok(io_event(KIND_IO_AGENT_NOTE, tags, content_json(note)?))
 }
 
+// ── §4.7d kind:50104 — work prompt ───────────────────────────────────────────
+
+/// `io_work_prompt` (`50104`): `["i", <ticket>]` and
+/// `["based_on", <ticket-event>, <commit>?]`. Content is the prompt text.
+pub fn build_io_work_prompt(
+    item: Uuid,
+    based_on: EventId,
+    commit: Option<&str>,
+    content: &str,
+) -> Result<EventBuilder, SdkError> {
+    check_non_empty(content, "content")?;
+    if content.len() > MAX_CONTENT_BYTES {
+        return Err(SdkError::InvalidInput(format!(
+            "content exceeds {MAX_CONTENT_BYTES} bytes (got {})",
+            content.len()
+        )));
+    }
+    if let Some(commit) = commit {
+        let hex = commit.len() >= 7
+            && commit.len() <= 64
+            && commit
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !hex {
+            return Err(SdkError::InvalidInput(
+                "commit must be 7 to 64 lowercase hex characters".into(),
+            ));
+        }
+    }
+    let based_hex = based_on.to_hex();
+    let based_tag = match commit {
+        Some(commit) => tag(&["based_on", &based_hex, commit])?,
+        None => tag(&["based_on", &based_hex])?,
+    };
+    let tags = vec![item_tag(item)?, based_tag];
+    Ok(io_event(KIND_IO_WORK_PROMPT, tags, content.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1205,6 +1243,10 @@ mod tests {
                 build_io_progress(&progress_note(PK), None).unwrap(),
             ),
             ("agent_note", build_io_agent_note(&note, None).unwrap()),
+            (
+                "work_prompt",
+                build_io_work_prompt(id(ID), ev(EV), None, "Goal\nWrite the note.\n").unwrap(),
+            ),
         ]
     }
 
@@ -1238,9 +1280,10 @@ mod tests {
         // Every command kind and every read kind has exactly one builder.
         let expected: BTreeSet<u32> = (KIND_IO_SHAPERS_PROPOSE..=KIND_IO_WITHDRAW_PROPOSE)
             .chain(KIND_IO_DRAFT..=KIND_IO_AGENT_NOTE)
+            .chain(std::iter::once(KIND_IO_WORK_PROMPT))
             .collect();
         assert_eq!(kinds, expected);
-        assert_eq!(kinds.len(), 23 + 4);
+        assert_eq!(kinds.len(), 23 + 5);
     }
 
     #[test]

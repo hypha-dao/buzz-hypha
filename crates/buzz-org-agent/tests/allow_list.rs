@@ -42,6 +42,7 @@ fn permitted_kinds_exclude_50009() {
         Permitted::Draft,
         Permitted::Health,
         Permitted::AgentNote,
+        Permitted::WorkPrompt,
         Permitted::Chat,
         Permitted::DmOpen,
         Permitted::Engram,

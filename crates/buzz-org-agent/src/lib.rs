@@ -21,6 +21,7 @@ pub mod pipeline;
 pub mod plan;
 mod profile_fit;
 mod project_fit;
+pub mod prompt;
 pub mod relay;
 pub mod route;
 pub mod state;

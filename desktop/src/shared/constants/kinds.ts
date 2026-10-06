@@ -124,6 +124,7 @@ export const KIND_IO_DRAFT = 50100;
 export const KIND_IO_HEALTH = 50101;
 export const KIND_IO_PROGRESS = 50102;
 export const KIND_IO_AGENT_NOTE = 50103;
+export const KIND_IO_WORK_PROMPT = 50104;
 
 // Human-visible "new content" message kinds. Used as the unread trigger set
 // (sidebar badges, catch-up queries) and as the Home-feed mention query.

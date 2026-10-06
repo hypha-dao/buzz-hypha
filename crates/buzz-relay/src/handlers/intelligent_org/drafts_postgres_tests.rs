@@ -5,7 +5,7 @@
 use buzz_core::intelligent_org::{DraftOutcomeStatus, OrgProfile, Skill};
 use buzz_core::kind::{
     KIND_IO_AGENT_NOTE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE, KIND_IO_DRAFT_OUTCOME, KIND_IO_HEALTH,
-    KIND_IO_HEALTH_RATE, KIND_IO_PROFILE, KIND_IO_PROJECT_PROPOSE,
+    KIND_IO_HEALTH_RATE, KIND_IO_PROFILE, KIND_IO_PROJECT_PROPOSE, KIND_IO_WORK_PROMPT,
 };
 use buzz_db::intelligent_org::{self as store, ProfileRow};
 use nostr::{Event, EventId, Keys, Tag};
@@ -125,6 +125,68 @@ async fn agent_note_from_a_non_agent_is_rejected() {
         rejected(h.ingest(&h.owner, event).await),
         "restricted: not the org agent"
     );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_non_agent_work_prompt_is_rejected() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let event = signed(
+        &h.owner,
+        KIND_IO_WORK_PROMPT,
+        vec![
+            tag(["i", "7f3a0000-0000-4000-8000-000000000001"]),
+            tag(["based_on", &"ab".repeat(32)]),
+        ],
+        "Goal\nWrite the note\n",
+    );
+    assert_eq!(
+        rejected(h.ingest(&h.owner, event).await),
+        "restricted: not the org agent"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn the_org_agent_stores_a_work_prompt_for_a_ticket() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner = h.owner.public_key().to_hex();
+    let (_, root) = h
+        .pass_project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book it","due_at":1800000000}"#,
+        )
+        .await;
+    h.offer_item(&h.owner, &root.id, &owner)
+        .await
+        .expect("offer root");
+    h.accept_item(&h.owner, &root.id)
+        .await
+        .expect("owner holds the root");
+    let child = h
+        .ticket(
+            &h.owner,
+            &root.id,
+            None,
+            r#"{"title":"Write the note","brief":"The note","due_at":1800000001}"#,
+        )
+        .await
+        .expect("ticket")["item"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    let event = signed(
+        &h.agent,
+        KIND_IO_WORK_PROMPT,
+        vec![tag(["i", &child]), tag(["based_on", &"cd".repeat(32)])],
+        "Goal\nWrite the note\n",
+    );
+    h.ingest(&h.agent, event.clone())
+        .await
+        .expect("agent prompt stored");
+    assert!(h.event_stored(&event.id).await);
 }
 
 #[tokio::test]

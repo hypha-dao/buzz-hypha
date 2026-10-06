@@ -41,6 +41,7 @@ enum Kind {
     Holder,
     Review,
     Done,
+    Prompt,
 }
 
 /// Coalesced queue. One pending job per object, one job in flight.
@@ -80,15 +81,25 @@ impl JobQueue {
         &self.log
     }
 
-    /// Enqueue the three watched transitions. A second job for the same
-    /// object replaces the one still waiting. Other transitions are ignored.
+    /// Enqueue a watched transition, and a prompt job when a ticket or a
+    /// cited direction head changed. A second job for the same object
+    /// replaces the one still waiting. Other transitions are ignored.
     pub fn enqueue(&mut self, transition: &Transition, state: &OrgState) -> bool {
-        let Some(job) = watched(transition, state) else {
-            return false;
-        };
+        let mut enqueued = false;
+        if let Some(job) = watched(transition, state) {
+            self.upsert(job);
+            enqueued = true;
+        }
+        for job in prompt_jobs(transition, state) {
+            self.upsert(job);
+            enqueued = true;
+        }
+        enqueued
+    }
+
+    fn upsert(&mut self, job: Queued) {
         self.pending.retain(|existing| existing.key != job.key);
         self.pending.push(job);
-        true
     }
 
     /// Take the oldest waiting job into flight. A job already in flight
@@ -104,11 +115,9 @@ impl JobQueue {
     /// Compile if the in-flight job is still the newest generation. A stale
     /// job records `stale` and returns no snapshot, so nothing can be published.
     pub fn finish(&mut self, state: &OrgState) -> Option<Snapshot> {
-        let Some(job) = self.inflight.take() else {
-            return None;
-        };
+        let job = self.inflight.take()?;
         let current = current_generation(state, &job);
-        if current != Some(job.generation.as_str()) {
+        if current.as_deref() != Some(job.generation.as_str()) {
             self.log.push(JobLog::Stale {
                 key: job.key,
                 generation: job.generation,
@@ -176,6 +185,31 @@ impl JobQueue {
                 );
             }
         }
+        for item in state.items.values() {
+            if item.parent.is_none() {
+                continue;
+            }
+            if !matches!(
+                item.state,
+                buzz_core::intelligent_org::WorkItemState::Offered
+                    | buzz_core::intelligent_org::WorkItemState::Accepted
+            ) {
+                continue;
+            }
+            let Some(generation) = state.item_generations.get(&item.id).cloned() else {
+                continue;
+            };
+            if generation.is_empty() {
+                continue;
+            }
+            self.enqueue(
+                &Transition::TicketPrompt {
+                    item: item.id.clone(),
+                    generation,
+                },
+                state,
+            );
+        }
     }
 }
 
@@ -213,11 +247,85 @@ fn watched(transition: &Transition, state: &OrgState) -> Option<Queued> {
     }
 }
 
+fn prompt_jobs(transition: &Transition, state: &OrgState) -> Vec<Queued> {
+    match transition {
+        Transition::TicketPrompt { item, generation } => vec![queued(
+            &format!("prompt:{item}"),
+            &prompt_stamp(state, generation),
+            Kind::Prompt,
+        )],
+        Transition::DirectionConfirmed {
+            slug: DirectionSlug::Objectives | DirectionSlug::Strategy,
+            ..
+        } => state
+            .items
+            .values()
+            .filter(|item| {
+                item.parent.is_some()
+                    && matches!(
+                        item.state,
+                        buzz_core::intelligent_org::WorkItemState::Offered
+                            | buzz_core::intelligent_org::WorkItemState::Accepted
+                    )
+            })
+            .filter_map(|item| {
+                let generation = state.item_generations.get(&item.id)?;
+                Some(queued(
+                    &format!("prompt:{}", item.id),
+                    &prompt_stamp(state, generation),
+                    Kind::Prompt,
+                ))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn prompt_stamp(state: &OrgState, ticket_generation: &str) -> String {
+    let objectives = state
+        .direction
+        .get("objectives")
+        .map(|head| head.event_id.as_str())
+        .unwrap_or("");
+    let strategy = state
+        .direction
+        .get("strategy")
+        .map(|head| head.event_id.as_str())
+        .unwrap_or("");
+    format!("{ticket_generation}|{objectives}|{strategy}")
+}
+
 fn queued(key: &str, generation: &str, kind: Kind) -> Queued {
     Queued {
         key: key.to_string(),
         generation: generation.to_string(),
         kind,
+    }
+}
+
+fn current_generation(state: &OrgState, job: &Queued) -> Option<String> {
+    match job.kind {
+        Kind::Direction => {
+            let slug = job.key.strip_prefix("direction:")?;
+            state.direction.get(slug).map(|head| head.event_id.clone())
+        }
+        Kind::Holder => {
+            let item = job.key.strip_prefix("holder:")?;
+            state.item_generations.get(item).cloned()
+        }
+        Kind::Review => {
+            let item = job.key.strip_prefix("review:")?;
+            state.item_generations.get(item).cloned()
+        }
+        Kind::Done => {
+            let item = job.key.strip_prefix("done:")?;
+            state.item_generations.get(item).cloned()
+        }
+        Kind::Prompt => {
+            let item = job.key.strip_prefix("prompt:")?;
+            let ticket = state.item_generations.get(item)?;
+            Some(prompt_stamp(state, ticket))
+        }
     }
 }
 
@@ -288,8 +396,10 @@ mod tests {
         assert_eq!(queue.generation_of("direction:objectives"), Some("v1"));
         assert_eq!(queue.generation_of("holder:root-1"), Some("gen-root"));
         assert_eq!(queue.generation_of("review:root-2"), Some("gen-review"));
+        assert_eq!(queue.generation_of("prompt:child-1"), Some("gen-child|v1|"));
         assert!(queue.generation_of("holder:root-2").is_none());
         assert!(queue.generation_of("holder:child-1").is_none());
+        assert!(queue.generation_of("prompt:root-1").is_none());
         assert!(queue.generation_of("direction:strategy").is_none());
     }
 
@@ -335,26 +445,5 @@ mod tests {
             },
             &held,
         ));
-    }
-}
-
-fn current_generation<'a>(state: &'a OrgState, job: &Queued) -> Option<&'a str> {
-    match job.kind {
-        Kind::Direction => {
-            let slug = job.key.strip_prefix("direction:")?;
-            state.direction.get(slug).map(|head| head.event_id.as_str())
-        }
-        Kind::Holder => {
-            let item = job.key.strip_prefix("holder:")?;
-            state.item_generations.get(item).map(String::as_str)
-        }
-        Kind::Review => {
-            let item = job.key.strip_prefix("review:")?;
-            state.item_generations.get(item).map(String::as_str)
-        }
-        Kind::Done => {
-            let item = job.key.strip_prefix("done:")?;
-            state.item_generations.get(item).map(String::as_str)
-        }
     }
 }

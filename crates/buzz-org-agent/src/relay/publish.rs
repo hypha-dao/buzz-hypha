@@ -2,7 +2,7 @@
 
 use buzz_core::kind::{
     KIND_AGENT_ENGRAM, KIND_AUTH, KIND_DM_OPEN, KIND_IO_AGENT_NOTE, KIND_IO_DONE, KIND_IO_DRAFT,
-    KIND_IO_HEALTH,
+    KIND_IO_HEALTH, KIND_IO_WORK_PROMPT,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use thiserror::Error;
@@ -17,6 +17,8 @@ pub enum Permitted {
     Health,
     /// `50103`.
     AgentNote,
+    /// `50104`. A work prompt. It does not change state.
+    WorkPrompt,
     /// `kind:9`.
     Chat,
     /// `41010`.
@@ -36,6 +38,7 @@ impl Permitted {
             Self::Draft => KIND_IO_DRAFT,
             Self::Health => KIND_IO_HEALTH,
             Self::AgentNote => KIND_IO_AGENT_NOTE,
+            Self::WorkPrompt => KIND_IO_WORK_PROMPT,
             Self::Chat => 9,
             Self::DmOpen => KIND_DM_OPEN,
             Self::Engram => KIND_AGENT_ENGRAM,
@@ -50,6 +53,7 @@ impl Permitted {
             KIND_IO_DRAFT,
             KIND_IO_HEALTH,
             KIND_IO_AGENT_NOTE,
+            KIND_IO_WORK_PROMPT,
             9,
             KIND_DM_OPEN,
             KIND_AGENT_ENGRAM,

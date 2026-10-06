@@ -731,6 +731,9 @@ pub const KIND_IO_HEALTH: u32 = 50101;
 pub const KIND_IO_PROGRESS: u32 = 50102;
 /// IO read `io_agent_note`: what the org agent did *not* publish, and its weekly tally.
 pub const KIND_IO_AGENT_NOTE: u32 = 50103;
+/// IO read `io_work_prompt`: the prompt for one ticket. The org agent signs it.
+/// A person copies it. It does not change state.
+pub const KIND_IO_WORK_PROMPT: u32 = 50104;
 
 /// Every registered intelligent-org kind, in Protocol order.
 ///
@@ -772,6 +775,7 @@ pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
     KIND_IO_AGENT_NOTE,
+    KIND_IO_WORK_PROMPT,
 ];
 
 /// Returns `true` for a registered intelligent-org **state** kind (`39100–39105`).
@@ -800,9 +804,12 @@ pub const fn is_intelligent_org_command_kind(kind: u32) -> bool {
     kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_WITHDRAW_PROPOSE
 }
 
-/// Returns `true` for a registered intelligent-org **draft or read** kind (`50100–50103`).
+/// Returns `true` for a registered intelligent-org **draft or read** kind.
+///
+/// `50100–50103` are the contiguous reads. `50104` is the work prompt.
+/// `50105` is not a read.
 pub const fn is_intelligent_org_read_kind(kind: u32) -> bool {
-    kind >= KIND_IO_DRAFT && kind <= KIND_IO_AGENT_NOTE
+    (kind >= KIND_IO_DRAFT && kind <= KIND_IO_AGENT_NOTE) || kind == KIND_IO_WORK_PROMPT
 }
 
 /// Returns `true` for any registered intelligent-org kind (state, command, or read).
@@ -983,6 +990,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
     KIND_IO_AGENT_NOTE,
+    KIND_IO_WORK_PROMPT,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -1136,9 +1144,14 @@ const _: () = assert!(
         && KIND_IO_WITHDRAW_PROPOSE <= IO_COMMAND_KIND_MAX
 );
 const _: () = assert!(KIND_IO_DRAFT >= IO_READ_KIND_MIN && KIND_IO_AGENT_NOTE <= IO_READ_KIND_MAX);
+const _: () =
+    assert!(KIND_IO_WORK_PROMPT > KIND_IO_AGENT_NOTE && KIND_IO_WORK_PROMPT <= IO_READ_KIND_MAX);
+const _: () = assert!(is_intelligent_org_read_kind(KIND_IO_WORK_PROMPT));
+const _: () = assert!(!is_intelligent_org_read_kind(50105));
 const _: () = assert!(!is_ephemeral(KIND_IO_PROFILE_SET) && !is_replaceable(KIND_IO_PROFILE_SET));
 const _: () = assert!(!is_parameterized_replaceable(KIND_IO_PROFILE_SET));
 const _: () = assert!(!is_parameterized_replaceable(KIND_IO_AGENT_NOTE));
+const _: () = assert!(!is_parameterized_replaceable(KIND_IO_WORK_PROMPT));
 const _: () = assert!(KIND_IO_AGENT_NOTE <= u16::MAX as u32);
 
 #[cfg(test)]
@@ -1186,7 +1199,7 @@ mod tests {
         50001, 50002, 50003, 50004, 50005, 50006, 50007, 50008, 50009, 50010, 50011, 50012, 50013,
         50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021, 50022, 50023,
     ];
-    const IO_READS: [u32; 4] = [50100, 50101, 50102, 50103];
+    const IO_READS: [u32; 5] = [50100, 50101, 50102, 50103, 50104];
 
     #[test]
     fn intelligent_org_kinds_are_all_registered() {
@@ -1258,7 +1271,7 @@ mod tests {
             );
             assert!(!is_ephemeral(kind) && !is_replaceable(kind), "{kind}");
         }
-        for kind in [50099, 50104, 50149, 50150] {
+        for kind in [50099, 50105, 50149, 50150] {
             assert!(!is_intelligent_org_read_kind(kind), "{kind}");
         }
     }

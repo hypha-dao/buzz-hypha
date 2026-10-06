@@ -88,6 +88,7 @@ abstract final class EventKind {
   static const ioHealth = 50101;
   static const ioProgress = 50102;
   static const ioAgentNote = 50103;
+  static const ioWorkPrompt = 50104;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [

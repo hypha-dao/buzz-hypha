@@ -464,8 +464,7 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
         .iter()
         .filter(|event| u32::from(event.kind.as_u16()) == 50100)
         .map(|event| {
-            serde_json::from_str::<serde_json::Value>(&event.content)
-                .expect("ticket json")["title"]
+            serde_json::from_str::<serde_json::Value>(&event.content).expect("ticket json")["title"]
                 .as_str()
                 .unwrap_or_default()
                 .to_string()
@@ -536,4 +535,137 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
             .count(),
         3
     );
+}
+
+#[tokio::test]
+async fn an_offered_ticket_publishes_a_prompt_and_a_failed_digest_does_not() {
+    use std::time::Duration;
+
+    use buzz_core::intelligent_org::{
+        DecisionRule, Executed, ProjectHome, Proposal, ProposalKind, ProposalStatus,
+    };
+    use buzz_org_agent::prompt::{RepoFile, RepoListing, DIGEST_MAX_FILES};
+
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Weekday hall");
+    root.home = Some(ProjectHome {
+        channel: "room-1".into(),
+        repo: Some("30617:aa:weekday".into()),
+        project: Some("30621:aa:weekday".into()),
+    });
+    let writing = WorkItem {
+        id: "ticket-write".into(),
+        parent: Some("root-1".into()),
+        root: "root-1".into(),
+        depth: 1,
+        path: vec!["root-1".into()],
+        title: "Write the note".into(),
+        brief: "Write the note".into(),
+        state: WorkItemState::Offered,
+        dri: None,
+        offered_to: Some("cc".repeat(32)),
+        offered_by: Some("aa".repeat(32)),
+        offered_at: Some(1),
+        branch: Some("io/tick-write-the-note".into()),
+        ..held_root("unused")
+    };
+    let code = WorkItem {
+        id: "ticket-code".into(),
+        title: "Patch the door".into(),
+        brief: "Patch the door".into(),
+        ..writing.clone()
+    };
+    let mut state = OrgState::new();
+    state.item_generations.insert(root.id.clone(), gen.clone());
+    state
+        .item_generations
+        .insert(writing.id.clone(), gen.clone());
+    state.item_generations.insert(code.id.clone(), gen.clone());
+    state.items.insert(root.id.clone(), root);
+    state.items.insert(writing.id.clone(), writing.clone());
+    state.items.insert(code.id.clone(), code.clone());
+    state.proposals.insert(
+        "prop-1".into(),
+        Proposal {
+            id: "prop-1".into(),
+            kind: ProposalKind::Project,
+            status: ProposalStatus::Passed,
+            opened_by: "aa".repeat(32),
+            opened_at: 1,
+            expires_at: 2,
+            draft: None,
+            payload: serde_json::json!({
+                "title": "Weekday hall",
+                "brief": "A trial.",
+                "due_at": 1785488400,
+                "plan": [
+                    { "piece": "Write the note", "kind": "writing", "produces": ["note filed", "reader can find it"] },
+                    { "piece": "Patch the door", "kind": "code", "produces": ["door opens"] }
+                ]
+            }),
+            rule: DecisionRule::MAJORITY,
+            needed: 1,
+            eligible: vec![],
+            votes: vec![],
+            decided_at: Some(2),
+            executed: Some(Executed {
+                kind: "work_item".into(),
+                id: "root-1".into(),
+            }),
+            settlement: None,
+        },
+    );
+    let (mut agent, _dir) = agent(state);
+    agent.listings.insert(
+        "30617:aa:weekday".into(),
+        RepoListing {
+            commit: "abc1234".into(),
+            files: vec![
+                RepoFile {
+                    path: "README.md".into(),
+                    bytes: 1,
+                };
+                DIGEST_MAX_FILES + 1
+            ],
+            elapsed: Duration::ZERO,
+        },
+    );
+    agent.link.connect(&Default::default()).expect("connect");
+    agent
+        .handle(
+            Transition::TicketPrompt {
+                item: writing.id.clone(),
+                generation: gen.clone(),
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("writing job");
+    agent
+        .handle(
+            Transition::TicketPrompt {
+                item: code.id,
+                generation: gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("code job");
+    let published = agent.run_jobs().await.expect("prompts");
+    assert_eq!(published, 1);
+    let prompts: Vec<_> = agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50104)
+        .collect();
+    assert_eq!(prompts.len(), 1);
+    assert!(prompts[0].content.contains("note filed"));
+    assert!(prompts[0].content.contains("reader can find it"));
+    assert!(!prompts[0].content.contains("Paths"));
+    assert!(!prompts[0].content.contains("README.md"));
+    assert!(prompts
+        .iter()
+        .all(|event| !event.content.contains("Patch the door")));
 }

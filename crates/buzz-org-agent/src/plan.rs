@@ -6,13 +6,14 @@
 
 use buzz_core::intelligent_org::{
     CoveragePiece, DraftKind, DraftOutcomeStatus, PlanChange, PlanStep, ProjectDraft, ProposalKind,
-    StrategyLineType, TicketDraft, WorkItemState,
+    StrategyLineType, TicketDraft, WorkItem, WorkItemState,
 };
 use nostr::Tag;
 
 use crate::compile::{self, GapVerdict, ObjectiveCard};
 use crate::jobs::JobLog;
 use crate::pipeline::OrgAgent;
+use crate::prompt::{self, CodeDigest, DigestLimits, WorkPromptInput};
 use crate::relay::link::RelayIo;
 use crate::relay::publish::{sign, Permitted, PublishError};
 use crate::state::OrgState;
@@ -304,6 +305,8 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
                 .or_else(|| key.strip_prefix("done:"))
             {
                 published += self.draft_ready_tickets(item)?;
+            } else if let Some(item) = key.strip_prefix("prompt:") {
+                published += self.publish_ticket_prompt(item)?;
             }
         }
         Ok(published)
@@ -454,6 +457,159 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         self.outbox.append(event.clone(), card_now())?;
         self.try_send(&event)
     }
+
+    /// Publish one `50104` for an offered or accepted ticket. A code ticket
+    /// whose digest fails is left without a prompt.
+    fn publish_ticket_prompt(&mut self, item_id: &str) -> Result<usize, PublishError> {
+        let Some(item) = self.state.items.get(item_id).cloned() else {
+            return Ok(0);
+        };
+        if item.parent.is_none()
+            || !matches!(item.state, WorkItemState::Offered | WorkItemState::Accepted)
+        {
+            return Ok(0);
+        }
+        let Some(based_on) = self.state.item_generations.get(item_id).cloned() else {
+            return Ok(0);
+        };
+        if based_on.is_empty() {
+            return Ok(0);
+        }
+        let root_id = item.root.clone();
+        let root = self.state.items.get(&root_id).cloned();
+        let step = plan_for_root(&self.state, &root_id)
+            .and_then(|plan| plan.into_iter().find(|step| step.piece == item.title));
+        let kind = step
+            .as_ref()
+            .map(|step| step.kind.clone())
+            .unwrap_or_else(|| "writing".into());
+        let done_when = step
+            .as_ref()
+            .map(|step| step.produces.clone())
+            .unwrap_or_default();
+        let (change_from, change_to) = change_ends(&self.state, &root_id);
+        let objective = root
+            .as_ref()
+            .map(|root| objective_text(&self.state, root))
+            .unwrap_or_default();
+        let constraints = strategy_constraints(&self.state);
+        let mut commit = None;
+        let digest = if kind == "code" {
+            match self.code_digest(&root) {
+                Some(code) => {
+                    commit = Some(code.commit.clone());
+                    Ok(Some(code))
+                }
+                None => return Ok(0),
+            }
+        } else {
+            Ok(None)
+        };
+        let input = WorkPromptInput {
+            ticket_id: &item.id,
+            title: &item.title,
+            step: &item.brief,
+            objective: &objective,
+            change_from: &change_from,
+            change_to: &change_to,
+            done_when: &done_when,
+            constraints: &constraints,
+            kind: &kind,
+        };
+        let Some(text) = prompt::prompt_text(&input, digest) else {
+            return Ok(0);
+        };
+        if self.last_prompt.get(item_id) == Some(&text) {
+            return Ok(0);
+        }
+        let tags = match commit.as_deref() {
+            Some(commit) => vec![
+                parsed_tag(&["i", item_id])?,
+                parsed_tag(&["based_on", &based_on, commit])?,
+            ],
+            None => vec![
+                parsed_tag(&["i", item_id])?,
+                parsed_tag(&["based_on", &based_on])?,
+            ],
+        };
+        let event = sign(&self.keys, Permitted::WorkPrompt, &text, tags)?;
+        self.last_prompt.insert(item_id.to_owned(), text);
+        self.outbox.append(event.clone(), card_now())?;
+        self.try_send(&event)?;
+        Ok(1)
+    }
+
+    fn code_digest(&mut self, root: &Option<WorkItem>) -> Option<CodeDigest> {
+        let repo = root
+            .as_ref()
+            .and_then(|root| root.home.as_ref())
+            .and_then(|home| home.repo.clone())?;
+        let listing = self.listings.get(&repo).cloned()?;
+        let mut cache = self.digest_cache.get(&repo).cloned();
+        let paths = prompt::digest_paths(&mut cache, &listing, DigestLimits::default()).ok()?;
+        if let Some(cached) = cache {
+            self.digest_cache.insert(repo.clone(), cached);
+        }
+        Some(CodeDigest {
+            repo,
+            commit: listing.commit,
+            paths,
+        })
+    }
+}
+
+fn change_ends(state: &OrgState, root_id: &str) -> (String, String) {
+    let Some(proposal) = state.proposals.values().find(|proposal| {
+        proposal.kind == ProposalKind::Project
+            && proposal
+                .executed
+                .as_ref()
+                .is_some_and(|executed| executed.id == root_id)
+    }) else {
+        return (String::new(), String::new());
+    };
+    let change = proposal.payload.get("change");
+    let from = change
+        .and_then(|value| value.get("from"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_owned();
+    let to = change
+        .and_then(|value| value.get("to"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_owned();
+    (from, to)
+}
+
+fn objective_text(state: &OrgState, root: &WorkItem) -> String {
+    let Some(line_ref) = root.objective_ref.as_deref() else {
+        return String::new();
+    };
+    let Some((_, line_id)) = line_ref.split_once('#') else {
+        return String::new();
+    };
+    state
+        .direction
+        .get("objectives")
+        .and_then(|head| head.artifact.lines.iter().find(|line| line.id == line_id))
+        .map(|line| line.text.clone())
+        .unwrap_or_default()
+}
+
+fn strategy_constraints(state: &OrgState) -> Vec<String> {
+    let Some(head) = state.direction.get("strategy") else {
+        return Vec::new();
+    };
+    head.artifact
+        .lines
+        .iter()
+        .filter_map(|line| match line.line_type {
+            Some(StrategyLineType::Refusal) => Some(format!("refusal: {}", line.text)),
+            Some(StrategyLineType::Rule) => Some(format!("rule: {}", line.text)),
+            _ => None,
+        })
+        .collect()
 }
 
 fn root_id(state: &OrgState, item: &str) -> Option<String> {

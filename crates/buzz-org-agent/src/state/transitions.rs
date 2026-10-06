@@ -181,6 +181,14 @@ pub enum Transition {
         /// Producing event id.
         generation: String,
     },
+    /// A ticket is offered or accepted, or its copy changed while it is.
+    /// The prompt job fences on this generation.
+    TicketPrompt {
+        /// Ticket uuid.
+        item: String,
+        /// Producing `39101` event id.
+        generation: String,
+    },
 }
 
 impl Transition {
@@ -206,7 +214,8 @@ impl Transition {
             | Self::ProfileChanged { generation, .. }
             | Self::RootLedgerChanged { generation, .. }
             | Self::MemberJoined { generation, .. }
-            | Self::DmOpened { generation, .. } => generation,
+            | Self::DmOpened { generation, .. }
+            | Self::TicketPrompt { generation, .. } => generation,
         }
     }
 
@@ -234,6 +243,7 @@ impl Transition {
             Self::ProfileChanged { pubkey, .. } => pubkey.clone(),
             Self::MemberJoined { p, .. } => p.clone(),
             Self::DmOpened { room, .. } => room.clone(),
+            Self::TicketPrompt { item, .. } => item.clone(),
         }
     }
 }
@@ -437,6 +447,22 @@ fn for_work_item(
             out.push(Transition::HolderSet {
                 item: item.id.clone(),
                 dri,
+                generation: gen.clone(),
+            });
+        }
+    }
+    if item.parent.is_some()
+        && matches!(item.state, WorkItemState::Offered | WorkItemState::Accepted)
+    {
+        let changed = prev.is_none_or(|previous| {
+            previous.state != item.state
+                || previous.title != item.title
+                || previous.brief != item.brief
+                || previous.branch != item.branch
+        });
+        if changed {
+            out.push(Transition::TicketPrompt {
+                item: item.id.clone(),
                 generation: gen.clone(),
             });
         }
