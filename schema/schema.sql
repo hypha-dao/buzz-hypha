@@ -1944,7 +1944,7 @@ CREATE TABLE io_shapers (
 -- ── Direction artifacts (kind:39100) — one row per (slug, version) ───────────
 CREATE TABLE io_direction (
     community_id        UUID NOT NULL REFERENCES communities(id),
-    slug                TEXT NOT NULL CHECK (slug IN ('mission', 'vision', 'objectives', 'strategy')),
+    slug                TEXT NOT NULL CHECK (slug IN ('mission', 'vision', 'situation', 'objectives', 'strategy')),
     version             INTEGER NOT NULL CHECK (version >= 1),
     -- Canonical §4.1 content of this version.
     content             JSONB NOT NULL,

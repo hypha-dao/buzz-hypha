@@ -19,6 +19,7 @@ import {
 const SLUGS = new Set<DirectionSlug>([
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ]);
@@ -610,6 +611,52 @@ export function draftKindLabel(draft: ChatDraft): string {
   }
 }
 
+const LIST_MARKER = /^\d+[.)]\s+/;
+
+/**
+ * One outcome per line for objectives and strategy.
+ *
+ * The draft tag stores them as one string, and the model often writes that
+ * string as a paragraph. The card and the publish form show each outcome on
+ * its own line, and publishing sends those lines. A body that already has
+ * line breaks keeps each line whole, since one strategy bet can take two
+ * sentences.
+ */
+export function directionBodyLines(slug: string, body: string): string[] {
+  const parts = body
+    .split(/\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (slug !== "objectives" && slug !== "strategy") {
+    const whole = parts.join("\n");
+    return whole.length > 0 ? [whole] : [];
+  }
+  const lines: string[] = [];
+  for (const part of parts) {
+    const sentences =
+      parts.length > 1 ? [part] : part.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    for (const sentence of sentences) {
+      const text = sentence.replace(LIST_MARKER, "").trim();
+      if (text.length >= 12 && !lines.includes(text)) lines.push(text);
+    }
+  }
+  return lines.length > 0 ? lines : parts;
+}
+
+/** The publish-form text: confirmed lines, then each new outcome. */
+export function directionDraftText(
+  slug: string,
+  body: string,
+  existing: readonly string[],
+): string {
+  const incoming = directionBodyLines(slug, body);
+  const kept = existing.map((line) => line.trim()).filter(Boolean);
+  for (const line of incoming) {
+    if (!kept.includes(line)) kept.push(line);
+  }
+  return kept.join("\n");
+}
+
 export function draftTitle(
   draft: ChatDraft,
   itemTitle?: string | null,
@@ -789,6 +836,20 @@ export function nameHoldersInChat(
 /** The #shapers message posted after publish. The card under it opens the proposal. */
 export function proposalAnnouncement(label: string, title: string): string {
   return `Opened a ${label} proposal: ${title}.`;
+}
+
+const ANNOUNCEMENT = /^Opened a (.+?) proposal: [\s\S]+$/;
+
+/**
+ * The publish line as shown above its card. The stored line keeps the whole
+ * text, since that is how the card finds its message.
+ */
+export function shortProposalAnnouncement(body: string): string {
+  const match = ANNOUNCEMENT.exec(body.trim());
+  if (!match) return body;
+  const label = match[1];
+  const article = /^[aeiou]/i.test(label) ? "an" : "a";
+  return `Opened ${article} ${label} proposal.`;
 }
 
 const PROPOSAL_OPEN_LINK =

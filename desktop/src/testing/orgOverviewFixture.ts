@@ -44,7 +44,7 @@ function seedEvent(
   };
 }
 
-/** Three confirmed heads + one empty slot (strategy). */
+/** Four confirmed heads + one empty slot (strategy). */
 export function createOverviewSeedEvents(): SeedEvent[] {
   return [
     seedEvent(
@@ -77,6 +77,22 @@ export function createOverviewSeedEvents(): SeedEvent[] {
       },
       [
         ["d", "vision"],
+        ["version", "1"],
+        ["p", OVERVIEW_VIEWER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "3".repeat(64),
+      39100,
+      {
+        slug: "situation",
+        version: 1,
+        body: "Running one season: the Saturday stall every week since March, three growers selling. We have never run a weekday night, and the hall has no evening licence yet.",
+        confirmed_by: OVERVIEW_VIEWER_PUBKEY,
+        confirmed_at: 1_742_000_000,
+      },
+      [
+        ["d", "situation"],
         ["version", "1"],
         ["p", OVERVIEW_VIEWER_PUBKEY],
       ],

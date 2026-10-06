@@ -4,7 +4,7 @@
 //! It names the act on its kind 9 reply. The person it was talking to
 //! signs, and nothing is real until the relay's rule is met.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -522,7 +522,7 @@ impl Board {
             ));
         }
         lines.push("Direction:".to_string());
-        for slug in ["mission", "vision", "objectives", "strategy"] {
+        for slug in ["mission", "vision", "situation", "objectives", "strategy"] {
             match self.direction.get(slug) {
                 Some(head) if !head.body.trim().is_empty() => {
                     lines.push(format!("- {slug} v{}: {}", head.version, head.body.trim()));
@@ -743,6 +743,100 @@ impl Board {
     }
 }
 
+/// How the agent judges and helps write direction. Objectives wait for the
+/// situation because it decides what the first objective can be.
+/// "Sharper draft:" is the cue `recover_direction` accepts from a reply.
+const DIRECTION_COACHING: &str = "\
+    If they are shaping this alone, walk direction in this order, one piece at a time: \
+    mission, vision, situation, objectives, then strategy. \
+    The situation is where the org stands today. \
+    It is its own confirmed text, the same as the other four. \
+    Never say there is no situation draft, and never fold where the org stands into the objectives or the strategy. \
+    When they ask to create or draft the situation, even as a question, that is the request. \
+    Set direction to situation on that turn when the overview or the conversation already holds the stage and what exists. \
+    body is one paragraph. If one fact only they know is still missing, ask that one question and leave direction null. \
+    Objectives wait until you know it: the right objective for an untested idea is a test, \
+    for a running service it is growth or repair. \
+    One piece at a time means a piece is finished only when it is confirmed. \
+    A reply that sets direction or offers a Sharper draft ends with that piece: \
+    say what to do with the draft, open it and publish it, and never ask about the next piece in the same reply. \
+    In #shapers with several Shapers, add that it then waits for their votes. \
+    Start the next piece only when the overview shows this one with a version, or when they ask to move on. \
+    When a note says a piece was just confirmed, say so in a few words and start the next piece in order, \
+    with the one question that decides it most, or a draft when the conversation already holds enough. \
+    Strategy is the last piece. When it is confirmed, do not draft any direction: \
+    say the direction is set, and offer the first project that moves an objective. \
+    A message that starts with Opened a and names a proposal is a member publishing a draft. \
+    It asks nothing, so never draft from it, and never redraft the text it restates. \
+    Ask one question per reply, never two, and about one thing: do not join two asks with and. \
+    Never list or count the questions still to come. \
+    Take the most decisive one first, \
+    wait for the answer, then ask the next one, building on what they said. \
+    When they answer, say in a few words what it settled, then ask the next question. \
+    A coaching reply is at most three short sentences before its one question. \
+    Do not explain the order of the pieces or why you ask unless they ask. \
+    A short example answer may follow the question, so it is easy to reply. \
+    Ask only what changes the text, and skip anything they or the overview already answered. \
+    If they jump ahead, help with what they asked, then name the earlier piece that is missing and why it changes the answer. \
+    Judge every mission, vision, situation, objective, or strategy they state, and any in the overview they ask about. \
+    In one or two sentences say whether it is strong, close, or weak, and name exactly what is missing against the bar below. \
+    Praise only what earns it. \
+    When it is not strong, end with one better version written as the artifact itself, introduced as: Sharper draft: <the text>. \
+    Build it only from what they said and what the overview shows. \
+    When the missing piece is a fact only they know, such as who it is for, ask for it instead of guessing. \
+    Their own words are still the draft on that turn. \
+    When they take yours (yes, use yours, take it), set direction again with your version as body. \
+    When they ask for help and give no text, ask the one question that decides it most. \
+    As soon as their answers are enough, write the text yourself and set direction on that turn. \
+    When a statement belongs to another text, say so and draft it there: \
+    a who-for is mission, an end state is vision, an activity is a project, a refusal is strategy. \
+    Mission bar: one sentence saying what we do, for whom, and where when a place bounds the work. \
+    For whom names concrete people, never communities, users, or everyone. It should make clear what we are not. \
+    Weak: a slogan, a value, or words like empower, leverage, or innovative that no project could be checked against. \
+    Vision bar: a picture of the world once this has worked that a stranger could walk into and confirm, \
+    two to four measures in words, and a horizon such as in three years. \
+    It should be big enough that the obvious path will not reach it. \
+    Weak: a slogan, a status report, or something nearly true already. \
+    Situation: before the first objective, learn the org's stage: \
+    only an idea, just started, running a service or product, growing, or in trouble. \
+    Read the overview first and never ask what it already shows: the situation if one is set, \
+    live and closed work, people, profiles, Shapers. \
+    Then learn what it does not show, one question per reply, roughly in this order: \
+    what exists today, such as the service, its users or customers, and partners; \
+    what is proven and what is only assumed; what is working and what is stuck; \
+    who does the work and how many hours they have; money in words, never balances; \
+    any outside date such as a funding round, a season, or a partner's deadline; \
+    and the one thing the org must learn next. Drop any of these an earlier answer already covered. \
+    When you know enough, draft it: direction situation, body one plain paragraph of three to six sentences \
+    covering the stage, what exists, what is proven and what is assumed, what works and what is stuck, \
+    who does the work, money in words, outside dates, and what the org must learn next. \
+    Once it is confirmed, propose objectives that fit it. \
+    Situation bar: a stranger could tell the stage and the next unknown from it alone. \
+    Weak: a plan, a hope, or a count that will be stale next week. \
+    When a set situation no longer matches what they say or what the work shows, \
+    say what changed and draft the new situation. \
+    Objectives bar: three to seven lines. Each is one outcome, not an activity; checkable with yes or no on the date; \
+    carries its date in the words, such as by March; \
+    names where it starts today when that decides the first step, such as: a second site by December, none chosen yet; \
+    gives the outside reason for the date when there is one; and does not overlap another line. \
+    Fit the stage: an untested idea first proves someone wants it before anything is built; \
+    a running service moves the one or two numbers that matter most; an org in trouble repairs first. \
+    Push for fewer, harder lines. If every line matters equally, none does. Each line should move the vision. \
+    Objectives and strategy grow a line at a time as you talk. Every draft of them carries the whole list: \
+    each line of your latest draft card of it, shown under your earlier message, plus the new or changed line. \
+    Leave a line out only when they ask to drop it. \
+    The draft card shows the text under your reply, so say never repeats the drafted text or its lines: \
+    name what changed in a few words, say to open and publish it, and ask at most one question. \
+    Strategy bar: two to six bets on how the objectives will be reached, \
+    each with why the org believes it and the assumption it rests on; \
+    at least one refusal, what the org will not do; which objective wins when two compete; \
+    how the work gets done, volunteers or paid, hours, partners; and the money posture in words. \
+    Weak: values with no consequence, or a line that is really an objective. \
+    Think from first principles, not from what similar orgs usually do. Ask why until you reach the real constraint. \
+    Cut anything that moves no objective. Prefer the fastest cheap test to a long plan. \
+    Be direct, specific, and brief. No jargon, no flattery, no pep talk. \
+    Never write a live number, such as a balance or a member count, into direction.";
+
 /// Prompt plus the live overview. `place` is the DM or `#shapers`.
 pub fn system_prompt(place: &str, overview: &str) -> String {
     format!(
@@ -750,16 +844,25 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     You are Org. Agent for this community. You draft, people decide. \
     Nothing you draft is real until the right person agrees. \
     Work is offered, never assigned. \
+    On direction you work like the best founder-CEO alive: first principles, candour, \
+    ambition sized to the stage, and ruthless focus. \
     This conversation is {place}. \
     Reply as JSON only, no markdown fence: \
     {{\"say\":\"<the full reply, plain sentences>\",\"direction\":null,\"body\":null,\"act\":null}} \
-    direction is \"mission\", \"vision\", \"objectives\", or \"strategy\" only when \
-    they have just settled that artifact. body is the artifact sentence itself. \
-    If they say yes or set it about a sentence you already wrote, body is that sentence, \
+    direction is \"mission\", \"vision\", \"situation\", \"objectives\", or \"strategy\" on the same turn \
+    they name that artifact and give its text. body is that text, cleaned into the artifact sentence, \
+    never their yes and never a question back to them. \
+    The chat shows a draft as soon as they state it. They open it, edit it, and publish it. \
+    Do not wait for them to approve the wording, and do not ask whether it captures what they have in mind. \
+    Do not say the mission, vision, situation, objective, or strategy is published. Publishing is their tap on the draft. \
+    If they say yes about a sentence you already wrote and that turn had no draft, body is that sentence, \
     never their yes. \
-    If they are shaping this alone, walk mission, vision, objectives, then strategy, one at a time. \
-    objectives and strategy are lists: each settled point is one new line in body. \
-    mission and vision stay a single sentence. \
+    {DIRECTION_COACHING} \
+    Draft each one on the turn they state it. \
+    objectives and strategy are lists: each stated point is its own line in body, \
+    separated by a line break, with no numbers. \
+    body holds only the lines being added. The published lines stay on the draft, where they can edit or drop any. \
+    mission and vision stay a single sentence. situation is one paragraph with no line breaks. \
     act is null, or exactly one of: \
     {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null}} \
     {{\"kind\":\"done\",\"item\":\"<exact title from the overview>\"}} \
@@ -770,7 +873,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     {{\"kind\":\"revise\",\"proposal\":\"<id from Open proposals>\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14}} \
     {{\"kind\":\"profile\",\"about\":null,\"skills\":null,\"socials\":null}} \
     When they ask to create, change, or open a proposal — a project, a direction, a DRI, a Shaper add or remove, the decision rules, which org agent to use, or a change to an open proposal — set direction or act on this turn. The chat shows a draft they open, edit, and publish. Do not say it is already up for a vote, and do not ask them to say yes. \
-    A direction proposal is direction plus body. When act is revise, leave direction null. \
+    A direction proposal is direction plus body, and situation is one of those five. When act is revise, leave direction null. \
     When an open proposal is listed and they ask to add or change it, set act revise. slug and body revise a direction proposal. title, brief, and due_days revise a project. The text is the whole proposal, including what they asked to add. \
     When they describe a new project, set the project act on this turn. Never ask if they want it published. When they describe a ticket and have not said who it is for, set the ticket act with who null. \
     When they agree to a ticket, done, or a ticket removal — yes, publish it, assign to me, remove it, delete it — set act again and say that you are opening it. A proposal is not opened by yes; they publish the draft. \
@@ -801,7 +904,8 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     If the title is missing, or they are not the person who can do it, leave act null and say why. \
     Answer questions from the overview only, and finish the answer. Do not invent work, people, or direction. \
     When they ask what you can do, say you can help with these and that nothing you draft is real until the right person agrees: \
-    a direction proposal (mission, vision, objectives, or strategy); a project proposal; \
+    a direction proposal (mission, vision, situation, objectives, or strategy); \
+    an honest read of any of them, with a sharper version, and help writing each in order; a project proposal; \
     changing an open proposal, which starts the vote over when they publish the draft; \
     marking their ticket done; creating a ticket for them or for someone else; \
     naming a DRI for work that has none; adding or removing a Shaper; changing the decision rules; choosing the org agent; removing a project (always a proposal, whether one Shaper is seated or many) or a ticket they created or offered; \
@@ -825,12 +929,17 @@ pub fn parse_model_reply(raw: &str) -> (String, Option<String>, Option<String>, 
         .map(cap_say)
         .unwrap_or_default();
     let mut direction = value.get("direction").and_then(direction_slug);
-    let body = value
+    let mut body = value
         .get("body")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|text| is_direction_body(text))
         .map(str::to_string);
+    if direction.as_deref() == Some("situation") {
+        if let Some(text) = body.as_mut() {
+            *text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        }
+    }
     if body.is_none() {
         direction = None;
     }
@@ -1204,6 +1313,544 @@ pub fn asked_for_new_project(text: &str) -> bool {
         || lower.contains("create project")
         || lower.contains("open a project")
         || (lower.contains("project") && lower.contains("create"))
+}
+
+/// A direction draft the model described in prose instead of `direction` and `body`.
+///
+/// "I want to set a new mission, it should be …" is the request. The card
+/// still goes on this reply when the model only talks about the wording.
+/// Coaching about what a good text needs, or a question back, is not a draft.
+///
+/// The common noun "situation" is not a request. "Create situation draft" is.
+pub fn recover_direction(user: &str, say: &str) -> Option<(String, String)> {
+    if is_proposal_announcement(user) {
+        return None;
+    }
+    let slug = direction_request_slug(user)?;
+    let body = if slug == "situation" {
+        said_situation(say).or_else(|| stated_situation(user))
+    } else {
+        said_artifact(say, user).or_else(|| stated_artifact(user))
+    }?;
+    Some((slug.to_string(), body))
+}
+
+/// The artifact in the agent's reply: one it announces as a draft, or their
+/// own words cleaned up.
+fn said_artifact(say: &str, user: &str) -> Option<String> {
+    announced_draft(say).or_else(|| stated_artifact(say).filter(|text| restates(text, user)))
+}
+
+/// "Here's a draft of the mission: …" or "Sharper draft: …".
+fn announced_draft(say: &str) -> Option<String> {
+    let lower = say.to_ascii_lowercase();
+    lower.match_indices(':').rev().find_map(|(at, _)| {
+        let clause_start = lower[..at]
+            .rfind(['.', '!', '?', '\n'])
+            .map_or(0, |end| end + 1);
+        if !lower[clause_start..at].contains("draft") {
+            return None;
+        }
+        first_direction_sentence(&say[at + 1..])
+    })
+}
+
+/// Most of the sentence's words are theirs.
+fn restates(sentence: &str, user: &str) -> bool {
+    let heard: HashSet<String> = content_words(user).collect();
+    let words: Vec<String> = content_words(sentence).collect();
+    if words.is_empty() {
+        return false;
+    }
+    let kept = words.iter().filter(|word| heard.contains(*word)).count();
+    kept * 5 >= words.len() * 3
+}
+
+fn content_words(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| word.chars().count() >= 3)
+        .map(str::to_lowercase)
+}
+
+fn direction_request_slug(text: &str) -> Option<&'static str> {
+    let lower = text.to_ascii_lowercase();
+    if situation_draft_request(&lower) {
+        return Some("situation");
+    }
+    let slug = ["mission", "vision", "objectives", "strategy"]
+        .into_iter()
+        .find(|slug| mentions_slug(&lower, slug))?;
+    const ASKS: &[&str] = &[
+        "set ",
+        "new ",
+        "create ",
+        "change ",
+        "update ",
+        "draft ",
+        "write ",
+        "make ",
+        "add ",
+        "should be",
+        "replace ",
+    ];
+    if ASKS.iter().any(|word| lower.contains(word)) {
+        return Some(slug);
+    }
+    None
+}
+
+/// Names the situation artifact. The bare word is a common noun
+/// ("a tough situation") and must not open a direction draft.
+fn situation_draft_request(lower: &str) -> bool {
+    const PHRASES: &[&str] = &[
+        "situation draft",
+        "situation proposal",
+        "draft the situation",
+        "draft a situation",
+        "draft situation",
+        "create the situation",
+        "create a situation",
+        "create situation",
+        "set the situation",
+        "set a situation",
+        "set situation",
+        "write the situation",
+        "write a situation",
+        "write situation",
+        "propose the situation",
+        "propose a situation",
+        "propose situation",
+        "make the situation",
+        "make a situation",
+        "update the situation",
+        "change the situation",
+        "the situation should",
+    ];
+    if PHRASES.iter().any(|phrase| contains_phrase(lower, phrase)) {
+        return true;
+    }
+    // "create draft for current situation" names the artifact without the
+    // exact phrase "situation draft". A project request that merely mentions
+    // a tough situation does not.
+    word_has(lower, "situation")
+        && !lower.contains("project")
+        && ["draft", "create", "write", "propose"]
+            .iter()
+            .any(|verb| word_has(lower, verb))
+}
+
+fn contains_phrase(lower: &str, phrase: &str) -> bool {
+    lower.match_indices(phrase).any(|(at, _)| {
+        let before_ok = lower[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        let after_ok = lower[at + phrase.len()..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        before_ok && after_ok
+    })
+}
+
+/// The situation paragraph the agent announced, or the one it stated while
+/// refusing to call it a draft.
+fn said_situation(say: &str) -> Option<String> {
+    announced_situation(say).or_else(|| situation_from_reply(say))
+}
+
+fn announced_situation(say: &str) -> Option<String> {
+    let lower = say.to_ascii_lowercase();
+    lower.match_indices(':').rev().find_map(|(at, _)| {
+        let clause_start = lower[..at]
+            .rfind(['.', '!', '?', '\n'])
+            .map_or(0, |end| end + 1);
+        let clause = &lower[clause_start..at];
+        if !clause.contains("draft") && !clause.contains("situation") {
+            return None;
+        }
+        situation_paragraph(&say[at + 1..])
+    })
+}
+
+/// Sentences that state where the org stands, skipping a denial and stopping
+/// when the reply turns to a project.
+fn situation_from_reply(say: &str) -> Option<String> {
+    let sentences = situation_sentences(say);
+    let start = sentences
+        .iter()
+        .rposition(|sentence| handoff_sentence(sentence))
+        .map_or(0, |index| index + 1);
+    let mut kept = Vec::new();
+    for sentence in sentences.iter().skip(start) {
+        if pivot_sentence(sentence) || meta_situation_sentence(sentence) {
+            break;
+        }
+        if denial_sentence(sentence) {
+            continue;
+        }
+        kept.push(sentence.clone());
+        if kept.len() == 6 {
+            break;
+        }
+    }
+    let paragraph = kept.join(" ");
+    is_direction_body(&paragraph).then_some(paragraph)
+}
+
+fn situation_sentences(text: &str) -> Vec<String> {
+    let mut rest = text.trim();
+    let mut sentences = Vec::new();
+    while !rest.is_empty() {
+        let Some(end) = rest.find(['.', '!', '?']) else {
+            let tail = clean_situation_sentence(rest);
+            if !tail.is_empty() {
+                sentences.push(tail);
+            }
+            break;
+        };
+        if rest[end..].starts_with('?') {
+            rest = rest[end + 1..].trim_start();
+            continue;
+        }
+        let sentence = clean_situation_sentence(&rest[..=end]);
+        if !sentence.is_empty() {
+            sentences.push(sentence);
+        }
+        rest = rest[end + 1..].trim_start();
+    }
+    sentences
+}
+
+fn handoff_sentence(sentence: &str) -> bool {
+    let lower = sentence.to_ascii_lowercase();
+    lower.contains("say it back")
+        || lower.contains("here it is")
+        || lower.contains("here is where you stand")
+        || (lower.contains("instead") && lower.contains("draft"))
+}
+
+fn denial_sentence(sentence: &str) -> bool {
+    let lower = sentence.to_ascii_lowercase();
+    lower.contains("no separate")
+        || lower.contains("holds only")
+        || lower.contains("only mission")
+        || lower.contains("not a separate")
+}
+
+fn pivot_sentence(sentence: &str) -> bool {
+    let lower = sentence.to_ascii_lowercase();
+    lower.contains("nothing in direction")
+        || lower.contains("as a project")
+        || lower.contains("first project")
+        || lower.contains("missing is work")
+        || lower.contains("board is empty")
+        || lower.starts_with("should ")
+}
+
+fn stated_situation(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    for marker in ["it should be", "the situation should be", "should be"] {
+        if let Some(at) = lower.rfind(marker) {
+            if let Some(paragraph) = situation_paragraph(&text[at + marker.len()..]) {
+                return Some(paragraph);
+            }
+        }
+    }
+    None
+}
+
+/// Up to six sentences, one paragraph, stopping before a question or a publish cue.
+fn situation_paragraph(text: &str) -> Option<String> {
+    let mut rest = text
+        .trim()
+        .trim_start_matches(|ch: char| matches!(ch, ':' | ',' | '-' | ' '));
+    let mut sentences = Vec::new();
+    while !rest.is_empty() && sentences.len() < 6 {
+        let Some(end) = rest.find(['.', '!', '?']) else {
+            let tail = clean_situation_sentence(rest);
+            if !tail.is_empty() && !meta_situation_sentence(&tail) {
+                sentences.push(tail);
+            }
+            break;
+        };
+        if rest[end..].starts_with('?') {
+            break;
+        }
+        let sentence = clean_situation_sentence(&rest[..=end]);
+        if sentence.is_empty() || meta_situation_sentence(&sentence) {
+            break;
+        }
+        sentences.push(sentence);
+        rest = rest[end + 1..].trim_start();
+    }
+    let paragraph = sentences.join(" ");
+    is_direction_body(&paragraph).then_some(paragraph)
+}
+
+fn clean_situation_sentence(text: &str) -> String {
+    text.trim()
+        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '“' | '”'))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn meta_situation_sentence(sentence: &str) -> bool {
+    let lower = sentence.to_ascii_lowercase();
+    lower.starts_with("open it")
+        || lower.starts_with("publish")
+        || lower.starts_with("want ")
+        || lower.starts_with("does this")
+        || lower.starts_with("shall i")
+        || lower.starts_with("you can ")
+}
+
+fn slug_needles(slug: &str) -> &'static [&'static str] {
+    match slug {
+        "objectives" => &["objectives", "objective"],
+        "strategy" => &["strategies", "strategy"],
+        "mission" => &["mission"],
+        "vision" => &["vision"],
+        _ => &[],
+    }
+}
+
+fn mentions_slug(lower: &str, slug: &str) -> bool {
+    slug_needles(slug)
+        .iter()
+        .any(|needle| word_has(lower, needle))
+}
+
+fn word_has(lower: &str, needle: &str) -> bool {
+    lower.match_indices(needle).any(|(at, _)| {
+        let before_ok = lower[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        let after_ok = lower[at + needle.len()..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        before_ok && after_ok
+    })
+}
+
+/// One line of a room, in order. `acted` means that message already carried a draft tag.
+pub struct ChatTurn<'a> {
+    pub from_agent: bool,
+    pub content: &'a str,
+    pub acted: bool,
+}
+
+/// A short yes to wording the agent already wrote. Not a new artifact.
+pub fn approves_wording(text: &str) -> bool {
+    let normalized = normalize_reply(text);
+    matches!(
+        normalized.as_str(),
+        "yes"
+            | "yeah"
+            | "yep"
+            | "yup"
+            | "ok"
+            | "okay"
+            | "sure"
+            | "good"
+            | "it is good"
+            | "its good"
+            | "it's good"
+            | "that is good"
+            | "thats good"
+            | "that's good"
+            | "looks good"
+            | "sounds good"
+            | "perfect"
+            | "do it"
+            | "go ahead"
+    ) || agrees_to_publish(text)
+}
+
+/// They approved a direction the agent already stated, and that turn had no draft.
+pub fn recover_confirmed_direction(
+    lines: &[ChatTurn<'_>],
+    approval: &str,
+) -> Option<(String, String)> {
+    if !approves_wording(approval) {
+        return None;
+    }
+    let mut last_user = "";
+    let mut last_agent = "";
+    for line in lines {
+        if line.from_agent {
+            last_agent = line.content;
+            continue;
+        }
+        if normalize_reply(line.content) == normalize_reply(approval) {
+            break;
+        }
+        last_user = line.content;
+    }
+    if last_user.is_empty() || last_agent.is_empty() {
+        return None;
+    }
+    recover_direction(last_user, last_agent)
+}
+
+/// The newest direction they stated that never received a draft tag.
+pub fn missing_direction_draft(lines: &[ChatTurn<'_>]) -> Option<(String, String)> {
+    let mut last_user = "";
+    let mut pending: Option<(String, String)> = None;
+    for line in lines {
+        if !line.from_agent {
+            last_user = line.content;
+            continue;
+        }
+        if line.acted {
+            pending = None;
+            continue;
+        }
+        if let Some(found) = recover_direction(last_user, line.content) {
+            pending = Some(found);
+        }
+    }
+    pending
+}
+
+fn stated_artifact(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    if let Some(at) = lower.find("it should be") {
+        if let Some(sentence) = first_direction_sentence(&text[at + "it should be".len()..]) {
+            return Some(sentence);
+        }
+    }
+    if let Some(at) = lower.find("should be") {
+        if let Some(sentence) = first_direction_sentence(&text[at + "should be".len()..]) {
+            return Some(sentence);
+        }
+    }
+    if let Some(at) = text.rfind(':') {
+        if let Some(sentence) = first_direction_sentence(&text[at + 1..]) {
+            return Some(sentence);
+        }
+    }
+    None
+}
+
+fn first_direction_sentence(text: &str) -> Option<String> {
+    let rest = text
+        .trim()
+        .trim_start_matches(|ch: char| matches!(ch, ':' | ',' | '-' | ' '));
+    let end = rest.find(['.', '!', '?']).unwrap_or(rest.len());
+    if rest[end..].starts_with('?') {
+        return None;
+    }
+    let sentence = rest[..end]
+        .trim()
+        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '“' | '”'));
+    if is_direction_body(sentence) {
+        Some(sentence.to_string())
+    } else {
+        None
+    }
+}
+
+/// The line above a direction draft. Publishing stays their tap.
+pub fn direction_draft_say(slug: &str) -> String {
+    let label = match slug {
+        "mission" | "vision" | "situation" | "objectives" | "strategy" => slug,
+        _ => "direction",
+    };
+    format!("A draft of the {label}. Open it, then publish.")
+}
+
+/// The turn the model sees when a direction it drafted here was confirmed.
+/// The prompt's coaching names this note as the cue to start the next piece.
+pub fn confirmed_note(slug: &str, version: u64) -> String {
+    format!(
+        "(Note from the relay, not a member: the {slug} was just confirmed as version {version}. \
+         Nobody has written since.)"
+    )
+}
+
+/// The line the desktop posts when someone publishes a draft. It restates
+/// the proposal, so treating it as a request drafts the same text again,
+/// often under the wrong slug when the text names another piece.
+pub fn is_proposal_announcement(content: &str) -> bool {
+    let lower = content.trim_start().to_ascii_lowercase();
+    lower.starts_with("opened a ") && lower.contains(" proposal:")
+}
+
+/// A direction tag is a draft. A reply that says it is already published
+/// is rewritten so the card and the sentence agree.
+pub fn direction_reply_say(say: &str, slug: &str) -> String {
+    let lower = say.to_ascii_lowercase();
+    if lower.contains("published") {
+        return direction_draft_say(slug);
+    }
+    say.trim().to_string()
+}
+
+/// The draft card already shows `body` under the reply. Sentences of `say`
+/// that restate one of its lines are dropped. When nothing else is left, the
+/// reply is the plain draft line.
+pub fn drop_restated_lines(say: &str, slug: &str, body: &str) -> String {
+    let lines: Vec<Vec<String>> = body
+        .lines()
+        .map(longer_words)
+        .filter(|words| !words.is_empty())
+        .collect();
+    if lines.is_empty() {
+        return say.trim().to_string();
+    }
+    let kept: Vec<&str> = say_sentences(say)
+        .into_iter()
+        .filter(|sentence| {
+            let words = longer_words(sentence);
+            if sentence.ends_with('?') || words.len() < 6 {
+                return true;
+            }
+            !lines.iter().any(|line| {
+                let shared = words.iter().filter(|word| line.contains(word)).count();
+                shared * 10 >= words.len() * 6 || shared * 10 >= line.len() * 7
+            })
+        })
+        .collect();
+    let text = kept.join(" ").trim().to_string();
+    if text.is_empty() {
+        direction_draft_say(slug)
+    } else {
+        text
+    }
+}
+
+fn longer_words(text: &str) -> Vec<String> {
+    text.split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| word.chars().count() >= 3)
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn say_sentences(say: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = say.char_indices().peekable();
+    while let Some((at, ch)) = chars.next() {
+        let ends = matches!(ch, '.' | '!' | '?')
+            && chars.peek().is_none_or(|(_, next)| next.is_whitespace());
+        if ends {
+            let end = at + ch.len_utf8();
+            let sentence = say[start..end].trim();
+            if !sentence.is_empty() {
+                out.push(sentence);
+            }
+            start = end;
+        }
+    }
+    let rest = say[start..].trim();
+    if !rest.is_empty() {
+        out.push(rest);
+    }
+    out
 }
 
 /// A project the model described in prose instead of an act.
@@ -1885,10 +2532,14 @@ fn clean_title(title: &str) -> Option<String> {
     Some(text)
 }
 
+/// A project or ticket brief. Long enough for a few paragraphs. The old
+/// 400-character cut stopped real drafts mid-sentence.
+pub(crate) const MAX_BRIEF_CHARS: usize = 4_000;
+
 fn clean_brief(brief: &str, title: &str) -> String {
     let text = brief.trim();
     if text.chars().count() >= 3 {
-        text.chars().take(400).collect()
+        text.chars().take(MAX_BRIEF_CHARS).collect()
     } else {
         title.to_string()
     }
@@ -2530,7 +3181,9 @@ fn text_field(value: &Value, key: &str) -> Option<String> {
 
 fn direction_slug(value: &Value) -> Option<String> {
     match value.as_str()? {
-        slug @ ("mission" | "vision" | "objectives" | "strategy") => Some(slug.to_string()),
+        slug @ ("mission" | "vision" | "situation" | "objectives" | "strategy") => {
+            Some(slug.to_string())
+        }
         _ => None,
     }
 }
@@ -2723,6 +3376,48 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_project_brief_keeps_more_than_a_short_paragraph() {
+        let brief = "Daily suggestions for the desktop app. ".repeat(20);
+        assert!(brief.chars().count() > 400);
+        assert!(brief.chars().count() < MAX_BRIEF_CHARS);
+        let raw = act_json(json!({
+            "kind": "project",
+            "title": "Daily task suggestions",
+            "brief": brief,
+            "due_days": 14,
+            "who": null
+        }));
+        let (_, _, _, act) = parse_model_reply(&raw);
+        let resolved =
+            resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+        let ResolvedAct::Project { brief: kept, .. } = resolved else {
+            panic!("unexpected {resolved:?}");
+        };
+        assert_eq!(kept, brief.trim());
+    }
+
+    #[test]
+    fn a_runaway_brief_stops_at_the_cap() {
+        let brief = "word ".repeat(2_000);
+        assert!(brief.chars().count() > MAX_BRIEF_CHARS);
+        let raw = act_json(json!({
+            "kind": "project",
+            "title": "Daily task suggestions",
+            "brief": brief,
+            "due_days": 14,
+            "who": null
+        }));
+        let (_, _, _, act) = parse_model_reply(&raw);
+        let resolved =
+            resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("resolved");
+        let ResolvedAct::Project { brief: kept, .. } = resolved else {
+            panic!("unexpected {resolved:?}");
+        };
+        assert_eq!(kept.chars().count(), MAX_BRIEF_CHARS);
+        assert!(brief.starts_with(&kept));
     }
 
     #[test]
@@ -3189,6 +3884,278 @@ mod tests {
     }
 
     #[test]
+    fn a_stated_mission_is_a_draft_on_that_turn() {
+        let stated = "okay I want to set a new mission, it should be Provide social organizations a operating system that would maximize their productivity.";
+        let stall = "Here's a clean draft of the mission: Provide social organizations an operating system that maximizes their productivity. Want to refine the wording, or does this capture what you have in mind?";
+        let (slug, body) = recover_direction(stated, stall).expect("mission draft");
+        assert_eq!(slug, "mission");
+        assert_eq!(
+            body,
+            "Provide social organizations an operating system that maximizes their productivity"
+        );
+        let own_words =
+            recover_direction(stated, "What should the mission say?").expect("own words");
+        assert_eq!(
+            own_words.1,
+            "Provide social organizations a operating system that would maximize their productivity"
+        );
+        assert!(recover_direction("what is our mission?", stall).is_none());
+        assert!(recover_direction("I want to set a new mission", "What should it say?").is_none());
+        assert_eq!(
+            direction_reply_say(
+                "The mission is published: Provide social organizations an operating system that maximizes their productivity.",
+                "mission",
+            ),
+            direction_draft_say("mission")
+        );
+        assert_eq!(
+            direction_reply_say("Got it. What's the vision?", "mission"),
+            "Got it. What's the vision?"
+        );
+    }
+
+    #[test]
+    fn a_singular_objective_is_still_the_objectives_draft() {
+        let user =
+            "now create as a first objective start using this desktop app internally in Hypha";
+        let say = "Here's a draft of the first objective: Start using this desktop app internally in Hypha. Does this capture what you mean?";
+        let (slug, body) = recover_direction(user, say).expect("objective draft");
+        assert_eq!(slug, "objectives");
+        assert_eq!(body, "Start using this desktop app internally in Hypha");
+        let lines = [
+            ChatTurn {
+                from_agent: false,
+                content: user,
+                acted: false,
+            },
+            ChatTurn {
+                from_agent: true,
+                content: say,
+                acted: false,
+            },
+            ChatTurn {
+                from_agent: false,
+                content: "it is good",
+                acted: false,
+            },
+            ChatTurn {
+                from_agent: true,
+                content: "Objectives so far: Start using this desktop app internally in Hypha. What's the next objective you'd like to add?",
+                acted: false,
+            },
+        ];
+        assert_eq!(
+            missing_direction_draft(&lines).expect("still missing"),
+            (
+                "objectives".to_string(),
+                "Start using this desktop app internally in Hypha".to_string()
+            )
+        );
+        assert_eq!(
+            recover_confirmed_direction(&lines, "it is good").expect("yes"),
+            (
+                "objectives".to_string(),
+                "Start using this desktop app internally in Hypha".to_string()
+            )
+        );
+        let mut tagged = lines;
+        tagged[1].acted = true;
+        assert!(missing_direction_draft(&tagged).is_none());
+    }
+
+    #[test]
+    fn coaching_on_a_direction_is_not_a_draft() {
+        let ask = "I want to write our mission";
+        assert!(recover_direction(
+            ask,
+            "Good. A strong mission should be specific: it names the people you serve and what you refuse to become."
+        )
+        .is_none());
+        assert!(recover_direction(
+            ask,
+            "Before I draft it: who exactly are the people you serve today?"
+        )
+        .is_none());
+        let weak = "our mission should be to empower communities through technology";
+        let verdict = "Weak: it names no one and rules nothing out. Sharper draft: Give neighbourhood food co-ops in Lisbon one place to run their weekly orders.";
+        assert_eq!(
+            recover_direction(weak, verdict),
+            Some((
+                "mission".to_string(),
+                "Give neighbourhood food co-ops in Lisbon one place to run their weekly orders"
+                    .to_string()
+            ))
+        );
+        let lines = [
+            ChatTurn {
+                from_agent: false,
+                content: weak,
+                acted: false,
+            },
+            ChatTurn {
+                from_agent: true,
+                content: verdict,
+                acted: true,
+            },
+            ChatTurn {
+                from_agent: false,
+                content: "yes",
+                acted: false,
+            },
+        ];
+        assert_eq!(
+            recover_confirmed_direction(&lines, "yes").map(|(_, body)| body),
+            Some(
+                "Give neighbourhood food co-ops in Lisbon one place to run their weekly orders"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn a_situation_is_a_direction_draft_and_shows_in_order() {
+        let raw = json!({
+            "say": "Here is where you stand.",
+            "direction": "situation",
+            "body": "A working prototype with no outside users yet. Two developers, about twenty hours a week each.",
+            "act": null
+        })
+        .to_string();
+        let (_, direction, body, act) = parse_model_reply(&raw);
+        assert_eq!(direction.as_deref(), Some("situation"));
+        assert!(body.expect("body").starts_with("A working prototype"));
+        assert!(act.is_none());
+
+        let mut board = Board::default();
+        board.observe(
+            39100,
+            ME,
+            10,
+            Some("situation"),
+            r#"{"body":"A working prototype, no outside users.","version":1}"#,
+        );
+        let overview = board.overview();
+        let vision = overview.find("- vision").expect("vision");
+        let situation = overview
+            .find("- situation v1: A working prototype")
+            .expect("situation");
+        let objectives = overview.find("- objectives").expect("objectives");
+        assert!(vision < situation && situation < objectives);
+
+        assert!(recover_direction(
+            "we are in a tough situation, set up a project: weekly stall",
+            "Sure, which project?"
+        )
+        .is_none());
+
+        let asked = "should we create situation draft?";
+        let drafted = "Here's a draft of the situation: Hypha Buzz runs in the desktop for one builder at thirty hours a week. Direction setting works today. The other members have not set direction yet. The next unknown is whether they will take tasks from the agent. Open it, then publish.";
+        let (slug, body) = recover_direction(asked, drafted).expect("situation draft");
+        assert_eq!(slug, "situation");
+        assert!(body.contains("thirty hours a week"));
+        assert!(body.contains("next unknown"));
+        assert!(!body.contains("Open it"));
+        assert!(!body.contains('\n'));
+        assert!(recover_direction(asked, "What stage are you in?").is_none());
+
+        let current = "can you create draft for current situation?";
+        let refused = "There's no separate draft type for where the org stands. Direction holds only mission, vision, objectives, and strategy, so I'll say it back here instead. Hypha Buzz is a desktop app that has just started: direction setting works, but the daily task suggestions your first objective depends on do not, and nobody, including you, runs their day in it yet. You build alone while one founder mostly funds the work and approaches investors he knows with no fixed date, so the one thing you must learn next is whether people actually follow the AI's suggested next task. Your published objectives and strategy already fit that stage, so nothing in direction needs to change. What's missing is work: the board is empty. The natural first project is getting daily task suggestions working well enough that you take your own next task from them by mid-October. Should I draft that as a project, and do you want a review date other than about two weeks?";
+        let (slug, body) = recover_direction(current, refused).expect("refused situation");
+        assert_eq!(slug, "situation");
+        assert!(body.starts_with("Hypha Buzz is a desktop app"));
+        assert!(body.contains("must learn next"));
+        assert!(!body.contains("no separate"));
+        assert!(!body.contains("first project"));
+        assert!(!body.contains("board is empty"));
+    }
+
+    #[test]
+    fn the_prompt_coaches_direction_in_order() {
+        let prompt = system_prompt("a private DM with one member", "Overview:\nnone");
+        assert!(prompt.contains("mission, vision, situation, objectives, then strategy"));
+        assert!(prompt.contains("Objectives wait until you know it"));
+        assert!(prompt.contains("\"situation\""));
+        assert!(prompt.contains("situation is one paragraph"));
+        assert!(prompt.contains("Never say there is no situation draft"));
+        assert!(prompt.contains("situation is one of those five"));
+        assert!(prompt.contains("strong, close, or weak"));
+        assert!(prompt.contains("Sharper draft: <the text>"));
+        assert!(prompt.contains("never ask what it already shows"));
+        assert!(prompt.contains("Fit the stage"));
+        assert!(prompt.contains("first principles"));
+        assert!(!prompt.contains("walk mission, vision, objectives, then strategy"));
+    }
+
+    #[test]
+    fn the_walk_waits_for_each_piece_to_be_confirmed() {
+        let prompt = system_prompt("#shapers", "Overview:\nnone");
+        assert!(prompt.contains("never ask about the next piece in the same reply"));
+        assert!(prompt.contains("only when the overview shows this one with a version"));
+        assert!(prompt.contains("Once it is confirmed, propose objectives"));
+        assert!(!prompt.contains("Then propose objectives that fit it"));
+        assert!(prompt.contains("When a note says a piece was just confirmed"));
+        assert!(prompt.contains("Strategy is the last piece"));
+        assert!(prompt.contains("never draft from it"));
+        assert!(confirmed_note("vision", 1).contains("the vision was just confirmed as version 1"));
+    }
+
+    #[test]
+    fn the_walk_asks_one_question_at_a_time() {
+        let prompt = system_prompt("#shapers", "Overview:\nnone");
+        assert!(prompt.contains("Ask one question per reply, never two"));
+        assert!(prompt.contains("one question per reply, roughly in this order"));
+        assert!(!prompt.contains("two or three questions"));
+        assert!(!prompt.contains("with the questions that decide it"));
+        assert!(prompt.contains("Never list or count the questions still to come"));
+        assert!(prompt.contains("at most three short sentences before its one question"));
+        assert!(prompt.contains("Every draft of them carries the whole list"));
+        assert!(prompt.contains("say never repeats the drafted text or its lines"));
+    }
+
+    #[test]
+    fn a_publish_announcement_is_never_recovered_as_a_draft() {
+        let announced = "Opened a strategy proposal: Until the end of October 2026, we add no organizations beyond Hypha Buzz and Hypha.\n\
+                         When the two objectives compete, Hypha Buzz wins: the Hypha team test waits until Vlad's own daily use is solid.";
+        assert_eq!(recover_direction(announced, "Strategy confirmed."), None);
+        let turns = [
+            ChatTurn {
+                from_agent: false,
+                content: announced,
+                acted: false,
+            },
+            ChatTurn {
+                from_agent: true,
+                content: "The strategy is set. Want the first project for the objectives?",
+                acted: false,
+            },
+        ];
+        assert_eq!(missing_direction_draft(&turns), None);
+    }
+
+    #[test]
+    fn a_reply_does_not_repeat_the_lines_its_card_shows() {
+        let body = "Until the end of October 2026, we add no organizations beyond Hypha Buzz and Hypha.\n\
+                    Vlad builds alone through October; a second developer joins only if the team takes its tasks from the AI.";
+        let say = "Here is the strategy draft with all four lines. \
+                   First: until the end of October 2026, we add no organizations beyond Hypha Buzz and Hypha, because every hour counts. \
+                   Third: Vlad builds alone through October, and a second developer joins only if the team takes its tasks from the AI. \
+                   Open the draft to edit it, then publish. \
+                   Would the second developer be paid?";
+        assert_eq!(
+            drop_restated_lines(say, "strategy", body),
+            "Here is the strategy draft with all four lines. Open the draft to edit it, then publish. Would the second developer be paid?"
+        );
+        assert_eq!(
+            drop_restated_lines(
+                "Until the end of October 2026, we add no organizations beyond Hypha Buzz and Hypha.",
+                "strategy",
+                body
+            ),
+            "A draft of the strategy. Open it, then publish."
+        );
+    }
+
+    #[test]
     fn a_suggested_holder_is_the_display_name() {
         let mut named = board();
         named.observe(
@@ -3545,6 +4512,9 @@ mod tests {
         assert!(prompt.contains("social links"));
         assert!(prompt.contains("nothing you draft is real"));
         assert!(prompt.contains("finish the answer"));
+        assert!(prompt.contains("as soon as they state it"));
+        assert!(prompt.contains("Draft each one on the turn they state it"));
+        assert!(!prompt.contains("only when they have just settled"));
         assert!(prompt.contains("describe the project in their own words"));
         assert!(prompt.contains("Say which project you suggest"));
         assert!(!prompt.contains("one or two short"));

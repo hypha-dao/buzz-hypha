@@ -13,6 +13,7 @@ import {
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_WORK_ITEM,
+  KIND_STREAM_MESSAGE,
 } from "@/shared/constants/kinds";
 
 import {
@@ -133,6 +134,17 @@ export function myWorkFilters(
     );
   }
   return filters;
+}
+
+/**
+ * Your drafts: the org agent's chat lines in every room you can read
+ * (`{kinds:[9], authors:[agent]}`). The relay scopes a REQ without `#h` to
+ * your channels and DMs; drafts are the lines that carry a draft tag.
+ */
+export function myDraftFilters(
+  orgAgentPubkey: string,
+): RelaySubscriptionFilter[] {
+  return [history({ kinds: [KIND_STREAM_MESSAGE], authors: [orgAgentPubkey] })];
 }
 
 /**

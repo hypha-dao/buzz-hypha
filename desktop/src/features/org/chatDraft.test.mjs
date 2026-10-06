@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   announcementMentions,
   chatDraftFromMessage,
+  directionBodyLines,
+  directionDraftText,
   chatHolderLabel,
   commandForDraft,
   driDraftSentence,
@@ -12,6 +14,7 @@ import {
   omitSuggestedHolderWhenOffered,
   openChatDrafts,
   proposalAnnouncement,
+  shortProposalAnnouncement,
   stripProposalOpenLink,
 } from "./chatDraft.ts";
 
@@ -285,6 +288,40 @@ test("a suggested holder in chat is the person's name", () => {
   assert.match(stillAsking, /Suggested holder: TRAVOLTA/);
 });
 
+test("objectives written as one paragraph show one line each", () => {
+  const body =
+    "By the end of November 2026, the four other Hypha members have used the app to set Hypha's direction; today only Vlad uses it. By the end of January 2027, each Hypha member starts most weeks' work from the AI's suggestion of what to do and how. By the end of March 2027, one small team outside Hypha runs its daily work on the app without Vlad's help; none is chosen yet.";
+  assert.deepEqual(directionBodyLines("objectives", body), [
+    "By the end of November 2026, the four other Hypha members have used the app to set Hypha's direction; today only Vlad uses it.",
+    "By the end of January 2027, each Hypha member starts most weeks' work from the AI's suggestion of what to do and how.",
+    "By the end of March 2027, one small team outside Hypha runs its daily work on the app without Vlad's help; none is chosen yet.",
+  ]);
+  assert.deepEqual(
+    directionBodyLines(
+      "objectives",
+      "1. Book the hall by March.\n2. Pay growers the week they sell.",
+    ),
+    ["Book the hall by March.", "Pay growers the week they sell."],
+  );
+  assert.deepEqual(
+    directionBodyLines(
+      "strategy",
+      "We refuse new orgs. Hypha and Hypha Buzz come first.\nHypha Buzz wins when the two compete.",
+    ),
+    [
+      "We refuse new orgs. Hypha and Hypha Buzz come first.",
+      "Hypha Buzz wins when the two compete.",
+    ],
+  );
+  const situation =
+    "Running one season. The Saturday stall has never missed a week. Demand on a weekday night is only assumed.";
+  assert.deepEqual(directionBodyLines("situation", situation), [situation]);
+  assert.equal(
+    directionDraftText("objectives", body, ["Book the hall by March."]),
+    `Book the hall by March.\n${directionBodyLines("objectives", body).join("\n")}`,
+  );
+});
+
 test("a dri draft names the project and the person", () => {
   assert.equal(
     driDraftSentence("Internal Dogfooding at Hypha", "Ada"),
@@ -315,4 +352,17 @@ test("the shapers announcement names the proposal and the card opens it", () => 
     stripProposalOpenLink(older),
     "Opened a project proposal: Fix the hall.",
   );
+  assert.equal(
+    shortProposalAnnouncement(
+      "Opened a strategy proposal: We refuse new orgs.\nHypha Buzz wins..",
+    ),
+    "Opened a strategy proposal.",
+  );
+  assert.equal(
+    shortProposalAnnouncement(
+      proposalAnnouncement("objectives", "Book the hall"),
+    ),
+    "Opened an objectives proposal.",
+  );
+  assert.equal(shortProposalAnnouncement("hello"), "hello");
 });

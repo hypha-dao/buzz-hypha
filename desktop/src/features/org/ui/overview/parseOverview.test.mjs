@@ -79,7 +79,7 @@ test("directionSlots fills four slugs and keeps the newest head", () => {
   ]);
   assert.deepEqual(
     slots.map((slot) => slot.slug),
-    ["mission", "vision", "objectives", "strategy"],
+    ["mission", "vision", "situation", "objectives", "strategy"],
   );
   assert.equal(slots[0].head?.version, 3);
   assert.equal(slots[0].head?.confirmedBy, CONFIRMER);

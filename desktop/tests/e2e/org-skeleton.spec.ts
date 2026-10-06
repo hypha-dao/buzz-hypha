@@ -9,7 +9,7 @@ import { installMockBridge } from "../helpers/bridge";
  * § The app; Prototype map § Routes; Protocol §6.5 / §4.8):
  *
  *   - the `org` gate hides the sidebar group when off;
- *   - `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work` render their
+ *   - `/org`, `/org/work`, `/org/work/$itemId`, `/org/my-work`, `/org/my-drafts` render their
  *     empty states;
  *   - a command hook produces the C-1 kind and tags (captured `sign_event`).
  */
@@ -34,6 +34,7 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
     await expect(page.getByTestId("sidebar-org-overview")).toHaveCount(0);
     await expect(page.getByTestId("sidebar-org-work")).toHaveCount(0);
     await expect(page.getByTestId("sidebar-org-my-work")).toHaveCount(0);
+    await expect(page.getByTestId("sidebar-org-my-drafts")).toHaveCount(0);
 
     await waitForAnimations(page);
     await page.getByTestId("sidebar-primary-menu").screenshot({
@@ -109,7 +110,27 @@ test.describe("Org doors — feature gate and skeleton (D-0)", () => {
     });
   });
 
-  test("06 — a command hook publishes the C-1 kind and draft e tag", async ({
+  test("06 — My drafts renders Nothing here.", async ({ page }) => {
+    await installMockBridge(page);
+    await openApp(page);
+
+    await page.getByTestId("sidebar-org-my-drafts").click();
+    await expect(page.getByTestId("org-my-drafts-empty")).toHaveText(
+      "Nothing here.",
+    );
+    await expect(page.getByTestId("chat-title")).toHaveText("My drafts");
+    await expect(page.getByTestId("sidebar-org-my-drafts")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+
+    await waitForAnimations(page);
+    await page.getByTestId("org-my-drafts").screenshot({
+      path: `${SHOTS}/06-my-drafts-empty.png`,
+    });
+  });
+
+  test("07 — a command hook publishes the C-1 kind and draft e tag", async ({
     page,
   }) => {
     await installMockBridge(page);

@@ -1,5 +1,6 @@
 import {
   ClipboardList,
+  FilePen,
   LayoutDashboard,
   ListTree,
   UserRound,
@@ -36,6 +37,14 @@ const PERSONAL_ITEMS = [
     match: (pathname: string) => pathname === "/org/my-work",
     onSelect: "goOrgMyWork" as const,
     testId: "sidebar-org-my-work",
+  },
+  {
+    icon: FilePen,
+    label: "My drafts",
+    match: (pathname: string) =>
+      pathname === "/org/my-drafts" || pathname.startsWith("/org/draft/"),
+    onSelect: "goOrgMyDrafts" as const,
+    testId: "sidebar-org-my-drafts",
   },
   {
     icon: UserRound,
@@ -106,6 +115,8 @@ function openSidebarItem(
       return navigation.goOrgWork();
     case "goOrgMyWork":
       return navigation.goOrgMyWork();
+    case "goOrgMyDrafts":
+      return navigation.goOrgMyDrafts();
     case "goOrgProfile":
       return navigation.goOrgProfile();
   }

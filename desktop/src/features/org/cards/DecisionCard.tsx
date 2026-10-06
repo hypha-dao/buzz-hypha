@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
+import { directionBodyLines } from "@/features/org/chatDraft";
 import { proposalChatLink } from "@/features/org/proposalChat";
 import { proposalDetail } from "@/features/org/proposalDetail";
 import { formatWorkDate } from "@/features/org/work/model";
@@ -13,9 +14,24 @@ export function ProposalDetailPanel({ event }: { event: OrgEventLike }) {
   const detail = proposalDetail(event);
   if (!detail) return null;
   const link = proposalChatLink(event);
+  const lined =
+    detail.slug === "objectives" || detail.slug === "strategy"
+      ? directionBodyLines(detail.slug, detail.body)
+      : [];
   return (
     <div className="flex flex-col gap-2">
-      {detail.body ? (
+      {lined.length > 1 ? (
+        <div className="flex flex-col gap-1.5 text-sm leading-relaxed text-foreground">
+          {lined.map((line) => (
+            <p
+              className="rounded-md border border-border/60 bg-background/40 px-3 py-1.5"
+              key={line}
+            >
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : detail.body ? (
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
           {detail.body}
         </p>
@@ -30,10 +46,10 @@ export function ProposalDetailPanel({ event }: { event: OrgEventLike }) {
       {link?.kind === "direction" ? (
         <Link
           className="text-sm font-medium text-foreground underline"
-          params={{ slug: link.slug }}
-          to="/org/direction/$slug"
+          params={{ proposalId: link.proposalId }}
+          to="/org/proposal/$proposalId"
         >
-          {link.label}
+          Open the proposal
         </Link>
       ) : null}
       {link?.kind === "project" ? (

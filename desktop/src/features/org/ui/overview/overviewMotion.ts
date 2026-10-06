@@ -1,7 +1,8 @@
 /**
  * Entrance timing for Overview cards, matching the org-preview direction
  * choreography: cards settle in a stagger, a rule draws under the title,
- * each line writes in, and the footer stamp lands last.
+ * and the footer stamp lands last. The copy itself stays visible; these
+ * delays only stagger the decorative motion.
  */
 
 const CARD_STAGGER_MS = 140;

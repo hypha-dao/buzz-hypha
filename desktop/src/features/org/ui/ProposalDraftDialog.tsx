@@ -33,6 +33,7 @@ import { Textarea } from "@/shared/ui/textarea";
 import {
   announcementLabel,
   commandForDraft,
+  directionDraftText,
   dateInputToUnix,
   dateInputValue,
   draftKindLabel,
@@ -175,12 +176,7 @@ export function ProposalDraftDialog({
         draft.kind === "direction" && lined(draft.slug) && head
           ? head.lines.map((line) => line.text).filter(Boolean)
           : [];
-      const next = existing.some((line) => line === draft.body)
-        ? existing.join("\n")
-        : existing.length > 0
-          ? `${existing.join("\n")}\n${draft.body}`
-          : draft.body;
-      setBody(next);
+      setBody(directionDraftText(draft.slug, draft.body, existing));
       setTitle("");
       setBrief("");
       return;
@@ -237,13 +233,25 @@ export function ProposalDraftDialog({
     event.preventDefault();
     if (!canPublish) return;
     if (draft.kind === "dri" && !holder.trim()) return;
+    const slug =
+      draft.kind === "direction" || draft.kind === "revise-direction"
+        ? draft.slug
+        : null;
+    const hasLine =
+      slug !== null &&
+      lined(slug) &&
+      draftLines(body).some((line) => line.trim().length >= 12);
+    if (slug && lined(slug) && !hasLine) {
+      setError(
+        slug === "objectives"
+          ? "Add at least one objective."
+          : "Add at least one strategy.",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const slug =
-        draft.kind === "direction" || draft.kind === "revise-direction"
-          ? draft.slug
-          : null;
       const lines =
         slug && lined(slug)
           ? body
@@ -310,7 +318,12 @@ export function ProposalDraftDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open>
-      <DialogContent className={cn("max-w-lg", ORG_PAPER_CLASS)}>
+      <DialogContent
+        className={cn(
+          "max-h-[calc(100vh-2rem)] max-w-3xl overflow-y-auto",
+          ORG_PAPER_CLASS,
+        )}
+      >
         <DialogHeader>
           <DialogTitle>{label} draft</DialogTitle>
           <DialogDescription>
@@ -334,12 +347,13 @@ export function ProposalDraftDialog({
               </Field>
               <Field label="Brief" id="org-draft-brief">
                 <Textarea
+                  className="min-h-72 resize-y leading-relaxed"
                   data-testid="org-draft-brief"
                   id="org-draft-brief"
                   onChange={mark(setBrief)}
                   readOnly={!canPublish}
                   required
-                  rows={5}
+                  rows={14}
                   value={brief}
                 />
               </Field>
@@ -371,17 +385,29 @@ export function ProposalDraftDialog({
             </>
           ) : null}
           {draft.kind === "direction" || draft.kind === "revise-direction" ? (
-            <Field label="Text" id="org-draft-body">
-              <Textarea
-                data-testid="org-draft-body"
-                id="org-draft-body"
-                onChange={mark(setBody)}
+            lined(draft.slug) ? (
+              <LinedDraftFields
+                body={body}
+                onChange={(next) => {
+                  setDirty(true);
+                  setBody(next);
+                }}
                 readOnly={!canPublish}
-                required
-                rows={6}
-                value={body}
+                slug={draft.slug}
               />
-            </Field>
+            ) : (
+              <Field label="Text" id="org-draft-body">
+                <Textarea
+                  data-testid="org-draft-body"
+                  id="org-draft-body"
+                  onChange={mark(setBody)}
+                  readOnly={!canPublish}
+                  required
+                  rows={6}
+                  value={body}
+                />
+              </Field>
+            )
           ) : null}
           {draft.kind === "dri" ? (
             <>
@@ -749,6 +775,78 @@ function HolderField({
         {menu}
       </DropdownMenu>
     </Field>
+  );
+}
+
+/** One field per objective or strategy line. `body` stays newline-joined. */
+function draftLines(body: string): string[] {
+  return body.length > 0 ? body.split("\n") : [""];
+}
+
+function LinedDraftFields({
+  body,
+  onChange,
+  readOnly,
+  slug,
+}: {
+  body: string;
+  onChange: (body: string) => void;
+  readOnly: boolean;
+  slug: DirectionSlug;
+}) {
+  const noun = slug === "objectives" ? "objective" : "strategy";
+  const title = slug === "objectives" ? "Objective" : "Strategy";
+  const lines = draftLines(body);
+  const setLine = (index: number, value: string) => {
+    const next = [...lines];
+    next[index] = value;
+    onChange(next.join("\n"));
+  };
+  const removeLine = (index: number) => {
+    const next = lines.filter((_, at) => at !== index);
+    onChange((next.length > 0 ? next : [""]).join("\n"));
+  };
+
+  return (
+    <div className="space-y-3">
+      {lines.map((line, index) => {
+        const id = `org-draft-line-${index}`;
+        const number = index + 1;
+        return (
+          <Field id={id} key={id} label={`${title} ${number}`}>
+            <Textarea
+              data-testid={id}
+              id={id}
+              onChange={(event) => setLine(index, event.target.value)}
+              readOnly={readOnly}
+              rows={3}
+              value={line}
+            />
+            {readOnly || lines.length < 2 ? null : (
+              <button
+                aria-label={`Remove ${noun} ${number}`}
+                className="text-sm text-muted-foreground underline decoration-foreground/30 underline-offset-4 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid={`org-draft-line-remove-${index}`}
+                onClick={() => removeLine(index)}
+                type="button"
+              >
+                Remove
+              </button>
+            )}
+          </Field>
+        );
+      })}
+      {readOnly ? null : (
+        <Button
+          data-testid="org-draft-line-add"
+          onClick={() => onChange([...lines, ""].join("\n"))}
+          type="button"
+          variant="outline"
+        >
+          {noun === "objective" ? "Add an objective" : "Add a strategy"}
+        </Button>
+      )}
+    </div>
   );
 }
 

@@ -9,6 +9,7 @@ export const DIRECTION_LABEL: Record<
 > = {
   mission: { title: "Mission", question: "why we exist" },
   vision: { title: "Vision", question: "where we are going" },
+  situation: { title: "Situation", question: "where we stand today" },
   objectives: {
     title: "Objectives",
     question: "what we aim to have done soon",

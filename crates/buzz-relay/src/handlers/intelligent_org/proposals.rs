@@ -169,7 +169,7 @@ fn direction_slug(cmd: &Command<'_>) -> Result<DirectionSlug, IngestError> {
         .ok_or_else(|| IngestError::Rejected("invalid: missing d tag (slug)".into()))?;
     serde_json::from_value(serde_json::Value::String(slug.to_owned())).map_err(|_| {
         IngestError::Rejected(format!(
-            "invalid: unknown direction slug {slug:?}; expected mission, vision, objectives, or strategy"
+            "invalid: unknown direction slug {slug:?}; expected mission, vision, situation, objectives, or strategy"
         ))
     })
 }

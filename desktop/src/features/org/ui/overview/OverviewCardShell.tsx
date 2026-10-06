@@ -12,6 +12,8 @@ type OverviewCardShellProps = {
   className?: string;
   enterIndex: number;
   testId?: string;
+  /** Spans both columns of a two-column grid. */
+  wide?: boolean;
 };
 
 /** One overview card: settles on enter, lifts on hover and keyboard focus. */
@@ -20,9 +22,15 @@ export function OverviewCardShell({
   className,
   enterIndex,
   testId,
+  wide = false,
 }: OverviewCardShellProps) {
   return (
-    <div className="org-overview-lift h-full min-w-0">
+    <div
+      className={cn(
+        "org-overview-lift h-full min-w-0",
+        wide && "md:col-span-2",
+      )}
+    >
       <Card
         className={cn(
           "org-overview-settle flex h-full flex-col rounded-2xl p-6",

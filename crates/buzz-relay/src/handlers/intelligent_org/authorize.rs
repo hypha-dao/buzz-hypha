@@ -181,8 +181,8 @@ pub fn stale_base(base: u32, head_version: Option<u32>) -> Result<(), IngestErro
     }
 }
 
-/// The content of a `direction` proposal (§4.1): `mission` and `vision`
-/// have no `lines`.
+/// The content of a `direction` proposal (§4.1): only `objectives` and
+/// `strategy` have `lines`.
 pub fn direction_content(
     slug: DirectionSlug,
     content: &DirectionProposeContent,
@@ -194,7 +194,7 @@ pub fn direction_content(
             .as_ref()
             .is_some_and(|lines| !lines.is_empty())
     {
-        return Err(invalid("mission and vision have no lines"));
+        return Err(invalid("only objectives and strategy have lines"));
     }
     Ok(())
 }
@@ -962,7 +962,12 @@ mod tests {
         };
         assert_eq!(
             message(direction_content(DirectionSlug::Vision, &lined)),
-            "invalid: mission and vision have no lines"
+            "invalid: only objectives and strategy have lines"
+        );
+        assert!(direction_content(DirectionSlug::Situation, &empty).is_ok());
+        assert_eq!(
+            message(direction_content(DirectionSlug::Situation, &lined)),
+            "invalid: only objectives and strategy have lines"
         );
         assert!(direction_content(DirectionSlug::Objectives, &lined).is_ok());
     }

@@ -282,6 +282,8 @@ selling, two visits booked. Hall: never run a weekday evening; no licence for
 after 18:00. Stage: running, one season in._
 **Owner · changes · tier:** written by Shapers, metrics fetched live · fast ·
 **Tier 1**
+**Home:** the prose half is the `situation` direction text (Protocol §4.1);
+the per-objective metrics are not stored anywhere yet.
 
 #### 12. Live work portfolio
 
@@ -802,7 +804,7 @@ change. The tension is real and worth stating plainly:
   that read like the work of someone who has run this kind of organisation
   before_ — needs them.
 - **The path the design already names** — Organizational Intelligence § 3:
-  _if L3 ever outgrows four short texts, the index-then-select pattern
+  _if L3 ever outgrows five short texts, the index-then-select pattern
   returns: send one line per artifact, load bodies by name. Nothing else in
   the design changes._
 
@@ -818,7 +820,7 @@ change. The tension is real and worth stating plainly:
 | 8  | Priorities and trade-offs   | strategy prose only                                                  | partial  |
 | 9  | Strategy and bets           | `39100` strategy lines                                               | exists   |
 | 10 | Anti-goals and red lines    | strategy lines that refuse                                           | partial  |
-| 11 | Current state and baselines | per-project health read (`50101`); no org-level metrics              | partial  |
+| 11 | Current state and baselines | `39100` situation (one confirmed paragraph); per-project health read (`50101`); no org-level metrics | partial  |
 | 12 | Live work portfolio         | work tree (`39101`), open proposals (`39102`)                        | exists   |
 | 13 | Ideas and requests pool     | chat; drafts from talk (J7)                                          | partial  |
 | 14 | People and capacity         | `39105` profile: about, skills, open limit; no availability, aspirations, time zone | partial |

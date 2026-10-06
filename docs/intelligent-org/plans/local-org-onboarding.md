@@ -12,7 +12,7 @@ Personal Assistant → Shaper → bootstrap flow before staging (O-2).
    agent is the hosted one (`39103.agent`), not a member-owned assistant.
    Failure surfaces a toast with Retry (no silent Welcome fallback, no
    Personal Assistant).
-3. The org agent speaks in the thread: two short lines, then replies.
+3. The org agent opens by saying what it can do, then replies.
    There is no guide card under the composer. The operator's model key
    (`OPENAI_COMPAT_*`, or `VENICE_API_KEY`) is enough — members do not
    configure a runtime.

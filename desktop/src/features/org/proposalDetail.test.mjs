@@ -5,8 +5,12 @@ import { KIND_IO_PROPOSAL } from "../../shared/constants/kinds.ts";
 import {
   chatProposalPreview,
   currentDirectionProposals,
+  proposalCardFace,
+  proposalClaimLines,
   proposalDetail,
+  proposalKindLabel,
   proposalMessageId,
+  proposalPage,
 } from "./proposalDetail.ts";
 
 const PROPOSAL = "33333333-3333-4333-8333-333333333333";
@@ -44,6 +48,114 @@ test("a direction proposal expands to its sentence", () => {
   );
   assert.equal(detail.slug, "mission");
   assert.equal(detail.body, "We host the hall for the town.");
+});
+
+test("a strategy proposal card shows each line on its own", () => {
+  const stored = proposal({
+    kind: "direction",
+    payload: {
+      slug: "strategy",
+      body: "We refuse new orgs. Hypha comes first. Hypha Buzz wins when the two compete.",
+      lines: [
+        { text: "We refuse new orgs. Hypha comes first." },
+        { text: "Hypha Buzz wins when the two compete." },
+      ],
+    },
+  });
+  assert.deepEqual(proposalClaimLines(stored), [
+    "We refuse new orgs. Hypha comes first.",
+    "Hypha Buzz wins when the two compete.",
+  ]);
+  const paragraph = proposal({
+    kind: "direction",
+    payload: {
+      slug: "objectives",
+      body: "Book the hall by March. Pay growers the week they sell.",
+    },
+  });
+  assert.deepEqual(proposalClaimLines(paragraph), [
+    "Book the hall by March.",
+    "Pay growers the week they sell.",
+  ]);
+  const mission = proposal({
+    kind: "direction",
+    payload: { slug: "mission", body: "We host the hall. For the town." },
+  });
+  assert.deepEqual(proposalClaimLines(mission), []);
+});
+
+test("each direction proposal names itself and opens as a proposal", () => {
+  for (const [slug, label] of [
+    ["mission", "Mission proposal"],
+    ["vision", "Vision proposal"],
+    ["situation", "Situation proposal"],
+    ["objectives", "Objectives proposal"],
+    ["strategy", "Strategy proposal"],
+  ]) {
+    const opened = proposal(
+      {
+        kind: "direction",
+        status: "open",
+        payload: {
+          slug,
+          body: `The ${slug} text.`,
+          lines:
+            slug === "objectives" || slug === "strategy"
+              ? [{ text: "First line" }, { text: "Second line" }]
+              : undefined,
+        },
+      },
+      [
+        ["d", PROPOSAL],
+        ["s", "open"],
+      ],
+    );
+    assert.equal(proposalKindLabel(opened), label);
+    assert.deepEqual(proposalCardFace(opened, "Needs your answer"), {
+      label,
+      asker: null,
+    });
+    assert.deepEqual(proposalCardFace(opened, "Maya is asking you"), {
+      label,
+      asker: "Maya is asking you",
+    });
+    const page = proposalPage(opened);
+    assert.equal(page.eyebrow, label);
+    assert.equal(page.parentTo, "/org/my-work");
+    assert.equal(page.directionSlug, slug);
+    if (slug === "objectives" || slug === "strategy") {
+      assert.deepEqual(
+        page.lines.map((line) => line.text),
+        ["First line", "Second line"],
+      );
+      assert.equal(page.brief, `The ${slug} text.`);
+    } else {
+      assert.equal(page.title, `The ${slug} text.`);
+      assert.equal(page.brief, "");
+      assert.deepEqual(page.lines, []);
+    }
+  }
+  const repeated = proposalPage(
+    proposal({
+      kind: "direction",
+      payload: {
+        slug: "objectives",
+        body: "Book the hall by March.\nPay the growers the week they sell.",
+        lines: [
+          { text: "Book the hall by March." },
+          { text: "Pay the growers the week they sell." },
+        ],
+      },
+    }),
+  );
+  assert.equal(repeated.brief, "");
+  assert.equal(repeated.lines.length, 2);
+
+  const project = proposal({
+    kind: "project",
+    payload: { title: "Weekday hall", brief: "Book it." },
+  });
+  assert.equal(proposalKindLabel(project), "Project proposal");
 });
 
 test("the card hangs on the agent message that asked for it", () => {

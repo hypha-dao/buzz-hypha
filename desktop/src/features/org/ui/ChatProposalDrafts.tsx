@@ -5,49 +5,23 @@ import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useIdentityQuery } from "@/shared/api/hooks";
 
 import {
+  directionBodyLines,
   driDraftSentence,
   draftKindLabel,
   draftSeries,
   draftTitle,
   openChatDrafts,
-  type ChatDraft,
   type ChatDraftMessage,
 } from "../chatDraft";
+import { useDraftLifecycle } from "../draftLifecycle";
+import { draftPersonPubkey, draftPublishableBy } from "../myDrafts";
 import { useOverviewEvents } from "../hooks/useOverviewEvents";
 import { useWorkEvents } from "../hooks/useWorkEvents";
 import { parseShapersState } from "./overview/parseOverview";
 import { ProposalDraftDialog } from "./ProposalDraftDialog";
 import { latestWorkItems, parseWorkItem } from "../work/model";
 
-const STORAGE_KEY = "buzz.org.publishedDrafts";
-const MAX_PUBLISHED = 200;
-
 type FooterMap = Record<string, React.ReactNode>;
-
-function loadPublished(): Set<string> {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((id): id is string => typeof id === "string"));
-  } catch {
-    return new Set();
-  }
-}
-
-function pubkeyOf(draft: ChatDraft): string | null {
-  switch (draft.kind) {
-    case "project":
-      return draft.suggestedDri;
-    case "dri":
-    case "shapers-add":
-    case "shapers-remove":
-    case "shapers-agent":
-      return draft.pubkey;
-    default:
-      return null;
-  }
-}
 
 /**
  * Draft cards under the agent's messages, in the DM and in every channel.
@@ -68,8 +42,17 @@ export function ChatProposalDrafts({
   const viewer = useIdentityQuery().data?.pubkey ?? null;
   const overview = useOverviewEvents();
   const work = useWorkEvents();
-  const [published, setPublished] =
-    React.useState<ReadonlySet<string>>(loadPublished);
+  const lifecycle = useDraftLifecycle(viewer);
+  const [unrecorded, setUnrecorded] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const closed = React.useMemo(
+    () =>
+      unrecorded.size === 0
+        ? lifecycle.closed
+        : new Set([...lifecycle.closed, ...unrecorded]),
+    [lifecycle.closed, unrecorded],
+  );
   const [openId, setOpenId] = React.useState<string | null>(null);
   const shapers = React.useMemo(
     () => parseShapersState(overview.events),
@@ -91,8 +74,8 @@ export function ChatProposalDrafts({
   }, [work.events]);
   const drafts = React.useMemo(() => {
     if (!orgAgentPubkey) return [];
-    return openChatDrafts(messages, orgAgentPubkey, published, workItems);
-  }, [messages, orgAgentPubkey, published, workItems]);
+    return openChatDrafts(messages, orgAgentPubkey, closed, workItems);
+  }, [closed, messages, orgAgentPubkey, workItems]);
   const titles = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const item of workItems) map.set(item.id, item.title);
@@ -101,7 +84,7 @@ export function ChatProposalDrafts({
   const pubkeys = React.useMemo(() => {
     const found = new Set<string>();
     for (const draft of drafts) {
-      const pubkey = pubkeyOf(draft);
+      const pubkey = draftPersonPubkey(draft);
       if (pubkey) found.add(pubkey);
     }
     return [...found];
@@ -117,20 +100,10 @@ export function ChatProposalDrafts({
     );
   }, [drafts, openId]);
 
-  const viewerIsShaper = Boolean(
-    viewer &&
-      shapers?.shapers.some(
-        (pubkey) => pubkey.trim().toLowerCase() === viewer.trim().toLowerCase(),
-      ),
-  );
-  const canPublish = Boolean(
-    openDraft &&
-      viewer &&
-      (openDraft.kind === "dri"
-        ? openDraft.from === viewer.trim().toLowerCase()
-        : viewerIsShaper),
-  );
-  const personPubkey = openDraft ? pubkeyOf(openDraft) : null;
+  const canPublish = openDraft
+    ? draftPublishableBy(openDraft, viewer, shapers?.shapers)
+    : false;
+  const personPubkey = openDraft ? draftPersonPubkey(openDraft) : null;
   const personName = personPubkey
     ? resolveUserLabel({
         pubkey: personPubkey,
@@ -184,7 +157,26 @@ export function ChatProposalDrafts({
           <span className="block text-xs font-medium text-muted-foreground">
             Draft · {draftKindLabel(draft)}
           </span>
-          <span className="mt-1 block text-sm text-foreground">{title}</span>
+          {draft.kind === "direction" || draft.kind === "revise-direction" ? (
+            draft.slug === "objectives" || draft.slug === "strategy" ? (
+              <span className="mt-2 block space-y-1.5 text-sm text-foreground">
+                {directionBodyLines(draft.slug, draft.body).map((line) => (
+                  <span
+                    className="block rounded-md border border-border/60 bg-background/40 px-3 py-1.5"
+                    key={line}
+                  >
+                    {line}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="mt-1 block whitespace-pre-wrap text-sm text-foreground">
+                {draft.body}
+              </span>
+            )
+          ) : (
+            <span className="mt-1 block text-sm text-foreground">{title}</span>
+          )}
           <span className="mt-2 block text-xs font-medium text-foreground">
             Open
           </span>
@@ -211,20 +203,10 @@ export function ChatProposalDrafts({
   }, [onSentences]);
 
   const remember = (messageId: string) => {
-    setPublished((current) => {
-      const next = new Set(current);
-      next.add(messageId);
-      const kept =
-        next.size > MAX_PUBLISHED
-          ? new Set([...next].slice(-MAX_PUBLISHED))
-          : next;
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...kept]));
-      } catch {
-        // The in-memory set still hides the draft in this view.
-      }
-      return kept;
-    });
+    if (!lifecycle.markPublished(messageId)) {
+      // Storage refused it. Still hide the card in this view.
+      setUnrecorded((current) => new Set([...current, messageId]));
+    }
     setOpenId(null);
   };
 

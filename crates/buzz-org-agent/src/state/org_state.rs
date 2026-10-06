@@ -498,6 +498,7 @@ fn slug_key(slug: DirectionSlug) -> &'static str {
     match slug {
         DirectionSlug::Mission => "mission",
         DirectionSlug::Vision => "vision",
+        DirectionSlug::Situation => "situation",
         DirectionSlug::Objectives => "objectives",
         DirectionSlug::Strategy => "strategy",
     }

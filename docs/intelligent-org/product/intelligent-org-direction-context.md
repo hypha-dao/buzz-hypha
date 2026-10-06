@@ -12,7 +12,7 @@ The org agent suggests a project when it sees a **gap**: an objective, or a
 strategy line that names an action, that no live project serves. Whether that
 suggestion is one the Shapers would have written themselves depends almost
 entirely on what the Shapers have put down before the agent looks. This
-document says what that is: what goes in each of the four direction texts,
+document says what that is: what goes in each of the five direction texts,
 what lives outside them, where each thing a Shaper wants the agent to know
 belongs, and how to tell when the org is ready.
 
@@ -43,7 +43,7 @@ Seven things, in order of weight:
 One rule sits over all seven:
 
 > **When the agent suggests projects, it reads nothing anyone said in chat.**
-> If it is not in the four texts, a profile, the work tree, or a past decision
+> If it is not in the five texts, a profile, the work tree, or a past decision
 > on a draft, it does not exist for this move.
 
 That is a design choice, not a gap (Org agent § 8.1: _nothing from L1 enters a
@@ -70,7 +70,7 @@ be confirmed into direction.
 
 | Slice                                                      | Comes from                                    |
 | ---------------------------------------------------------- | --------------------------------------------- |
-| The four direction texts, in full, with line ids           | the latest confirmed `39100` of each          |
+| The five direction texts, in full, with line ids           | the latest confirmed `39100` of each          |
 | Community facts: Shapers, decision rules, language, today  | `39103` and the relay                         |
 | Every live project, one line each, with the objective it serves and its holder | the work tree (`39101` roots) |
 | The last two closed projects, one line each                | the work tree                                 |
@@ -105,11 +105,12 @@ That is the whole of this document in one table.
 
 ---
 
-## 2. The four texts, written for project suggestions
+## 2. The five texts, written for project suggestions
 
 Each text is a **statement** (one sentence) and, where it helps, **a paragraph
 or two behind it** (Protocol §4.1: `body` is _"the statement and the paragraph
-or two behind it"_). Objectives and strategy are also **numbered lines** —
+or two behind it"_). The situation is the exception: one paragraph, no
+separate statement. Objectives and strategy are also **numbered lines** —
 those lines are what a project cites.
 
 The examples are River Commons from the
@@ -176,6 +177,43 @@ stalls happened. Those change weekly and are fetched live (Organizational
 Intelligence § 1: _L3 holds interpretation, never readings_).
 
 **Fails:** a slogan ("A better food future for all"), or a status report.
+
+### Situation — where we stand today
+
+**What the agent uses it for.** Where every objective starts. The same
+objective means a different first project for an idea nobody has tested, a
+service that is running, and an org in trouble: a test of demand, the number
+that matters most, or the repair. Without it the agent drafts from the end
+state.
+
+**It must say, in one paragraph of three to six sentences:**
+
+- **The stage.** Only an idea, just started, running a service or product,
+  growing, or in trouble.
+- **What exists.** The service, who uses it, the partners — by name.
+- **What is proven and what is only assumed.** The line between them is where
+  the next project starts.
+- **What is stuck**, if anything, and **the one thing the org must learn
+  next.**
+- **Capacity and money, in words.** _Three volunteers, a few hours a week;
+  money for the season, none for a hall._
+
+**Example.**
+
+> Running one season: the Saturday stall every week since March, three growers
+> selling, about forty regulars. Demand on Saturdays is proven; whether anyone
+> comes on a weekday night is not — we have never run one, and the hall has no
+> evening licence yet. Three volunteers carry it on a few hours a week, and the
+> season pays for itself but not for a hall. The next thing we must learn is
+> whether a weekday night fills.
+
+_About forty regulars_ is a reading the Shapers chose to state, in words; it
+dates as the org grows, which is why the situation is redrafted when the stage
+changes. Exact counts stay out (§ 7).
+
+**Fails:** a status report (_this week: 112 sales, €640_), a wish (_we are
+growing fast_), or the mission again. If it would read the same next year, it
+is not a situation.
 
 ### Objectives — the text projects are drafted from
 
@@ -270,7 +308,7 @@ is really an objective (_reach 500 members_).
 
 ## 3. What you want the agent to know, and where it goes
 
-Shapers often have more to say than four texts seem to hold. Almost all of it
+Shapers often have more to say than five texts seem to hold. Almost all of it
 has a home. Put it there; do not invent a fifth document.
 
 | You want the agent to know…                                  | Put it in                                                       | Because                                                              |
@@ -360,7 +398,8 @@ and the briefs to be generic.
 
 ### What a good first run needs
 
-- [ ] All four texts confirmed.
+- [ ] All five texts confirmed.
+- [ ] The situation names the stage and what is proven versus assumed.
 - [ ] Three to seven objective lines; each an outcome, checkable, dated, with
       its starting point where it decides the first step, and its outside
       reason where there is one.
@@ -370,7 +409,7 @@ and the briefs to be generic.
 - [ ] Every member has a profile with specific skills.
 - [ ] Every piece of work already under way is a project citing its objective.
 - [ ] No balance, count, or other live number appears in any text.
-- [ ] All four texts together read in a few minutes. If they take an
+- [ ] All five texts together read in a few minutes. If they take an
       afternoon, they are too long (Organizational Intelligence § 2: _L3 must
       stay small enough that a person could read all of it in an afternoon_ —
       and the whole of it goes into every call, up to ~6,000 tokens).
@@ -382,8 +421,34 @@ and the briefs to be generic.
 ## 6. A brief to start the conversation with the agent
 
 The founder (in their DM with the agent) or the Shapers (in `#shapers`) can
-paste this, fill it in, and let the agent walk the four texts with them one at
-a time. Everything settled becomes a draft the Shapers confirm.
+paste this, fill it in, and let the agent walk it with them one piece at a
+time. Everything settled becomes a draft the Shapers confirm.
+
+**The order is mission, vision, situation, objectives, strategy.** The
+answers under _Where we stand today_ become the situation draft. A piece is
+finished when it is confirmed, not when it is drafted: the reply that drafts
+one ends there, and the agent starts the next piece only once the Overview
+shows a version, or when someone asks to move on. When a draft it made is
+confirmed, the agent says so in the room the draft came from and asks what
+the next piece needs, so nobody has to ask what comes next. It asks one
+question per message, the most decisive first, often with an example answer,
+and builds the next question on the reply. Objectives
+wait for the situation because it decides what the first objective
+can be: an untested idea gets a test of whether anyone wants it before
+anything is built, a running service gets the one or two numbers that matter
+most, and an org in trouble gets the repair first. The agent reads the
+overview first (live and closed work, people, profiles, Shapers) and asks only
+what it does not show.
+
+**The agent judges every text it is given**, against the bars in § 2: strong,
+close, or weak, and what exactly is missing. When a text is not strong it ends
+with a _Sharper draft:_ built only from what the Shapers said and what the
+overview shows. When the missing piece is a fact only they know, such as who
+the org is for, it asks instead of guessing. The draft card still carries
+their own words; when they take the sharper version, the agent drafts that
+instead. A statement in the wrong text is called out: a _who-for_ is mission,
+an end state is vision, an activity is a project, a refusal is strategy. The
+prompt is `DIRECTION_COACHING` in `crates/buzz-org-agent/src/chat_act.rs`.
 
 ```markdown
 ## Who we are
@@ -398,6 +463,16 @@ a time. Everything settled becomes a draft the Shapers confirm.
 - When it is true, someone walking in would see:
 - The 2–4 measures that make it true:
 - By when:
+
+## Where we stand today
+- Stage (only an idea / just started / running a service or product / growing / in trouble):
+- What exists today (the service, its users or customers, partners):
+- What is proven, and what is only assumed:
+- What is working, and what is stuck:
+- Who does the work, and how many hours a week:
+- Money, in words (no balances):
+- Outside dates (funding rounds, seasons, permits, a partner's deadline):
+- The one thing we must learn next:
 
 ## What we want done soon (3–7)
 For each: the outcome · the date · where we are today · the outside reason for the date, if any
@@ -473,9 +548,21 @@ change made here.
    Tuesdays, a licence, a signed partnership. Today the choice is the mission
    or strategy paragraph, where they are interpretation rather than facts. If
    orgs keep needing this, it is an argument for a protocol change
-   (Organizational Intelligence § 2: _a fifth artifact is a protocol change to
-   argue for, not a slot to fill_) — not something to stretch the four texts
-   for.
+   (Organizational Intelligence § 2: _a sixth artifact is a protocol change to
+   argue for, not a slot to fill_) — not something to stretch the five texts
+   for. The situation may say _we hold the hall on Tuesdays_ as part of where
+   the org stands, but it is the Shapers' reading, not a register.
 6. **Priority between objectives is prose.** The agent reads a strategy line on
    order, but nothing structural says which objective comes first. Open:
    whether line order should carry priority, stated once in the prompt.
+7. **The situation is the fifth text.** Where the org stands is a confirmed
+   `39100` with `d = situation` (Protocol §4.1), between vision and objectives
+   on the Overview, full width. The agent asks for it before objectives (§ 6),
+   drafts it as one paragraph, and the Shapers confirm it like any other text,
+   so a later conversation and the J1 gap move both read it. It closes
+   category 11 (_current state_) in
+   [Full project context](./intelligent-org-project-context.md) for the part
+   that is interpretation; live counts stay in the tree. Open: the agent does
+   not yet notice when the situation has gone stale — a passed project or a
+   met objective that changes the stage — and offer a redraft unprompted;
+   today it redrafts when told something changed.

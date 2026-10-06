@@ -16,7 +16,7 @@ import { installMockBridge } from "../helpers/bridge";
  *   - four direction cards from seeded 39100 (version + confirmer) and empty slots;
  *   - the direction form emits 50002 with base = current version;
  *   - Shapers card lists each Shaper and opens their profile;
- *   - Personal holds My work and My profile;
+ *   - Personal holds My work, My drafts, and My profile;
  *   - who-holds-what from root 39101s.
  * The tally card stays off this door for now.
  */
@@ -38,7 +38,13 @@ test.describe("Org Overview door (D-1)", () => {
     await installMockBridge(page);
     await openOverview(page);
 
-    for (const slug of ["mission", "vision", "objectives", "strategy"]) {
+    for (const slug of [
+      "mission",
+      "vision",
+      "situation",
+      "objectives",
+      "strategy",
+    ]) {
       await expect(
         page.getByTestId(`org-direction-card-${slug}`),
       ).toBeVisible();
@@ -72,6 +78,16 @@ test.describe("Org Overview door (D-1)", () => {
     await expect(page.getByTestId("org-direction-empty-strategy")).toHaveText(
       "Not set yet.",
     );
+    const situation = page.getByTestId("org-direction-card-situation");
+    await expect(situation).toContainText("where we stand today");
+    await expect(situation).toContainText("never run a weekday night");
+    const [visionBox, situationBox, objectivesBox] = await Promise.all(
+      ["vision", "situation", "objectives"].map((slug) =>
+        page.getByTestId(`org-direction-card-${slug}`).boundingBox(),
+      ),
+    );
+    expect(situationBox?.y).toBeGreaterThan(visionBox?.y ?? 0);
+    expect(objectivesBox?.y).toBeGreaterThan(situationBox?.y ?? 0);
 
     await expect(page.getByTestId("org-shapers-members")).toBeVisible();
     await expect(page.getByTestId(`org-shaper-${VIEWER_PUBKEY}`)).toBeVisible();
@@ -84,6 +100,7 @@ test.describe("Org Overview door (D-1)", () => {
       "Personal",
     );
     await expect(page.getByTestId("sidebar-org-my-work")).toBeVisible();
+    await expect(page.getByTestId("sidebar-org-my-drafts")).toBeVisible();
     await expect(page.getByTestId("sidebar-org-my-profile")).toBeVisible();
 
     await expect(page.getByTestId(`org-hold-${HALL_PROJECT_ID}`)).toContainText(

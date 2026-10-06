@@ -21,6 +21,13 @@ its spec. Where a slice depends on a code fact, it names the item in the
 (V-n) and the decision in the [Readiness review](./intelligent-org-readiness.md)
 (D-n) it needs.
 
+**The next schedule is the [context, planning, and review plan](./intelligent-org-context-engine-plan.md).**
+It starts from the slices below that are already merged and cuts the path
+to a working interview, planner, project context, prompts, and review,
+as **one pull request**.
+This document stays the record of waves 1–4. Its A-2, A-3, and A-4 rows
+are superseded there, and R-9b is pulled forward as H-1.
+
 **Scope.** Waves 1–4 are [Phase 0](./intelligent-org-phase-0.md) — Design
 build steps 1–3, the dogfood community, the four moves. Waves 5–8 are
 Design steps 4–8 as epics, sliced when their wave opens.

@@ -9,12 +9,14 @@
 export type ChatDirectionSlug =
   | "mission"
   | "vision"
+  | "situation"
   | "objectives"
   | "strategy";
 
 const SLUGS = new Set<ChatDirectionSlug>([
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ]);

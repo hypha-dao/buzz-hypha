@@ -36,6 +36,7 @@ import { Separator } from "@/shared/ui/separator";
 import { ComposerActivityAccessory } from "./ComposerActivityAccessory";
 import { ComposerDockBackdrop } from "./ComposerDockBackdrop";
 import { MessageComposer } from "./MessageComposer";
+import { AlignedMessageFooter } from "./TimelineMessageRow";
 import {
   MessageThreadPanelHeader,
   ThreadMessageSkeleton,
@@ -111,6 +112,9 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   replyTargetMessage: TimelineMessage | null;
   scrollTargetId: string | null;
   threadHead: TimelineMessage | null;
+  /** Draft and proposal cards, keyed by message id. The main timeline renders
+   * these; a thread reply is not on that timeline, so the panel renders them too. */
+  messageFooters?: Record<string, React.ReactNode>;
   threadReplies: MainTimelineEntry[];
   threadRepliesPending?: boolean;
   /** True when the thread-reply query terminally failed (all retries exhausted). */
@@ -193,6 +197,7 @@ export function MessageThreadPanel({
   searchMessageId,
   searchQuery,
   threadHead,
+  messageFooters,
   videoReviewPresentation,
   threadReplies,
   threadRepliesPending = false,
@@ -586,6 +591,9 @@ export function MessageThreadPanel({
                 )}
               />
             </div>
+            <AlignedMessageFooter>
+              {messageFooters?.[threadHead.id]}
+            </AlignedMessageFooter>
           </div>
         )}
 
@@ -753,6 +761,9 @@ export function MessageThreadPanel({
                             entry.message.id,
                           )}
                         />
+                        <AlignedMessageFooter>
+                          {messageFooters?.[entry.message.id]}
+                        </AlignedMessageFooter>
                         {entry.summary ? (
                           <MessageThreadSummaryRow
                             collapseDepthGuideActions={

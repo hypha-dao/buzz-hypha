@@ -228,7 +228,11 @@ export function MessageRowItem({
 }
 
 /** Lines the footer up with the message text, past the avatar gutter. */
-function AlignedMessageFooter({ children }: { children: React.ReactNode }) {
+export function AlignedMessageFooter({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   if (React.Children.toArray(children).length === 0) return null;
   return (
     <div className="mx-1 flex gap-2.5 px-2">

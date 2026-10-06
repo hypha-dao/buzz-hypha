@@ -1,12 +1,19 @@
 /**
- * Where a proposal card in #shapers opens.
+ * Where a proposal card opens.
  *
- * A direction proposal opens that direction page. A passed project
- * proposal opens the work item the relay created. An open project
- * proposal has no item yet — the card in the chat is the proposal.
+ * An open proposal — direction or project — opens the proposal page.
+ * A passed project opens the work item the relay created. A passed
+ * direction stays on the proposal page, which links to the artifact
+ * once that page has the agreed text.
  */
 
-const SLUGS = new Set(["mission", "vision", "objectives", "strategy"]);
+const SLUGS = new Set([
+  "mission",
+  "vision",
+  "situation",
+  "objectives",
+  "strategy",
+]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type ProposalChatEvent = {
@@ -21,7 +28,7 @@ export type ProposalChatLink =
   | {
       kind: "direction";
       proposalId: string;
-      slug: "mission" | "vision" | "objectives" | "strategy";
+      slug: "mission" | "vision" | "situation" | "objectives" | "strategy";
       label: string;
     }
   | {
@@ -54,10 +61,6 @@ function statusOf(
 
 export type ProposalDestination =
   | { to: "/org/work/$itemId"; params: { itemId: string } }
-  | {
-      to: "/org/direction/$slug";
-      params: { slug: "mission" | "vision" | "objectives" | "strategy" };
-    }
   | { to: "/org/proposal/$proposalId"; params: { proposalId: string } };
 
 /** Where a click on this proposal opens. A passed project opens the work item. */
@@ -67,9 +70,6 @@ export function proposalDestination(
   const link = proposalChatLink(event);
   if (link?.kind === "project") {
     return { to: "/org/work/$itemId", params: { itemId: link.itemId } };
-  }
-  if (link?.kind === "direction") {
-    return { to: "/org/direction/$slug", params: { slug: link.slug } };
   }
   if (event.kind !== 39102) return null;
   const proposalId =
@@ -107,7 +107,12 @@ export function proposalChatLink(
     return {
       kind: "direction",
       proposalId,
-      slug: slug as "mission" | "vision" | "objectives" | "strategy",
+      slug: slug as
+        | "mission"
+        | "vision"
+        | "situation"
+        | "objectives"
+        | "strategy",
       label: `Open ${slug}`,
     };
   }

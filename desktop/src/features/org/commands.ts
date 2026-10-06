@@ -61,7 +61,12 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ISO_WEEK = /^[0-9]{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$/;
 
-export type DirectionSlug = "mission" | "vision" | "objectives" | "strategy";
+export type DirectionSlug =
+  | "mission"
+  | "vision"
+  | "situation"
+  | "objectives"
+  | "strategy";
 export type VoteChoice = "agree" | "decline";
 export type ShapersOp = "add" | "remove" | "rules" | "agent";
 export type DraftDecision = "accept" | "decline";

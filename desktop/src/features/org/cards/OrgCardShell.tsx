@@ -2,6 +2,10 @@ import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { proposalVoteMarks } from "@/features/org/cards/parse";
+import {
+  proposalCardFace,
+  proposalClaimLines,
+} from "@/features/org/proposalDetail";
 import { proposalDestination } from "@/features/org/proposalChat";
 import { motionDelay } from "@/features/org/ui/OrgMotionFrame";
 import {
@@ -45,11 +49,20 @@ export function OrgCardShell({
         }
       : null);
   const votes = proposalVoteMarks(model.event);
+  const faceCopy = proposalCardFace(model.event, model.kicker);
+  const kindId = faceCopy.label ? `org-card-kind-${model.event.id}` : undefined;
+  const askerId = faceCopy.asker
+    ? `org-card-asker-${model.event.id}`
+    : undefined;
+  const labelledBy = [kindId, askerId, headingId].filter(Boolean).join(" ");
   const face = (
     <CardFace
+      askerId={askerId}
       clamp={Boolean(detail) && !destination && !open}
       enterIndex={enterIndex}
+      face={faceCopy}
       headingId={headingId}
+      kindId={kindId}
       lines={lines}
       model={model}
       votes={votes}
@@ -78,7 +91,7 @@ export function OrgCardShell({
     >
       {destination ? (
         <Link
-          aria-labelledby={headingId}
+          aria-labelledby={labelledBy}
           className={cn(faceClass, "w-full")}
           data-testid="org-card-open"
           params={destination.params}
@@ -102,7 +115,7 @@ export function OrgCardShell({
         </button>
       ) : model.itemId ? (
         <Link
-          aria-labelledby={headingId}
+          aria-labelledby={labelledBy}
           className={faceClass}
           data-testid="org-card-open"
           params={{ itemId: model.itemId }}
@@ -163,6 +176,9 @@ function linePlan(model: OrgCardModel): {
 function CardFace({
   model,
   headingId,
+  kindId,
+  askerId,
+  face,
   clamp,
   enterIndex,
   lines,
@@ -170,12 +186,19 @@ function CardFace({
 }: {
   model: OrgCardModel;
   headingId: string;
+  kindId?: string;
+  askerId?: string;
+  face: { label: string; asker: string | null };
   clamp?: boolean;
   enterIndex: number | null;
   lines: ReturnType<typeof linePlan>;
   votes: { cast: number; seats: number } | null;
 }) {
   const motion = enterIndex !== null;
+  const claimLines =
+    model.event.kind === KIND_IO_PROPOSAL
+      ? proposalClaimLines(model.event)
+      : [];
   const lineStyle = (lineIndex: number | null) => {
     if (enterIndex === null || lineIndex === null) return undefined;
     return motionDelay(overviewLineDelayMs(enterIndex, lineIndex));
@@ -183,26 +206,58 @@ function CardFace({
   return (
     <div className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
-        {model.kicker ? (
+        {face.label ? (
           <p
             className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
             data-testid="org-card-kicker"
+            id={kindId}
           >
-            {model.kicker}
+            {face.label}
           </p>
         ) : null}
-        <h3
-          className={cn(
-            "text-message font-semibold leading-snug",
-            model.kicker ? "mt-3" : undefined,
-            clamp ? "line-clamp-3" : undefined,
-            motion && "org-dir-line",
-          )}
-          id={headingId}
-          style={lineStyle(lines.claim)}
-        >
-          {model.claim}
-        </h3>
+        {face.asker ? (
+          <p
+            className="mt-1 text-xs text-muted-foreground"
+            data-testid="org-card-asker"
+            id={askerId}
+          >
+            {face.asker}
+          </p>
+        ) : null}
+        {claimLines.length > 0 ? (
+          <h3
+            className={cn(
+              "space-y-1.5 text-sm font-normal leading-relaxed",
+              face.label || face.asker ? "mt-3" : undefined,
+              motion && "org-dir-line",
+            )}
+            data-testid="org-card-claim-lines"
+            id={headingId}
+            style={lineStyle(lines.claim)}
+          >
+            {claimLines.map((line) => (
+              <span
+                className="block rounded-md border border-border/60 bg-background/40 px-3 py-1.5"
+                key={line}
+              >
+                {line}
+              </span>
+            ))}
+          </h3>
+        ) : (
+          <h3
+            className={cn(
+              "text-message font-semibold leading-snug",
+              face.label || face.asker ? "mt-3" : undefined,
+              clamp ? "line-clamp-3" : undefined,
+              motion && "org-dir-line",
+            )}
+            id={headingId}
+            style={lineStyle(lines.claim)}
+          >
+            {model.claim}
+          </h3>
+        )}
         {enterIndex !== null ? (
           <span
             aria-hidden="true"

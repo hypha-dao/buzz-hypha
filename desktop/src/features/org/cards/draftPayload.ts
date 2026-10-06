@@ -7,6 +7,7 @@ import type { OrgCardModel } from "./types";
 const DIRECTION_SLUGS = new Set<DirectionSlug>([
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ]);

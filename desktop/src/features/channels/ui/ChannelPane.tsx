@@ -71,7 +71,7 @@ import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMes
 import { useRoutedMessageEdit } from "@/features/channels/ui/useRoutedMessageEdit";
 import { Button } from "@/shared/ui/button";
 import { useRenderScopedReactionHydration } from "@/features/messages/lib/useRenderScopedReactionHydration";
-import { isWelcomeExperienceChannel as isWelcomeExperience } from "@/features/onboarding/welcome";
+import { showsSampleAgentComposerGuide } from "@/features/onboarding/welcome";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
@@ -236,8 +236,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   );
   const huddleMemberPubkeysPending =
     agentPubkeysPending && hasOtherDmParticipant(activeChannel, currentPubkey);
-  const isActiveWelcomeChannel =
-    activeChannel !== null && isWelcomeExperience(activeChannel);
+  const showsSampleAgentGuide = showsSampleAgentComposerGuide(activeChannel);
   const {
     ackOrgAgentSend,
     composerTypingPubkeys,
@@ -278,7 +277,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     dismissBanner: handleDismissWelcomeBanner,
   } = useWelcomeComposerBanner(
     activeChannelId,
-    isActiveWelcomeChannel,
+    showsSampleAgentGuide,
     currentPubkey ?? null,
   );
   const isEditInThread = editTarget?.isThreadReply === true;
@@ -324,7 +323,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       forceRest?: boolean,
     ) => {
       const shouldCompleteWelcomeBanner =
-        isActiveWelcomeChannel &&
+        showsSampleAgentGuide &&
         (containsWelcomePersonaMention(content) ||
           mentionsKnownAgent(mentionPubkeys, knownAgentPubkeys));
       messageTimelineRef.current?.scrollToBottomOnNextUpdate();
@@ -358,7 +357,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       activeChannelId,
       completeWelcomeComposerBanner,
       goChannel,
-      isActiveWelcomeChannel,
+      showsSampleAgentGuide,
       ackOrgAgentSend,
       knownAgentPubkeys,
       noteOrgAgentSendFailed,
@@ -433,11 +432,34 @@ export const ChannelPane = React.memo(function ChannelPane({
   const { mainTimelineEntries, recentMentions, visibleMessages } =
     useChannelPaneMessages({
       activeChannel,
+      currentPubkey,
       isHuddleTranscript,
       messages: displayMessages,
+      orgAgentPubkey,
       profiles,
       threadSummaries,
     });
+  const orgDraftMessages = React.useMemo(() => {
+    if (displayThreadMessages.length === 0) return visibleMessages;
+    const seen = new Set(visibleMessages.map((message) => message.id));
+    const extra = displayThreadMessages
+      .map((entry) => entry.message)
+      .filter((message) => !seen.has(message.id));
+    return extra.length === 0
+      ? visibleMessages
+      : [...visibleMessages, ...extra];
+  }, [displayThreadMessages, visibleMessages]);
+  const shapersAnchorMessages = React.useMemo(() => {
+    const stored = new Map(messages.map((message) => [message.id, message]));
+    let changed = false;
+    const next = visibleMessages.map((message) => {
+      const original = stored.get(message.id);
+      if (!original || original.body === message.body) return message;
+      changed = true;
+      return { ...message, body: original.body };
+    });
+    return changed ? next : visibleMessages;
+  }, [messages, visibleMessages]);
   useRenderScopedReactionHydration({
     activeChannel,
     mainTimelineEntries,
@@ -690,7 +712,7 @@ export const ChannelPane = React.memo(function ChannelPane({
           <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
             {orgChatRoom ? (
               <ChatProposalDrafts
-                messages={visibleMessages}
+                messages={orgDraftMessages}
                 onFooters={onDraftFooters}
                 onSentences={onDraftSentences}
                 orgAgentPubkey={orgAgentPubkey}
@@ -698,7 +720,7 @@ export const ChannelPane = React.memo(function ChannelPane({
             ) : null}
             {shapersRoom ? (
               <ShapersChatProposals
-                messages={visibleMessages}
+                messages={shapersAnchorMessages}
                 onFooters={onShapersProposalFooters}
               />
             ) : null}
@@ -819,7 +841,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                     hasComposerBottomActivity && "composer-dock--with-activity",
                   )}
                 >
-                  {isActiveWelcomeChannel && !timeoutState.active ? (
+                  {showsSampleAgentGuide && !timeoutState.active ? (
                     <WelcomeComposerGuidanceLayer
                       onDismiss={handleDismissWelcomeBanner}
                       settingUp={welcomeKickoffSettingUp}
@@ -963,6 +985,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 scrollTargetId={layoutScrollTargetId ?? threadScrollTargetId}
                 {...searchHighlightProps.thread}
                 threadHead={displayThreadHead}
+                messageFooters={messageFooters}
                 videoReviewPresentation={threadVideoReviewPresentation}
                 widthPx={threadPanelWidthPx}
                 threadReplies={displayThreadMessages}

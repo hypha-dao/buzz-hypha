@@ -69,7 +69,7 @@ pub mod tag {
 
 // ── §4.1 kind:39100 — direction artifact ─────────────────────────────────────
 
-/// The four direction artifacts; the `d` tag of a `39100`.
+/// The five direction artifacts; the `d` tag of a `39100`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DirectionSlug {
@@ -77,6 +77,9 @@ pub enum DirectionSlug {
     Mission,
     /// What it is becoming.
     Vision,
+    /// Where it stands today: stage, what exists, what is proven, what is
+    /// stuck. Prose, no lines; interpretation, never live readings.
+    Situation,
     /// Numbered, dated lines the work tree serves (`objective_ref` targets).
     Objectives,
     /// Numbered lines: how the objectives get met.
@@ -105,7 +108,8 @@ pub struct DirectionArtifact {
     pub version: u32,
     /// Markdown: the statement and the paragraph or two behind it.
     pub body: String,
-    /// `objectives` and `strategy` only; empty for `mission` and `vision`.
+    /// `objectives` and `strategy` only; empty for `mission`, `vision`, and
+    /// `situation`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lines: Vec<DirectionLine>,
     /// The Shaper whose vote met the rule.
@@ -1624,6 +1628,12 @@ mod tests {
         assert!(!serde_json::to_string(&mission)
             .unwrap()
             .contains("\"lines\""));
+        let situation: DirectionArtifact = round_trip(json!({
+            "slug": "situation", "version": 1, "body": "A prototype, no outside users.",
+            "confirmed_by": PK, "confirmed_at": 1, "proposed_by": PK, "proposal": ID
+        }));
+        assert_eq!(situation.slug, DirectionSlug::Situation);
+        assert!(situation.lines.is_empty());
     }
 
     #[test]

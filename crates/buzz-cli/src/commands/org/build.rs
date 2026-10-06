@@ -722,6 +722,7 @@ impl super::DirectionSlugArg {
         match self {
             Self::Mission => "mission",
             Self::Vision => "vision",
+            Self::Situation => "situation",
             Self::Objectives => "objectives",
             Self::Strategy => "strategy",
         }
@@ -731,6 +732,7 @@ impl super::DirectionSlugArg {
         match self {
             Self::Mission => DirectionSlug::Mission,
             Self::Vision => DirectionSlug::Vision,
+            Self::Situation => DirectionSlug::Situation,
             Self::Objectives => DirectionSlug::Objectives,
             Self::Strategy => DirectionSlug::Strategy,
         }

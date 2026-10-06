@@ -26,7 +26,7 @@ pub enum OrgCmd {
     /// Shaper set, rules, and the hosted agent
     #[command(subcommand)]
     Shapers(ShapersCmd),
-    /// Mission, vision, objectives, strategy
+    /// Mission, vision, situation, objectives, strategy
     #[command(subcommand)]
     Direction(DirectionCmd),
     /// Open and vote on proposals
@@ -106,6 +106,7 @@ pub enum ShapersCmd {
 pub enum DirectionSlugArg {
     Mission,
     Vision,
+    Situation,
     Objectives,
     Strategy,
 }
@@ -115,7 +116,7 @@ pub enum DirectionSlugArg {
 pub enum DirectionCmd {
     /// Live `39100` heads
     Show {
-        /// One of mission, vision, objectives, strategy
+        /// One of mission, vision, situation, objectives, strategy
         slug: Option<DirectionSlugArg>,
         #[arg(long)]
         limit: Option<u32>,

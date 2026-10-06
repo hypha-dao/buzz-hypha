@@ -54,7 +54,7 @@ export type ChatAct =
       agentEventId: string;
       proposalId: string;
       reviseKind: "direction";
-      slug: "mission" | "vision" | "objectives" | "strategy";
+      slug: "mission" | "vision" | "situation" | "objectives" | "strategy";
       body: string;
       base: number;
     }
@@ -81,6 +81,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DIRECTION_SLUGS = new Set([
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ]);
@@ -235,7 +236,12 @@ export function nextChatAct(input: {
           agentEventId: message.id,
           proposalId,
           reviseKind: "direction",
-          slug: slug as "mission" | "vision" | "objectives" | "strategy",
+          slug: slug as
+            | "mission"
+            | "vision"
+            | "situation"
+            | "objectives"
+            | "strategy",
           body,
           base,
         };

@@ -19,6 +19,7 @@ import { SHAPERS_D_TAG, TAG_STATUS, TAG_TYPE, TYPE_PROJECT } from "../../tags";
 export const DIRECTION_SLUGS: readonly DirectionSlug[] = [
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ];

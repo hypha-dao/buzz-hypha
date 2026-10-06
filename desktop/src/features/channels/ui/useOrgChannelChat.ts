@@ -5,6 +5,7 @@ import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 import type { TimelineMessage } from "@/features/messages/types";
 import {
   nameHoldersInChat,
+  shortProposalAnnouncement,
   stripProposalOpenLink,
 } from "@/features/org/chatDraft";
 import { isOrgAgentDm } from "@/features/org/orgAgent";
@@ -179,9 +180,13 @@ export function useOrgChannelChat({
   const displayMessages = React.useMemo(() => {
     let changed = false;
     const sentences = orgChatRoom ? draftSentences.sentences : {};
+    const carded = shapersRoom ? shapersProposalFooters.footers : {};
     const next = messages.map((message) => {
-      const stripped =
+      const unlinked =
         sentences[message.id] ?? stripProposalOpenLink(message.body);
+      const stripped = carded[message.id]
+        ? shortProposalAnnouncement(unlinked)
+        : unlinked;
       const body = orgChatRoom
         ? nameHoldersInChat(stripped, message.tags, profiles)
         : stripped;
@@ -190,7 +195,14 @@ export function useOrgChannelChat({
       return { ...message, body };
     });
     return changed ? next : messages;
-  }, [draftSentences.sentences, messages, orgChatRoom, profiles]);
+  }, [
+    draftSentences.sentences,
+    messages,
+    orgChatRoom,
+    profiles,
+    shapersProposalFooters.footers,
+    shapersRoom,
+  ]);
   const displayThreadMessages = React.useMemo(() => {
     if (!orgChatRoom) return threadMessages;
     let changed = false;

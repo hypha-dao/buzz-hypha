@@ -1916,7 +1916,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             h.direction(&h.owner, "charter", 0, r#"{"body":"no"}"#, false)
                 .await
         ),
-        "invalid: unknown direction slug \"charter\"; expected mission, vision, objectives, or strategy"
+        "invalid: unknown direction slug \"charter\"; expected mission, vision, situation, objectives, or strategy"
     );
     assert_eq!(
         rejected(
@@ -1929,7 +1929,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             )
             .await
         ),
-        "invalid: mission and vision have no lines"
+        "invalid: only objectives and strategy have lines"
     );
     assert_eq!(
         rejected(
@@ -2116,6 +2116,44 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             .body,
         "first"
     );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_passed_situation_writes_39100_without_lines() {
+    let h = harness().await;
+    h.bootstrap().await;
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "situation",
+                0,
+                r#"{"body":"A prototype, no outside users.","lines":[{"text":"no"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: only objectives and strategy have lines"
+    );
+    let reply = h
+        .direction(
+            &h.owner,
+            "situation",
+            0,
+            r#"{"body":"A working prototype, no outside users yet. Two developers, about 20 hours a week each."}"#,
+            true,
+        )
+        .await
+        .expect("open situation");
+    assert_eq!(reply["status"], "passed");
+    let head = h
+        .direction_head(DirectionSlug::Situation)
+        .await
+        .expect("39100 situation");
+    assert_eq!(head.version, 1);
+    assert!(head.body.starts_with("A working prototype"));
+    assert!(head.lines.is_empty());
 }
 
 #[tokio::test]

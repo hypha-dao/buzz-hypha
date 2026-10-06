@@ -87,7 +87,7 @@ Rules that follow from the shape:
 
 | Kind      | `d`                                            | Object                                    |
 | --------- | ---------------------------------------------- | ----------------------------------------- |
-| `39100`   | `mission` \| `vision` \| `objectives` \| `strategy` | Latest confirmed **direction** artifact |
+| `39100`   | `mission` \| `vision` \| `situation` \| `objectives` \| `strategy` | Latest confirmed **direction** artifact |
 | `39101`   | item UUID                                      | One **work item**                         |
 | `39102`   | proposal UUID                                  | One **proposal** and its votes            |
 | `39103`   | `shapers`                                      | The **Shaper set** and decision rules     |
@@ -216,8 +216,15 @@ Tags: `["d", "<slug>"]`, `["version", "<n>"]`, `["p", <confirmed_by>]`,
 ```
 
 `lines[].id` is stable across versions when the line is carried forward and
-fresh when it is added; it is the `objective_ref` target. A `mission` or
-`vision` artifact has no `lines`.
+fresh when it is added; it is the `objective_ref` target. A `mission`,
+`vision`, or `situation` artifact has no `lines`; the relay rejects a
+`50002` that carries them.
+
+`situation` is where the org stands today — stage, what exists, what is
+proven, what is stuck — written as one paragraph. It is interpretation the
+Shapers confirm, never a live reading: counts and dates stay in the work
+tree and the ledger. It sits between `vision` and `objectives` because the
+objectives are only as good as the agent's read of where the org starts.
 
 ### 4.2 `kind:39101` — work item
 

@@ -68,6 +68,7 @@ function DirectionCard({
     <OverviewCardShell
       enterIndex={enterIndex}
       testId={`org-direction-card-${slot.slug}`}
+      wide={slot.slug === "situation"}
     >
       <div>
         <div className="flex items-start gap-2.5">

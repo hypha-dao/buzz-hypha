@@ -34,7 +34,7 @@ cards.
 
 ## The doors
 
-Everyone sees the same sidebar. Only the contents change. The five org
+Everyone sees the same sidebar. Only the contents change. The org
 doors sit beside Buzz's own surfaces (Home, channels, Forum, DMs, Agents,
 Workflows, Search). The org agent is not in the Agents door — it is already
 there when you arrive, and you find it in DMs. It is also, unlisted, in
@@ -44,10 +44,11 @@ there (3.6a). Agents is for your own — and the one ready-made one there is
 
 | Door           | What it answers                                                            |
 | -------------- | -------------------------------------------------------------------------- |
-| **Overview**   | Who are we — mission, vision, objectives, strategy, people, glance numbers |
+| **Overview**   | Who are we — mission, vision, situation, objectives, strategy, people, glance numbers |
 | **Work**       | The whole tree — every project and what sits under it, and when each piece last moved; each project page carries its room, its repository, and the agent's health read; each ticket its work log |
 | **Decisions**  | Three filters: **Work** (approval and **project DRI**), **Direction**, **Shapers** (add, remove, rules, agent) — **Money** (out only) and **Join** (people only) come later. Every card shows _n of needed_ against the rule. Shapers vote; anyone can read. |
 | **My Work**    | What needs _my_ yes or no — including AI cards — what I hold, and what I offered |
+| **My drafts**  | Drafts I asked the agent for, still unpublished — each one opens as the page it becomes |
 | **My Profile** | Who I am in this community — **About & skills** (mine to write; the agent and DRIs read it), current work, earlier work, recent decisions; paid to you, next version |
 | **DMs**        | The org agent (Personal Assistant), then people                            |
 | **Channels**   | Rooms per project or team, plus the private Shapers room                   |
@@ -249,7 +250,7 @@ can propose themselves, or someone else. The Shapers decide.
 The help card is seven items. Each one the agent drafts; a person opens;
 the Shapers (or the holder) decide.
 
-1. **Direction** — mission, vision, objectives, or strategy. The voted
+1. **Direction** — mission, vision, situation, objectives, or strategy. The voted
    sentence is the title. Buttons **Agree** / **Decline**.
 2. **Project** — a root project. Same Agree / Decline. It may have no DRI
    yet (2.4).
@@ -317,8 +318,9 @@ next version, releases money. In the prototype: **Maya** and **Sam** (River); **
 ### 2.1 Check direction
 
 1. Open **Overview**.
-2. Read the four direction cards — **Mission**, **Vision**, **Objectives**,
-   **Strategy** — each with its version and when it was confirmed. An empty
+2. Read the five direction cards — **Mission**, **Vision**, **Situation**,
+   **Objectives**, **Strategy** — each with its version and when it was
+   confirmed. An empty
    card says _Not set yet_. Objectives and strategy are plain one-sentence
    bullets; a met objective is simply gone from the next version, not struck
    through. Which project serves an objective is shown on the project and its

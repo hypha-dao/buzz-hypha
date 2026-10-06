@@ -5,17 +5,73 @@
  * direction, project, or revise tag, and the card sits under that message.
  */
 
-import { announcementMentions } from "./chatDraft";
+import { announcementMentions, directionBodyLines } from "./chatDraft";
 
-const SLUGS = new Set(["mission", "vision", "objectives", "strategy"]);
+const SLUGS = new Set([
+  "mission",
+  "vision",
+  "situation",
+  "objectives",
+  "strategy",
+]);
+
+const DIRECTION_NAME: Record<string, string> = {
+  mission: "Mission",
+  vision: "Vision",
+  situation: "Situation",
+  objectives: "Objectives",
+  strategy: "Strategy",
+};
+
+/** Kickers that name the column or a generic bucket, not a person. */
+const QUIET_KICKERS = new Set([
+  "",
+  "Needs your answer",
+  "Direction",
+  "Project",
+  "Up for a vote",
+  "Proposal",
+]);
+
+const PROPOSAL_KIND_LABEL: Record<string, string> = {
+  project: "Project proposal",
+  dri: "DRI proposal",
+  money: "Money proposal",
+  join: "Join proposal",
+  shapers: "Shapers proposal",
+  withdraw: "Withdraw proposal",
+};
+
+export type DirectionSlugName =
+  | "mission"
+  | "vision"
+  | "situation"
+  | "objectives"
+  | "strategy";
 
 export type ProposalDetail = {
   proposalId: string;
   kind: "direction" | "project";
   title: string;
   body: string;
-  slug: "mission" | "vision" | "objectives" | "strategy" | null;
+  slug: DirectionSlugName | null;
   dueAt: number | null;
+};
+
+/** What the proposal page shows. A direction proposal is not a work item. */
+export type ProposalPageModel = {
+  eyebrow: string;
+  title: string;
+  brief: string;
+  lines: { id: string; text: string }[];
+  doorTitle: string;
+  parentLabel: string;
+  parentTo: "/org/my-work" | "/org/work";
+  crumb: string;
+  status: string;
+  dueAt: number | null;
+  suggestedDri: string | null;
+  directionSlug: DirectionSlugName | null;
 };
 
 export type ProposalDetailEvent = {
@@ -93,7 +149,7 @@ export function proposalDetail(
       kind,
       title: body || slug || "Direction",
       body,
-      slug: SLUGS.has(slug) ? (slug as ProposalDetail["slug"]) : null,
+      slug: directionSlug(slug),
       dueAt: null,
     };
   }
@@ -106,6 +162,153 @@ export function proposalDetail(
     body: text(payload?.brief),
     slug: null,
     dueAt,
+  };
+}
+
+/**
+ * Objectives and strategy proposals, one entry per line, for the card face.
+ * Empty when the proposal is one block of text.
+ */
+export function proposalClaimLines(event: ProposalDetailEvent): string[] {
+  const detail = proposalDetail(event);
+  if (
+    detail?.kind !== "direction" ||
+    (detail.slug !== "objectives" && detail.slug !== "strategy")
+  ) {
+    return [];
+  }
+  const content = objectOf(event.content);
+  const stored = lineTexts(content ? payloadOf(content)?.lines : undefined).map(
+    (line) => line.text,
+  );
+  const lines =
+    stored.length > 0 ? stored : directionBodyLines(detail.slug, detail.body);
+  return lines.length > 1 ? lines : [];
+}
+
+function directionSlug(slug: string): DirectionSlugName | null {
+  return SLUGS.has(slug) ? (slug as DirectionSlugName) : null;
+}
+
+function directionTitle(slug: string): string {
+  return DIRECTION_NAME[slug] ?? "Direction";
+}
+
+/** The body often stores the lines again as one paragraph. */
+function briefRepeatsLines(
+  brief: string,
+  lines: readonly { text: string }[],
+): boolean {
+  if (lines.length === 0 || brief.trim().length === 0) return false;
+  const plain = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  return plain(brief) === plain(lines.map((line) => line.text).join(" "));
+}
+
+function lineTexts(value: unknown): { id: string; text: string }[] {
+  if (!Array.isArray(value)) return [];
+  const lines: { id: string; text: string }[] = [];
+  for (const line of value) {
+    if (!line || typeof line !== "object" || Array.isArray(line)) continue;
+    const row = line as Record<string, unknown>;
+    const body = text(row.text);
+    if (!body) continue;
+    const id = text(row.id) || `line-${lines.length + 1}`;
+    lines.push({ id: `${id}-${lines.length + 1}`, text: body });
+  }
+  return lines;
+}
+
+function statusOf(
+  event: ProposalDetailEvent,
+  content: Record<string, unknown>,
+) {
+  const tagged = event.tags.find((tag) => tag[0] === "s")?.[1];
+  if (tagged) return tagged;
+  return typeof content.status === "string" ? content.status : "open";
+}
+
+/**
+ * The label on a proposal card. Mission, vision, objectives, and strategy
+ * each name themselves; a project proposal does not read as a direction.
+ */
+export function proposalKindLabel(event: ProposalDetailEvent): string | null {
+  if (event.kind !== 39102) return null;
+  const content = objectOf(event.content);
+  if (!content || typeof content.kind !== "string") return "Proposal";
+  if (content.kind === "direction") {
+    const slug = text(payloadOf(content)?.slug);
+    const name = DIRECTION_NAME[slug];
+    return name ? `${name} proposal` : "Direction proposal";
+  }
+  return PROPOSAL_KIND_LABEL[content.kind] ?? "Proposal";
+}
+
+/**
+ * Kind first, then who asked when that is a person rather than the column.
+ */
+export function proposalCardFace(
+  event: ProposalDetailEvent,
+  kicker: string,
+): { label: string; asker: string | null } {
+  const kind = proposalKindLabel(event);
+  if (!kind) return { label: kicker, asker: null };
+  const asker =
+    kicker && !QUIET_KICKERS.has(kicker) && kicker !== kind ? kicker : null;
+  return { label: kind, asker };
+}
+
+/** Copy for the proposal page. Direction opens here, not on an empty artifact. */
+export function proposalPage(
+  event: ProposalDetailEvent,
+): ProposalPageModel | null {
+  if (event.kind !== 39102) return null;
+  const content = objectOf(event.content);
+  if (!content) return null;
+  const payload = payloadOf(content);
+  const status = statusOf(event, content);
+  const kind = typeof content.kind === "string" ? content.kind : "proposal";
+  if (kind === "direction") {
+    const slug = text(payload?.slug);
+    const name = directionTitle(slug);
+    const body = text(payload?.body);
+    const lines = lineTexts(payload?.lines);
+    return {
+      eyebrow: directionSlug(slug) ? `${name} proposal` : "Direction proposal",
+      title: lines.length > 0 ? name : body || name,
+      brief: lines.length > 0 && !briefRepeatsLines(body, lines) ? body : "",
+      lines,
+      doorTitle: name,
+      parentLabel: "My Work",
+      parentTo: "/org/my-work",
+      crumb: name,
+      status,
+      dueAt: null,
+      suggestedDri: null,
+      directionSlug: directionSlug(slug),
+    };
+  }
+  const due = payload?.due_at;
+  const suggested = payload?.suggested_dri;
+  const title = text(payload?.title) || text(payload?.body) || "Proposal";
+  const briefRaw = text(payload?.brief);
+  return {
+    eyebrow: proposalKindLabel(event) ?? "Proposal",
+    title,
+    brief: briefRaw === title ? "" : briefRaw,
+    lines: [],
+    doorTitle: "Work",
+    parentLabel: "Work",
+    parentTo: "/org/work",
+    crumb: title,
+    status,
+    dueAt: typeof due === "number" && Number.isFinite(due) ? due : null,
+    suggestedDri: typeof suggested === "string" ? suggested : null,
+    directionSlug: null,
   };
 }
 

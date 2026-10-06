@@ -21,24 +21,49 @@ function event(content, tags, created_at = 10) {
   };
 }
 
-test("an open direction proposal opens that direction page", () => {
-  const link = proposalChatLink(
-    event(
-      {
-        kind: "direction",
-        status: "open",
-        payload: { slug: "mission", body: "We host the hall." },
-      },
-      [
-        ["d", PROPOSAL],
-        ["t", "direction"],
-        ["s", "open"],
-      ],
-    ),
+test("an open direction proposal opens the proposal page", () => {
+  const opened = event(
+    {
+      kind: "direction",
+      status: "open",
+      payload: { slug: "mission", body: "We host the hall." },
+    },
+    [
+      ["d", PROPOSAL],
+      ["t", "direction"],
+      ["s", "open"],
+    ],
   );
+  const link = proposalChatLink(opened);
   assert.equal(link.kind, "direction");
   assert.equal(link.slug, "mission");
   assert.equal(link.label, "Open mission");
+  assert.deepEqual(proposalDestination(opened), {
+    to: "/org/proposal/$proposalId",
+    params: { proposalId: PROPOSAL },
+  });
+  for (const slug of ["vision", "objectives", "strategy"]) {
+    assert.deepEqual(
+      proposalDestination(
+        event(
+          {
+            kind: "direction",
+            status: "open",
+            payload: { slug, body: `A ${slug}.` },
+          },
+          [
+            ["d", PROPOSAL],
+            ["t", "direction"],
+            ["s", "open"],
+          ],
+        ),
+      ),
+      {
+        to: "/org/proposal/$proposalId",
+        params: { proposalId: PROPOSAL },
+      },
+    );
+  }
 });
 
 test("a passed project proposal opens the work item", () => {

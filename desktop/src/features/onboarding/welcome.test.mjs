@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -9,6 +10,7 @@ import {
   hasEnsuredWelcomeChannel,
   isOmittedPrivateWelcomeChannelId,
   isWelcomeExperienceChannel,
+  showsSampleAgentComposerGuide,
   markWelcomeChannelEnsured,
   omitPrivateWelcomeChannels,
   rememberPendingWelcomeChannel,
@@ -361,6 +363,33 @@ test("isWelcomeExperienceChannel matches legacy Welcome and starter welcome-ever
     false,
   );
   assert.equal(isWelcomeExperienceChannel(null), false);
+});
+
+test("new-org #welcome-everyone does not show the sample-agent composer hint", () => {
+  assert.equal(showsSampleAgentComposerGuide(makeChannel()), true);
+  assert.equal(
+    showsSampleAgentComposerGuide(
+      makeChannel({ name: "welcome-everyone", visibility: "open" }),
+    ),
+    false,
+  );
+  assert.equal(
+    showsSampleAgentComposerGuide(
+      makeChannel({ name: "Welcome-Everyone", visibility: "open" }),
+    ),
+    false,
+  );
+  assert.equal(showsSampleAgentComposerGuide(null), false);
+
+  const channelPane = readFileSync(
+    new URL("../channels/ui/ChannelPane.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(channelPane, /showsSampleAgentComposerGuide\(activeChannel\)/);
+  assert.match(
+    channelPane,
+    /\{showsSampleAgentGuide && !timeoutState\.active \? \(/,
+  );
 });
 
 test("omitPrivateWelcomeChannels drops only the private Welcome channel", () => {

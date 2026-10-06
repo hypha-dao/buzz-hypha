@@ -172,14 +172,27 @@ export function isStarterWelcomeChannel(channel: Channel | null | undefined) {
 }
 
 /**
- * Channels that get the welcome experience (intro action cards, guide
- * composer banner, chat-first agent creation): the starter
- * #welcome-everyone channel, plus the legacy private Welcome channel.
+ * Channels that get the welcome intro cards and chat-first agent creation:
+ * the starter #welcome-everyone channel, plus the legacy private Welcome
+ * channel. The sample-agent composer hint is separate — see
+ * `showsSampleAgentComposerGuide`.
  */
 export function isWelcomeExperienceChannel(
   channel: Channel | null | undefined,
 ) {
   return isWelcomeChannel(channel) || isStarterWelcomeChannel(channel);
+}
+
+/**
+ * The composer hint that names Block's sample agents (Fizz, and the rotation
+ * that used to include Honey and Pollen). A new org lands on
+ * `#welcome-everyone` and must not show it. Only the legacy private Welcome
+ * room still does.
+ */
+export function showsSampleAgentComposerGuide(
+  channel: Channel | null | undefined,
+) {
+  return isWelcomeChannel(channel);
 }
 
 function isPrivateWelcomeChannelCandidate(channel: Channel) {

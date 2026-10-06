@@ -612,6 +612,22 @@ absorb an item into an unrelated slice.
   writers landed are invisible to the exemption until re-emitted. Phase 0
   drafts that cite room messages are none yet (plan: R-10 may slip to
   HEAR); no migration backfill.
+- **`situation` is the fifth direction slug** (Protocol §4.1). Migration
+  `0050` widens `io_direction_slug_check`; the relay rejects `lines` on it
+  like mission and vision. The org agent coaches mission → vision →
+  situation → objectives → strategy (`DIRECTION_COACHING` in
+  `buzz-org-agent/src/chat_act.rs`) and drafts the situation as one
+  paragraph. Chat prose recovery opens a situation draft only on an explicit
+  request ("create situation draft") and ignores the common noun.
+  Desktop renders it full width between Vision and Objectives. Not updated:
+  the eval fixtures (`tests/eval/fixtures`, `world.mjs`) still seed four
+  heads, and `orgAgentTyping` `CONCERN_WORDS` has no situation entry.
+- **`intelligent_org_kinds_are_global_only` is stale** (`buzz-relay`
+  `handlers/ingest.rs`): it lists `50022` as unregistered, but
+  `KIND_IO_WITHDRAW` took it. Swap the neighbour for `50024`.
+- **`org-skeleton.spec.ts` 01 (gate off hides the group) fails** since O-3a
+  made the `org` preview `defaultEnabled: true`; the spec still expects the
+  group to be hidden with seeded preview features off.
 
 ---
 

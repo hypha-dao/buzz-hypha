@@ -19,8 +19,9 @@ git Projects surface).
 
 ## The model, in one paragraph
 
-Direction is four short, versioned texts — **mission, vision, objectives,
-strategy** — each confirmed by Shapers. Work is **one recursive tree**: a
+Direction is five short, versioned texts — **mission, vision, situation,
+objectives, strategy** — each confirmed by Shapers; the situation is where
+the org stands today, so the objectives start from it. Work is **one recursive tree**: a
 project is a ticket with nothing above it; whoever holds a piece of work can
 split it and offer the pieces; only the named person accepts; only the holder
 marks done; done cascades up, never down. **No money lives on work**, and in
@@ -63,13 +64,17 @@ relay executes; every claim carries a receipt.
 | 4   | [Design](./architecture/intelligent-org-design.md)                            | current                   | Why the protocol is shaped that way: the four memory layers on Buzz, the work tree, the org agent (HEAR → THINK → ROUTE), surfaces, build order, risks. |
 | 4a  | [Org agent](./architecture/intelligent-org-agent.md)                          | current                   | How `buzz-org-agent` is built to do every job the product asks of it: runtime, three call shapes, read model, HEAR / THINK / JUDGE / ROUTE / SAY, bounds, failure handling, hosting. |
 | 5   | [Organizational Intelligence](./architecture/organizational-intelligence.md)  | current (revised)         | The memory model underneath: L1 substrate, L2 ledger, L3 beliefs, L4 outcomes; context budget; decision rights.                       |
+| 5a  | [State and the change engine — short](./architecture/intelligent-org-state-and-planning-brief.md) | draft     | The system in one sitting: what the agent knows, how a suggestion is made, and the six decisions to accept or reject.                 |
+| 5b  | [State and the change engine](./architecture/intelligent-org-state-and-planning.md) | draft               | The full design behind 5a: state cards, the change-plan schema, the compiler → planner → critic loop, protocol deltas, and build order. |
+| 5c  | [Where context lives](./architecture/intelligent-org-context-homes.md) | draft               | What belongs in org context and in project context, and whether Buzz's project repository, canvas, and GitHub linking are the right stores. |
 | 6   | [Phase 0](./plans/intelligent-org-phase-0.md)                                 | current — **the plan**    | Dogfood: run the build of the product inside Buzz with three doors and the agent. Where the code goes, in what order, and what we measure. |
 | 7   | [AI evaluation](./plans/intelligent-org-ai-evaluation.md)                     | current                   | Pass/fail bars and the harness for the four agent moves: direction → projects, project → tickets, completion → next, health.         |
 | 8   | [Current state](./architecture/intelligent-org-current-state.md)              | current                   | What Buzz already has that the model needs, what is designed and not built, and what to verify in code first.                        |
 | 8a  | [Codebase verification](./architecture/intelligent-org-codebase-verification.md) | current — **read before step 1** | The facts in Current state § What to verify, checked against the code, with what each answer changes.                           |
 | 9   | [Prototype map](./product/intelligent-org-prototype-map.md)                   | current                   | What `prototypes/org-preview` contains, which screens the desktop `org` feature grows from, what changes, and how its data becomes the evaluation fixtures. |
 | 10  | [Readiness review](./plans/intelligent-org-readiness.md)                      | current — **the gate**    | The coherence review of this folder: drift found and fixed, decisions still to pin (D-1…D-10), and the checklist that clears step 1.   |
-| 11  | [Development plan](./plans/intelligent-org-development-plan.md)               | current — **the schedule** | One plan across relay, CLI, desktop, and agent: PR-sized slices, dependencies, tests, gates; the CLI surface; the test matrix.       |
+| 11  | [Development plan](./plans/intelligent-org-development-plan.md)               | current — **the record**   | Waves 1–4: the spine, the doors, the agent skeleton. The schedule of record for what already merged. |
+| 11a | [Context, planning, and review](./plans/intelligent-org-context-engine-plan.md) | draft — **the next schedule** | From the merged spine to a working interview, state machine, projects, tickets, prompts, and review. |
 | 12  | [Progress](./plans/intelligent-org-progress.md)                               | current — **the log**     | Which slices are merged (PRs, SHAs), follow-ups each left behind, how to run the checks on this fork. Every slice PR updates it.     |
 | —   | [Exploration](./product/intelligent-org-exploration.md)                       | historical                | The note that chose Buzz as the foundation. The model it sketches was replaced on 11 September.                                        |
 
@@ -79,7 +84,9 @@ Document 1 is substrate-neutral product; everything else is written for Buzz.
 
 Start with the **Readiness review** — it says whether step 1 is cleared and
 what is still to decide — then the **Protocol**, then the **Development
-plan**, which slices Phase 0 into pull requests. **Phase 0** is the intent
+plan**, which slices Phase 0 into pull requests. The next work is
+[Context, planning, and review](./plans/intelligent-org-context-engine-plan.md).
+**Phase 0** is the intent
 those slices deliver; **Design** § Build order is the long sequence; for the
 agent crate itself, the **Org agent** design is the spec. The first slice is
 the relay: kinds in `buzz-core`, command handlers in the command executor,
@@ -94,7 +101,7 @@ Terminology that differs from earlier drafts, so grep does not mislead you:
 | Earlier drafts                       | Now                                                              |
 | ------------------------------------ | ---------------------------------------------------------------- |
 | mandate, pot, steward, envelope      | project (a root of the tree), no money on it, its DRI            |
-| org brief                            | four direction artifacts, versioned independently                |
+| org brief                            | five direction artifacts, versioned independently                |
 | Projects door, All Work, Org door    | **Work** door, **Overview** door                                 |
 | Space                                | community                                                        |
 | Personal Assistant                   | your DM with the org agent (the name is still used for the flow) |

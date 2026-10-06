@@ -655,7 +655,7 @@ pub const IO_READ_KIND_MIN: u32 = 50100;
 pub const IO_READ_KIND_MAX: u32 = 50149;
 
 // State (relay-signed, addressable; `d` = object id). Protocol §3.1, §4.
-/// IO state: latest confirmed direction artifact; `d` ∈ mission | vision | objectives | strategy.
+/// IO state: latest confirmed direction artifact; `d` ∈ mission | vision | situation | objectives | strategy.
 pub const KIND_IO_DIRECTION: u32 = 39100;
 /// IO state: one work item (project or ticket); `d` = item UUID.
 pub const KIND_IO_WORK_ITEM: u32 = 39101;

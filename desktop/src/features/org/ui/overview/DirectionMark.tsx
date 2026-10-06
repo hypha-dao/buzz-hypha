@@ -40,6 +40,15 @@ export function DirectionMark({
           <path d="M8 4 V5.6 M4 6.2 L5 7.2 M12 6.2 L11 7.2" {...STROKE} />
         </>
       )}
+      {kind === "situation" && (
+        <>
+          <path
+            d="M8 14 C8 14, 3.2 9.4, 3.2 6.4 A4.8 4.8 0 0 1 12.8 6.4 C12.8 9.4, 8 14, 8 14 Z"
+            {...STROKE}
+          />
+          <circle cx="8" cy="6.4" r="1.6" {...STROKE} />
+        </>
+      )}
       {kind === "objectives" && (
         <>
           <path d="M3 4.5 H13" {...STROKE} />

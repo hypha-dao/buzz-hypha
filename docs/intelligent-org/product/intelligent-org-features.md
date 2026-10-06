@@ -52,7 +52,7 @@ Two rules hold everywhere:
 | ---------- | --------------------------------------------------------------------------------------------------------------- |
 | **Member** | Came in by invite link (or created the community). Says on their profile what they can do. No job until they accept one. |
 | **DRI**    | Accepted a project (holds the job) or a ticket (does the work). A relationship, not a title.                    |
-| **Shaper** | Sets direction: the org's mission, vision, objectives, and strategy; which projects exist; what they are worth. |
+| **Shaper** | Sets direction: the org's mission, vision, situation, objectives, and strategy; which projects exist; what they are worth. |
 
 The founder — the community's owner in Buzz — is the first Shaper. After that, Shapers are added
 and removed by the Shapers' own decision (feature 1a). One person can be all three at once. The
@@ -119,12 +119,12 @@ conversation moves to the Shapers room and every later version needs the rule; n
 is lost.
 
 This is not a one-time founding interview. The chat never closes. Everything else the AI does
-reads from the latest confirmed mission, vision, objectives, and strategy.
+reads from the latest confirmed mission, vision, situation, objectives, and strategy.
 
-**A Shaper can:** propose a change to the mission, vision, objectives, or strategy by talking,
+**A Shaper can:** propose a change to the mission, vision, situation, objectives, or strategy by talking,
 any day, and — once the other Shapers have agreed — see it reflected in what the AI suggests
 next.
-**A founder can:** formulate all four alone, in their own chat, before anyone else joins.
+**A founder can:** formulate all five alone, in their own chat, before anyone else joins.
 
 ### 1a. Shapers decide together
 
@@ -386,7 +386,7 @@ on cards.
 
 | Door           | What it answers                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Overview**   | Who are we? Mission, vision, objectives, strategy, established, founder, Shapers and the rule they decide by, the org agent and who hosts it, members, who holds which job. Each direction card opens to its full text, every version, and the proofs behind each line — with receipts. |
+| **Overview**   | Who are we? Mission, vision, situation, objectives, strategy, established, founder, Shapers and the rule they decide by, the org agent and who hosts it, members, who holds which job. Each direction card opens to its full text, every version, and the proofs behind each line — with receipts. |
 | **Work**       | Who is working on what? Every project and ticket, DRI or _open_, dates visible, when each piece last moved; on each project page its room, its repository, and the agent's **health read** (feature 8a); on each ticket the **work log** (feature 5a). |
 | **Decisions**  | What the Shapers decide: **Work** (project approval and **project DRI**), **Direction**, **Shapers** (add, remove, rules, agent) — later **Money** (out only) and **Join** (people only). Each card shows agrees so far against the rule. Anyone can read; only Shapers vote. |
 | **My Work**    | What needs my tap — including AI cards — what I hold, what I offered (**You offered**), and what is finished. Waiting-on-me stays in the first column. Shapers also see open decision cards here, and any live project that still needs a DRI. |

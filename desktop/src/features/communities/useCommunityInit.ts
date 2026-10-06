@@ -37,6 +37,7 @@ import {
 import { resetAgentWorkingSignal } from "@/features/agents/agentWorkingSignal";
 import { resetAgentObserverStore } from "@/features/agents/observerRelayStore";
 import { resetAgreedOfferAttempts } from "@/features/org/agreedOffer";
+import { resetLiveDoorEvents } from "@/features/org/hooks/useLiveReq";
 import { resetAvatarPresentations } from "@/features/profile/avatarPresentationStore";
 import { resetAvatarProfileSync } from "@/features/profile/avatarProfileSync";
 import { resetSidebarRelayConnectionCardState } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
@@ -98,6 +99,7 @@ async function resetCommunityState({
   clearMarkdownNodeCache();
   resetMessageLinkMetadataCache();
   resetAgreedOfferAttempts();
+  resetLiveDoorEvents();
 }
 
 type CommunityInitResult =
