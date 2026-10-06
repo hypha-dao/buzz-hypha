@@ -189,6 +189,7 @@ impl Room {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_acted(
         &mut self,
         id: impl Into<String>,
@@ -210,6 +211,7 @@ impl Room {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_inner(
         &mut self,
         id: impl Into<String>,
@@ -1117,15 +1119,13 @@ fn unfinished_ticket(room: &Room, me: &str) -> Option<(String, chat_act::RawAct)
                 self_claim = false;
             }
             if !line.hollow {
-                if let Some((_, act)) = &found {
-                    if let chat_act::RawAct::Ticket { title, .. } = act {
-                        if line
-                            .content
-                            .to_ascii_lowercase()
-                            .contains(&title.to_ascii_lowercase())
-                        {
-                            found = None;
-                        }
+                if let Some((_, chat_act::RawAct::Ticket { title, .. })) = &found {
+                    if line
+                        .content
+                        .to_ascii_lowercase()
+                        .contains(&title.to_ascii_lowercase())
+                    {
+                        found = None;
                     }
                 }
             }
@@ -1605,7 +1605,7 @@ async fn continue_after_confirm(
         let Some((thread_root, draft_id, lines, speaker)) = found else {
             continue;
         };
-        let answers_every_line = !board.shapers_room().is_some_and(|room| room == channel);
+        let answers_every_line = board.shapers_room().is_none_or(|room| room != channel);
         let mut place = conversation_place(board, channel, answers_every_line);
         if thread_root.is_some() {
             place.push_str(" This continues the thread the draft was in.");
@@ -2079,7 +2079,7 @@ fn choose_turn(
     let hold = if sign.is_some() || draft.is_some() {
         None
     } else {
-        resolved.filter(|act| !is_proposal(&act))
+        resolved.filter(|act| !is_proposal(act))
     };
     Turn { sign, draft, hold }
 }

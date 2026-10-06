@@ -650,7 +650,7 @@ impl Board {
         }
         lines.push("Profiles:".to_string());
         let mut profile_keys: Vec<String> = self.profiles.keys().cloned().collect();
-        profile_keys.sort_by(|left, right| self.label(left).cmp(&self.label(right)));
+        profile_keys.sort_by_key(|left| self.label(left));
         if profile_keys.is_empty() {
             lines.push("- none yet".to_string());
         }
@@ -1700,9 +1700,7 @@ fn stated_situation(text: &str) -> Option<String> {
 
 /// Up to six sentences, one paragraph, stopping before a question or a publish cue.
 fn situation_paragraph(text: &str) -> Option<String> {
-    let mut rest = text
-        .trim()
-        .trim_start_matches(|ch: char| matches!(ch, ':' | ',' | '-' | ' '));
+    let mut rest = text.trim().trim_start_matches([':', ',', '-', ' ']);
     let mut sentences = Vec::new();
     while !rest.is_empty() && sentences.len() < 6 {
         let Some(end) = rest.find(['.', '!', '?']) else {
@@ -1875,9 +1873,7 @@ fn stated_artifact(text: &str) -> Option<String> {
 }
 
 fn first_direction_sentence(text: &str) -> Option<String> {
-    let rest = text
-        .trim()
-        .trim_start_matches(|ch: char| matches!(ch, ':' | ',' | '-' | ' '));
+    let rest = text.trim().trim_start_matches([':', ',', '-', ' ']);
     let end = rest.find(['.', '!', '?']).unwrap_or(rest.len());
     if rest[end..].starts_with('?') {
         return None;
@@ -2023,14 +2019,10 @@ fn project_from_sentences(say: &str) -> Option<RawAct> {
         })
         .min_by_key(String::len);
     let head = cut.unwrap_or_else(|| say.to_string());
-    let head = head
-        .trim()
-        .trim_end_matches(|ch: char| matches!(ch, '.' | '!' | '?'));
+    let head = head.trim().trim_end_matches(['.', '!', '?']);
     let (title, brief) = head.split_once(". ")?;
     let title = clean_title(title)?;
-    let brief = brief
-        .trim()
-        .trim_end_matches(|ch: char| matches!(ch, '.' | '!' | '?'));
+    let brief = brief.trim().trim_end_matches(['.', '!', '?']);
     if brief.chars().count() < 8 {
         return None;
     }
@@ -2051,7 +2043,7 @@ fn project_from_request(user: &str) -> Option<RawAct> {
         .filter_map(|marker| lower.find(marker).map(|at| (*marker, at)))
         .min_by_key(|(_, at)| *at)?;
     let rest = user[at + marker.len()..].trim();
-    let rest = rest.trim_start_matches(|ch: char| matches!(ch, ',' | ':' | '-' | ' '));
+    let rest = rest.trim_start_matches([',', ':', '-', ' ']);
     let rest = rest
         .strip_prefix("about ")
         .or_else(|| rest.strip_prefix("to "))
@@ -2175,6 +2167,10 @@ fn item_words(after: &str) -> Option<String> {
 }
 
 /// They asked to open a proposal, so a project act publishes on this turn.
+///
+/// The model prompt is the production seam. This predicate is the check
+/// that the cue words still mean a proposal.
+#[allow(dead_code)]
 pub fn asks_for_proposal(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     if !lower.contains("proposal") {
@@ -3200,7 +3196,7 @@ fn ticket_titled_under(text: &str) -> Option<RawAct> {
     let parent = after[..end]
         .trim()
         .trim_matches(['"', '“', '”'])
-        .trim_end_matches(|ch: char| matches!(ch, '.' | ','));
+        .trim_end_matches(['.', ',']);
     if parent.chars().count() < 3 || parent.eq_ignore_ascii_case(&title) {
         return None;
     }
@@ -3271,9 +3267,7 @@ fn ticket_from_request(user: &str) -> Option<RawAct> {
     };
     let rest = user[at + marker.len()..].trim();
     let (parent, title) = rest.split_once(',')?;
-    let parent = parent
-        .trim()
-        .trim_end_matches(|ch: char| matches!(ch, '.' | '!' | '?'));
+    let parent = parent.trim().trim_end_matches(['.', '!', '?']);
     let title = title
         .trim()
         .trim_start_matches("called ")
