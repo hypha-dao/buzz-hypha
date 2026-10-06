@@ -45,6 +45,7 @@ import {
   type RuleKind,
 } from "../chatDraft";
 import { publishOrgCommand, type DirectionSlug } from "../commands";
+import { linesForDirectionPropose } from "../directionLines";
 
 import { useOverviewEvents } from "../hooks/useOverviewEvents";
 import { useOrgAgentPubkey } from "../useOrgAgent";
@@ -252,14 +253,14 @@ export function ProposalDraftDialog({
     setBusy(true);
     setError(null);
     try {
-      const lines =
-        slug && lined(slug)
-          ? body
-              .split(/\n+/)
-              .map((line) => line.trim())
-              .filter((line) => line.length >= 12)
-              .map((text) => ({ text }))
-          : undefined;
+      const parsed =
+        slug && lined(slug) ? linesForDirectionPropose(slug, body) : null;
+      if (parsed && "error" in parsed) {
+        setError(parsed.error);
+        setBusy(false);
+        return;
+      }
+      const lines = parsed && "lines" in parsed ? parsed.lines : undefined;
       if (!publishedCommand.current) {
         const command = await publishOrgCommand(
           commandForDraft({

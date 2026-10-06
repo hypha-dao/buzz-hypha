@@ -78,6 +78,7 @@ One pull request. Slice ids are the
 | ----- | ------ | ----- |
 | L-0   | in progress | Situation is the fifth direction head in `world.mjs` (River, Energy, cold). `cargo test -p buzz-org-agent` fixture counts are five heads; River and Energy direction proposals are 10. `seedPreviewFeatures: false` writes `org: false` so `org-skeleton` 01 hides the doors while `preview-features.json` keeps `org.defaultEnabled: true`. |
 | G-1   | in progress | Objective lines require `date` and `done_when` (≤ 200). Strategy lines require `type` (`bet`, `rule`, `refusal`). Postgres `objectives_need_done_when_and_strategy_lines_need_a_type` rejects a missing `done_when` and an untyped strategy line. CLI `direction_propose_sends_done_when_and_strategy_type` sends both fields. |
+| G-2   | in progress | `Board::interview_cue` walks the seven rows. `a_board_with_mission_and_vision_asks_situation_not_mission` asks situation. `a_board_with_every_row_confirmed_is_ready_and_asks_nothing` says the org is ready and asks nothing. `an_objective_without_done_when_is_not_a_draft` holds "be more visible". `dm_chat` calls `apply_interview` before it publishes a direction tag. |
 
 ---
 

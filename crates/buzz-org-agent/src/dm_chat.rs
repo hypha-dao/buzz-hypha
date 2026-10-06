@@ -1238,6 +1238,7 @@ async fn recover_missing_direction(
     conn: &mut NostrWsConnection,
     keys: &Keys,
     me: &str,
+    board: &Board,
     rooms: &mut HashMap<String, Room>,
     channel: &str,
 ) -> Result<bool, String> {
@@ -1257,6 +1258,44 @@ async fn recover_missing_direction(
     let Some((slug, body)) = found else {
         return Ok(false);
     };
+    let shaped =
+        chat_act::apply_interview(board, "", String::new(), Some(slug), Some(body.clone()));
+    let Some(slug) = shaped.direction else {
+        if shaped.say.is_empty() {
+            return Ok(false);
+        }
+        let speaker = rooms
+            .get(channel)
+            .and_then(|room| latest_human(room, me).map(|line| line.author.clone()));
+        let id = publish_chat(
+            conn,
+            keys,
+            channel,
+            OutgoingChat {
+                content: &shaped.say,
+                direction: None,
+                body: None,
+                from: speaker.as_deref(),
+                extra: &[],
+                thread: None,
+                reply_to: None,
+            },
+        )
+        .await?;
+        if let Some(room) = rooms.get_mut(channel) {
+            room.push_acted(
+                id,
+                me.to_string(),
+                shaped.say,
+                now_secs(),
+                false,
+                None,
+                false,
+            );
+        }
+        return Ok(true);
+    };
+    let body = shaped.body.unwrap_or(body);
     let speaker = rooms
         .get(channel)
         .and_then(|room| latest_human(room, me).map(|line| line.author.clone()));
@@ -1303,7 +1342,7 @@ async fn reply_one(
     if recover_unfinished_ticket(conn, keys, me, board, rooms, channel).await? {
         return Ok(());
     }
-    if recover_missing_direction(conn, keys, me, rooms, channel).await? {
+    if recover_missing_direction(conn, keys, me, board, rooms, channel).await? {
         return Ok(());
     }
     let skip = {
@@ -1445,6 +1484,26 @@ async fn reply_one(
             reply.body = Some(body);
         }
     }
+    let mut profile_act = None;
+    if reply.direction.is_some() || (sign.is_none() && draft.is_none() && hold.is_none()) {
+        let shaped = chat_act::apply_interview(
+            board,
+            said,
+            std::mem::take(&mut reply.say),
+            reply.direction.take(),
+            reply.body.take(),
+        );
+        reply.say = shaped.say;
+        reply.direction = shaped.direction;
+        reply.body = shaped.body;
+        if sign.is_none() && draft.is_none() && hold.is_none() {
+            if let Some(raw) = shaped.profile {
+                if let Some(who) = speaker.as_deref() {
+                    profile_act = chat_act::resolve_act(&raw, board, who, now_secs());
+                }
+            }
+        }
+    }
     reply.say = reply_sentence(&reply.say, draft.as_ref().or(hold.as_ref()), sign.as_ref());
     if let Some(act) = draft.as_ref().or(hold.as_ref()).or(sign.as_ref()) {
         reply.say = chat_act::annotate_act_say(&reply.say, act, board);
@@ -1452,6 +1511,7 @@ async fn reply_one(
     let act_tags = sign
         .as_ref()
         .or(draft.as_ref())
+        .or(profile_act.as_ref())
         .and_then(|act| speaker.as_deref().map(|who| chat_act::act_tags(act, who)));
     if act_tags.is_none() && hollow_claim(&reply.say) {
         reply.say = if reply.say.to_ascii_lowercase().contains("dri") {
@@ -1560,14 +1620,21 @@ async fn continue_after_confirm(
         if reply.say.is_empty() {
             continue;
         }
-        let say = match (reply.direction.as_deref(), reply.body.as_deref()) {
+        let shaped = chat_act::apply_interview(
+            board,
+            "",
+            reply.say.clone(),
+            reply.direction.clone(),
+            reply.body.clone(),
+        );
+        let say = match (shaped.direction.as_deref(), shaped.body.as_deref()) {
             (Some(slug), Some(body)) => chat_act::drop_restated_lines(
-                &chat_act::direction_reply_say(&reply.say, slug),
+                &chat_act::direction_reply_say(&shaped.say, slug),
                 slug,
                 body,
             ),
-            (Some(slug), None) => chat_act::direction_reply_say(&reply.say, slug),
-            (None, _) => reply.say.clone(),
+            (Some(slug), None) => chat_act::direction_reply_say(&shaped.say, slug),
+            (None, _) => shaped.say.clone(),
         };
         let id = publish_chat(
             conn,
@@ -1575,8 +1642,8 @@ async fn continue_after_confirm(
             channel,
             OutgoingChat {
                 content: &say,
-                direction: reply.direction.as_deref(),
-                body: reply.body.as_deref(),
+                direction: shaped.direction.as_deref(),
+                body: shaped.body.as_deref(),
                 from: speaker.as_deref(),
                 extra: &[],
                 thread: thread_root.as_deref().map(|root| (root, draft_id.as_str())),
@@ -1592,10 +1659,10 @@ async fn continue_after_confirm(
                 now_secs(),
                 false,
                 thread_root,
-                reply.direction.is_some(),
+                shaped.direction.is_some(),
             );
-            if let Some(slug) = reply.direction.as_deref() {
-                room.note_direction(&id, slug, reply.body.as_deref());
+            if let Some(slug) = shaped.direction.as_deref() {
+                room.note_direction(&id, slug, shaped.body.as_deref());
             }
         }
     }

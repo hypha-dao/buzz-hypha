@@ -8,6 +8,9 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
+#[path = "interview.rs"]
+mod interview;
+
 /// What the model is allowed to ask the member's client to sign.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawAct {
@@ -178,10 +181,19 @@ struct Item {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct SeenLine {
+    text: String,
+    date: Option<u64>,
+    done_when: Option<String>,
+    line_type: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct DirectionHead {
     slug: String,
     version: u32,
     body: String,
+    lines: Vec<SeenLine>,
     created_at: u64,
 }
 
@@ -256,6 +268,23 @@ impl Board {
                     return;
                 };
                 let body = text_field(&value, "body").unwrap_or_default();
+                let lines = value
+                    .get("lines")
+                    .and_then(Value::as_array)
+                    .map(|rows| {
+                        rows.iter()
+                            .filter_map(|row| {
+                                let text = text_field(row, "text")?;
+                                Some(SeenLine {
+                                    text,
+                                    date: row.get("date").and_then(Value::as_u64),
+                                    done_when: text_field(row, "done_when"),
+                                    line_type: text_field(row, "type"),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 let version = value.get("version").and_then(Value::as_u64).unwrap_or(0) as u32;
                 let replace = self
                     .direction
@@ -268,6 +297,7 @@ impl Board {
                             slug: slug.to_string(),
                             version,
                             body,
+                            lines,
                             created_at,
                         },
                     );
@@ -597,6 +627,7 @@ impl Board {
         if items.len() > 40 {
             lines.push(format!("- and {} more", items.len() - 40));
         }
+        lines.push(format!("Interview: {}", self.interview_line()));
         if !self.names.is_empty() {
             let mut people: Vec<String> = self
                 .names
@@ -835,7 +866,17 @@ const DIRECTION_COACHING: &str = "\
     Think from first principles, not from what similar orgs usually do. Ask why until you reach the real constraint. \
     Cut anything that moves no objective. Prefer the fastest cheap test to a long plan. \
     Be direct, specific, and brief. No jargon, no flattery, no pep talk. \
-    Never write a live number, such as a balance or a member count, into direction.";
+    Never write a live number, such as a balance or a member count, into direction. \
+    The seven rows, in order, are mission, vision, situation, objectives, strategy, the Shaper's profile, and where the code lives. \
+    Ask the Interview line from the overview, and no earlier row. \
+    An objective line is a draft only when it names a date and a done when a person could answer yes or no. \
+    Write each objective as: <outcome>. Done when: <the check>. By: YYYY-MM-DD. \
+    A vague line such as be more visible is a follow-up, never a draft. \
+    Write each strategy line as: <the line>. Type: bet, or Type: rule, or Type: refusal. \
+    At least one line is a bet and one is a refusal. \
+    Code is a strategy line of type rule: code lives at <url>, or the line no repository yet. \
+    The profile is one sentence of what they do and the skills they actually have, written Skills: after the sentence. \
+    When the Interview line says the org is ready, say that and offer to draft a project. Ask no question.";
 
 /// Prompt plus the live overview. `place` is the DM or `#shapers`.
 pub fn system_prompt(place: &str, overview: &str) -> String {
@@ -1314,6 +1355,8 @@ pub fn asked_for_new_project(text: &str) -> bool {
         || lower.contains("open a project")
         || (lower.contains("project") && lower.contains("create"))
 }
+
+pub use interview::apply_interview;
 
 /// A direction draft the model described in prose instead of `direction` and `body`.
 ///

@@ -14,6 +14,7 @@ import { Textarea } from "@/shared/ui/textarea";
 
 import { ORG_PAPER_CLASS } from "../orgPaper";
 import type { DirectionSlug } from "../../commands";
+import { linesForDirectionPropose } from "../../directionLines";
 import { useOrgCommands } from "../../useOrgCommands";
 
 import { DIRECTION_LABEL } from "./overviewCopy";
@@ -50,11 +51,18 @@ export function DirectionFormDialog({
     setBusy(true);
     setError(null);
     try {
+      const lined = slug === "objectives" || slug === "strategy";
+      const parsed = lined ? linesForDirectionPropose(slug, body) : null;
+      if (parsed && "error" in parsed) {
+        setError(parsed.error);
+        return;
+      }
       await commands.publish(
         commands.buildIoDirectionPropose({
           slug,
           base,
           body,
+          lines: parsed && "lines" in parsed ? parsed.lines : undefined,
           voteAgree: false,
         }),
       );
