@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use crate::jobs::JobQueue;
 use crate::judge::{self, Draft, JudgeReason};
 use crate::relay::link::{RelayIo, RelayLink};
 use crate::relay::outbox::Outbox;
@@ -39,6 +40,8 @@ pub struct OrgAgent<M, R> {
     pub outbox: Outbox,
     /// Agent key.
     pub keys: Keys,
+    /// Verdict jobs. They compile and record. They do not publish.
+    pub jobs: JobQueue,
     /// Hook the fencing test uses: run after the job snaps generation
     /// and before JUDGE, so a newer event can land mid-THINK.
     pub mid_think: Option<MidThinkHook>,
@@ -63,6 +66,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             link: RelayLink::new(io, hear),
             outbox: Outbox::open(&state_dir)?,
             keys,
+            jobs: JobQueue::new(),
             mid_think: None,
         })
     }
@@ -85,6 +89,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             .unwrap_or(transition.generation())
             .to_owned();
         bundle.generation = current.clone();
+        self.jobs.enqueue(&transition, &self.state);
         let Some(mut draft) = draft else {
             return Ok(HandleOutcome::NoDraft);
         };

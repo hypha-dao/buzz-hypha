@@ -2,12 +2,15 @@
 //! generation mid-THINK is `stale`. Both go through [`OrgAgent::handle`]
 //! / [`OrgAgent::publish_permitted`] (the production seam).
 
-use buzz_core::intelligent_org::{ChildrenCounts, WorkItem, WorkItemState};
+use buzz_core::intelligent_org::{
+    ChildrenCounts, DirectionArtifact, DirectionLine, DirectionSlug, WorkItem, WorkItemState,
+};
 use buzz_core::kind::KIND_IO_WORK_ITEM;
+use buzz_org_agent::jobs::JobLog;
 use buzz_org_agent::judge::{Draft, JudgeReason};
 use buzz_org_agent::pipeline::{HandleOutcome, OrgAgent};
 use buzz_org_agent::relay::{FakeRelay, Permitted};
-use buzz_org_agent::state::{OrgState, Transition};
+use buzz_org_agent::state::{DirectionHead, OrgState, Transition};
 use buzz_org_agent::think::{ContextBundle, Recorded};
 use nostr::{EventBuilder, Keys, Kind, Tag};
 
@@ -158,4 +161,91 @@ fn newer_generation_mid_think_is_stale() {
             reason: JudgeReason::Stale
         }
     );
+}
+
+fn objectives_head(event_id: &str) -> DirectionHead {
+    DirectionHead {
+        artifact: DirectionArtifact {
+            slug: DirectionSlug::Objectives,
+            version: 1,
+            body: "Outcomes.".into(),
+            lines: vec![DirectionLine {
+                n: 1,
+                id: "line-a".into(),
+                text: "A weekday hall".into(),
+                date: Some(1_780_000_000),
+                done_when: Some("one paid night".into()),
+                line_type: None,
+            }],
+            confirmed_by: "aa".repeat(32),
+            confirmed_at: 1,
+            proposed_by: "bb".repeat(32),
+            proposal: "11111111-1111-4111-8111-111111111111".into(),
+            prev: None,
+        },
+        event_id: event_id.into(),
+    }
+}
+
+fn confirm(generation: &str) -> Transition {
+    Transition::DirectionConfirmed {
+        slug: DirectionSlug::Objectives,
+        version: 1,
+        diff: String::new(),
+        generation: generation.into(),
+    }
+}
+
+#[test]
+fn direction_confirmed_coalesces_and_a_late_finish_is_stale() {
+    let mut state = OrgState::new();
+    state
+        .direction
+        .insert("objectives".into(), objectives_head("v1"));
+    let (mut agent, _dir) = agent(state);
+    agent.link.connect(&Default::default()).expect("connect");
+
+    let first = agent
+        .handle(confirm("v1"), None, ContextBundle::default())
+        .expect("first");
+    assert_eq!(first, HandleOutcome::NoDraft);
+    assert_eq!(agent.jobs.len(), 1);
+    assert_eq!(agent.jobs.generation_of("direction:objectives"), Some("v1"));
+
+    let second = agent
+        .handle(confirm("v2"), None, ContextBundle::default())
+        .expect("second");
+    assert_eq!(second, HandleOutcome::NoDraft);
+    assert_eq!(agent.jobs.len(), 1);
+    assert_eq!(agent.jobs.generation_of("direction:objectives"), Some("v2"));
+
+    let mission = agent
+        .handle(
+            Transition::DirectionConfirmed {
+                slug: DirectionSlug::Mission,
+                version: 1,
+                diff: String::new(),
+                generation: "mission-1".into(),
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("mission");
+    assert_eq!(mission, HandleOutcome::NoDraft);
+    assert_eq!(agent.jobs.len(), 1);
+
+    assert!(agent.jobs.start());
+    agent
+        .state
+        .direction
+        .get_mut("objectives")
+        .expect("head")
+        .event_id = "v3".into();
+    assert!(agent.jobs.finish(&agent.state).is_none());
+    assert!(agent.jobs.log().iter().any(|entry| matches!(
+        entry,
+        JobLog::Stale { key, generation }
+            if key == "direction:objectives" && generation == "v2"
+    )));
+    assert!(agent.link.io().published().is_empty());
 }
