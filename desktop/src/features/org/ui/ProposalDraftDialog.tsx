@@ -253,8 +253,11 @@ export function ProposalDraftDialog({
     setBusy(true);
     setError(null);
     try {
-      const parsed =
-        slug && lined(slug) ? linesForDirectionPropose(slug, body) : null;
+      const linedSlug =
+        slug === "objectives" || slug === "strategy" ? slug : null;
+      const parsed = linedSlug
+        ? linesForDirectionPropose(linedSlug, body)
+        : null;
       if (parsed && "error" in parsed) {
         setError(parsed.error);
         setBusy(false);

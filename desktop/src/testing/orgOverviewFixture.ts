@@ -213,3 +213,77 @@ export function createOverviewSeedEvents(): SeedEvent[] {
     ),
   ];
 }
+
+/** Objectives carry done-when. Situation is absent, so Context marks it missing. */
+export function createContextGapEvents(): SeedEvent[] {
+  return [
+    seedEvent(
+      "a".repeat(64),
+      39100,
+      {
+        slug: "mission",
+        version: 1,
+        body: "Feed the Saturday market every week.",
+        confirmed_by: OVERVIEW_CONFIRMER_PUBKEY,
+        confirmed_at: 1_750_000_000,
+      },
+      [
+        ["d", "mission"],
+        ["version", "1"],
+        ["p", OVERVIEW_CONFIRMER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "c".repeat(64),
+      39100,
+      {
+        slug: "objectives",
+        version: 1,
+        body: "Book the weekday hall.",
+        lines: [
+          {
+            n: 1,
+            id: "l_7f3a",
+            text: "Weekday hall booked",
+            date: 1_780_000_000,
+            done_when: "the hall has hosted a weekday night",
+          },
+        ],
+        confirmed_by: OVERVIEW_CONFIRMER_PUBKEY,
+        confirmed_at: 1_745_000_000,
+      },
+      [
+        ["d", "objectives"],
+        ["version", "1"],
+        ["p", OVERVIEW_CONFIRMER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "d".repeat(64),
+      39100,
+      {
+        slug: "strategy",
+        version: 1,
+        body: "How the hall gets booked.",
+        lines: [
+          {
+            n: 1,
+            id: "s_bet",
+            text: "Try one Thursday before any build",
+            type: "bet",
+          },
+          {
+            n: 2,
+            id: "s_no",
+            text: "No brand money",
+            type: "refusal",
+          },
+        ],
+      },
+      [
+        ["d", "strategy"],
+        ["version", "1"],
+      ],
+    ),
+  ];
+}

@@ -25,6 +25,7 @@ test("overviewFilters is the Protocol §6.5 Overview set", () => {
       { kinds: [39100], d: undefined, t: undefined },
       { kinds: [39103], d: ["shapers"], t: undefined },
       { kinds: [39101], d: undefined, t: ["project"] },
+      { kinds: [39105], d: undefined, t: undefined },
     ],
   );
 });

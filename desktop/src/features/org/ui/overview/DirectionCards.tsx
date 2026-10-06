@@ -110,6 +110,22 @@ function DirectionCard({
                 }}
               >
                 {line.text}
+                {slot.slug === "objectives" && line.doneWhen ? (
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid={`org-direction-done-when-${line.id}`}
+                  >
+                    Done when: {line.doneWhen}
+                  </p>
+                ) : null}
+                {slot.slug === "strategy" && line.lineType ? (
+                  <p
+                    className="text-sm capitalize text-muted-foreground"
+                    data-testid={`org-direction-type-${line.id}`}
+                  >
+                    {line.lineType}
+                  </p>
+                ) : null}
               </li>
             ))}
           </ol>

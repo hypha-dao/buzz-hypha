@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   collectOverviewPubkeys,
+  contextRows,
   directionHistory,
   directionSlots,
   parseShapersState,
@@ -345,4 +346,35 @@ test("collectOverviewPubkeys unions confirmer, shapers, holder, agent", () => {
   assert.ok(pubkeys.includes(CONFIRMER));
   assert.ok(pubkeys.includes(ME));
   assert.ok(pubkeys.includes(HOLDER));
+});
+
+test("an objectives line keeps done when and a missing situation stays missing", () => {
+  const events = [
+    event(
+      39100,
+      {
+        slug: "objectives",
+        version: 1,
+        body: "Book the hall.",
+        lines: [
+          {
+            n: 1,
+            id: "l_7f3a",
+            text: "Weekday hall booked",
+            date: 1_780_000_000,
+            done_when: "the hall has hosted a weekday night",
+          },
+        ],
+      },
+      [
+        ["d", "objectives"],
+        ["version", "1"],
+      ],
+    ),
+  ];
+  const slots = directionSlots(events);
+  const line = slots.find((slot) => slot.slug === "objectives")?.head?.lines[0];
+  assert.equal(line?.doneWhen, "the hall has hosted a weekday night");
+  const situation = contextRows(events).find((row) => row.id === "situation");
+  assert.equal(situation?.ready, false);
 });

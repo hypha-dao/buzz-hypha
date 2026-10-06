@@ -43,12 +43,13 @@ function history(
   return { ...filter, limit: ORG_HISTORY_LIMIT };
 }
 
-/** Overview: `{kinds:[39100]}`, `{kinds:[39103]}`, `{kinds:[39101], "#t":["project"]}`. */
+/** Overview: direction, shapers, project roots, and profiles for the context line. */
 export function overviewFilters(): RelaySubscriptionFilter[] {
   return [
     history({ kinds: [KIND_IO_DIRECTION] }),
     history({ kinds: [KIND_IO_SHAPERS], "#d": [SHAPERS_D_TAG] }),
     history({ kinds: [KIND_IO_WORK_ITEM], [`#${TAG_TYPE}`]: [TYPE_PROJECT] }),
+    history({ kinds: [KIND_IO_PROFILE] }),
   ];
 }
 

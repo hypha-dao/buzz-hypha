@@ -7,6 +7,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_IO_AGENT_NOTE,
   KIND_IO_DIRECTION,
+  KIND_IO_PROFILE,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_WORK_ITEM,
@@ -29,6 +30,8 @@ export type DirectionLine = {
   id: string;
   text: string;
   date?: number;
+  doneWhen?: string;
+  lineType?: "bet" | "rule" | "refusal";
 };
 
 export type DirectionHead = {
@@ -157,7 +160,15 @@ function parseLines(value: unknown): DirectionLine[] {
     const text = asString(row.text);
     if (n === null || !id || !text) continue;
     const date = asNumber(row.date);
-    lines.push(date === null ? { n, id, text } : { n, id, text, date });
+    const doneWhen = asString(row.done_when);
+    const lineType = asString(row.type);
+    const line: DirectionLine = { n, id, text };
+    if (date !== null) line.date = date;
+    if (doneWhen) line.doneWhen = doneWhen;
+    if (lineType === "bet" || lineType === "rule" || lineType === "refusal") {
+      line.lineType = lineType;
+    }
+    lines.push(line);
   }
   return lines.sort((left, right) => left.n - right.n);
 }
@@ -466,4 +477,145 @@ export function collectOverviewPubkeys(
     if (hold.dri) pubkeys.add(hold.dri);
   }
   return [...pubkeys];
+}
+
+export type ContextRowId =
+  | "mission"
+  | "vision"
+  | "situation"
+  | "objectives"
+  | "strategy"
+  | "people"
+  | "code";
+
+export type ContextRow = {
+  id: ContextRowId;
+  label: string;
+  ready: boolean;
+};
+
+const CONTEXT_LABEL: Record<ContextRowId, string> = {
+  mission: "Mission",
+  vision: "Vision",
+  situation: "Situation",
+  objectives: "Objectives",
+  strategy: "Strategy",
+  people: "People",
+  code: "Code",
+};
+
+/**
+ * The seven interview rows, from the same heads the agent reads.
+ * Ready matches the interview: prose on the first three, three to seven
+ * dated objectives with done-when, a bet and a refusal, every Shaper's
+ * profile, and a code rule or "no repository yet".
+ */
+export function contextRows(
+  events: readonly Pick<
+    RelayEvent,
+    "kind" | "tags" | "content" | "created_at" | "id"
+  >[],
+): ContextRow[] {
+  const slots = directionSlots(events);
+  const head = (slug: DirectionSlug) =>
+    slots.find((slot) => slot.slug === slug)?.head ?? null;
+  const shapers = parseShapersState(events)?.shapers ?? [];
+  const ready: Record<ContextRowId, boolean> = {
+    mission: proseReady(head("mission")),
+    vision: proseReady(head("vision")),
+    situation: proseReady(head("situation")),
+    objectives: objectivesReady(head("objectives")),
+    strategy: strategyReady(head("strategy")),
+    people: peopleReady(events, shapers),
+    code: codeReady(head("strategy")),
+  };
+  return (Object.keys(CONTEXT_LABEL) as ContextRowId[]).map((id) => ({
+    id,
+    label: CONTEXT_LABEL[id],
+    ready: ready[id],
+  }));
+}
+
+function proseReady(head: DirectionHead | null): boolean {
+  return (head?.body.trim().length ?? 0) >= 12;
+}
+
+function objectivesReady(head: DirectionHead | null): boolean {
+  const lines = head?.lines ?? [];
+  return (
+    lines.length >= 3 &&
+    lines.length <= 7 &&
+    lines.every(
+      (line) =>
+        line.date !== undefined &&
+        typeof line.doneWhen === "string" &&
+        line.doneWhen.trim().length > 0 &&
+        line.doneWhen.length <= 200,
+    )
+  );
+}
+
+function strategyReady(head: DirectionHead | null): boolean {
+  const types = new Set(head?.lines.map((line) => line.lineType));
+  return types.has("bet") && types.has("refusal");
+}
+
+function codeReady(head: DirectionHead | null): boolean {
+  if (head?.body.toLowerCase().includes("no repository yet")) return true;
+  return (head?.lines ?? []).some((line) => {
+    if (line.lineType !== "rule") return false;
+    const text = line.text.toLowerCase();
+    return (
+      text.includes("no repository yet") ||
+      (text.includes("code lives at ") && text.includes("http"))
+    );
+  });
+}
+
+function peopleReady(
+  events: readonly Pick<
+    RelayEvent,
+    "kind" | "tags" | "content" | "created_at"
+  >[],
+  shapers: readonly string[],
+): boolean {
+  if (shapers.length === 0) return false;
+  return shapers.every((pubkey) => {
+    const profile = newestProfile(events, pubkey);
+    return (
+      profile.about.trim().length >= 12 && profile.skills.length > 0
+    );
+  });
+}
+
+function newestProfile(
+  events: readonly Pick<
+    RelayEvent,
+    "kind" | "tags" | "content" | "created_at"
+  >[],
+  pubkey: string,
+): { about: string; skills: string[] } {
+  const wanted = normalizePubkey(pubkey);
+  const newest = [...events]
+    .filter(
+      (event) =>
+        event.kind === KIND_IO_PROFILE &&
+        event.tags.some((tag) => tag[0] === "d" && tag[1] === wanted),
+    )
+    .sort((left, right) => right.created_at - left.created_at)[0];
+  if (!newest) return { about: "", skills: [] };
+  const content = parseJson(newest.content);
+  const about = asString(content?.about) ?? "";
+  const skills = Array.isArray(content?.skills)
+    ? content.skills.flatMap((entry) => {
+        if (typeof entry === "string" && entry.length > 0) return [entry];
+        if (entry && typeof entry === "object") {
+          const row = entry as Record<string, unknown>;
+          const label = asString(row.label) ?? asString(row.slug);
+          return label ? [label] : [];
+        }
+        return [];
+      })
+    : [];
+  return { about, skills };
 }
