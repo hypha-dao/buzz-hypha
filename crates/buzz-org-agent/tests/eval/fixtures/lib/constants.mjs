@@ -290,8 +290,8 @@ export const ENERGY = {
   locale: "es",
 };
 
-// Not in `data.ts`: one founder, four version-1 artifacts, one `39103`,
-// an empty tree, no profiles — the first-week experience.
+// Not in `data.ts`: one founder, five version-1 artifacts (including the
+// situation), one `39103`, an empty tree, no profiles — the first-week experience.
 export const COLD = {
   id: "cold",
   founder: "Ada",
@@ -303,6 +303,9 @@ export const COLD = {
     },
     vision: {
       body: "In a year, a room that opens every month, three regulars who can teach a repair, and nothing on the estate thrown away that could have been mended.",
+    },
+    situation: {
+      body: "The café has not opened. Nothing is proven yet, and the room is not booked. The one thing we must learn next is whether three neighbours will come to a first Saturday.",
     },
     objectives: {
       body: "What we mean to have done soon. One sentence each, with the timing inside it.",

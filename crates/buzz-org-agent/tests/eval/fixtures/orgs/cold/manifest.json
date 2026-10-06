@@ -31,9 +31,14 @@
       "event": "b1b539607a7e9d386e0f7117d8f542cc0bffc9af84edc63cfe0daa1288cc4eb9",
       "lines": {}
     },
+    "situation": {
+      "version": 1,
+      "event": "a3f1d3cf8299d43dffd50c40d6c40e8de9f370927220fad355b0e8f1acbc51eb",
+      "lines": {}
+    },
     "objectives": {
       "version": 1,
-      "event": "1211978f444c3d41e6607dde5ea3713da8bd621677d1719570e83d1cbd5ab96e",
+      "event": "f898525c4346f39320e629113b6443ed4cc2eb4da3e19c3e0f5ee0a2d4658a81",
       "lines": {
         "l_c85b7adf": "The first repair café opens before July.",
         "l_778cfce5": "Three volunteers can each run a bench by September."
@@ -41,7 +46,7 @@
     },
     "strategy": {
       "version": 1,
-      "event": "e23fcb924017566cadd4f361ff3a032c0db75ee896e1532526a6657ba122852a",
+      "event": "ab415ad69bdccd0febede0f7296681392e1a9157fa9eadb0b13bb76ec5468f44",
       "lines": {
         "l_f27e261a": "Borrow before we buy: tools and the room come from people who have them.",
         "l_a8dbf6c8": "No charging. A donation tin, nothing else."
@@ -65,6 +70,11 @@
       "kind": "direction",
       "status": "passed"
     },
+    "direction-situation-v1": {
+      "id": "ef56ea40-19bd-4c32-952a-361b8da9fae6",
+      "kind": "direction",
+      "status": "passed"
+    },
     "direction-objectives-v1": {
       "id": "ccfe81a5-d037-4ecd-9707-28eb0d2a1dd7",
       "kind": "direction",
@@ -80,10 +90,10 @@
     "13534": 1,
     "39000": 1,
     "39002": 1,
-    "39100": 4,
-    "39102": 10,
+    "39100": 5,
+    "39102": 12,
     "39103": 1,
     "50001": 1,
-    "50002": 4
+    "50002": 5
   }
 }

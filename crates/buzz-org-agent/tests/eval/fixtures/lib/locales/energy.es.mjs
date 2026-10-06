@@ -195,4 +195,11 @@ export const ENERGY_ES = {
   "But two of the three countries and the Portuguese FAQ have no one holding them, Spain is one person deep on a July date, and the review is Q4.":
     "Pero dos de los tres países y las preguntas frecuentes en portugués no tienen a nadie que los lleve, España depende de una sola persona con fecha de julio, y la revisión es en el T4.",
   "The playbook promises three languages and has one.": "El manual promete tres idiomas y tiene uno.",
+  // Situation
+  "Three live pilots, a sandbox on Ameland, and no second community running the credits alone.":
+    "Tres pilotos en marcha, un sandbox en Ameland, y ninguna segunda comunidad llevando los créditos sola.",
+  "The stage is a set of pilots, not a grid. What exists is Iberia and the legal scaffolding for local ownership. What is proven is that communities keep the income when they co-own the assets. What is stuck is the next island: the sandbox credits are not yet a pattern another community can copy. The one thing we must learn next is whether a second community can run the credits without us in the room.":
+    "La fase es un conjunto de pilotos, no una red. Lo que existe es Iberia y el andamiaje legal de la propiedad local. Lo que está probado es que las comunidades se quedan con los ingresos cuando son copropietarias de los activos. Lo que está atascado es la isla siguiente: los créditos del sandbox todavía no son un patrón que otra comunidad pueda copiar. Lo único que tenemos que aprender ahora es si una segunda comunidad puede llevar los créditos sin nosotros en la sala.",
+  "Written with the mission in January 2024: where the pilots stand, and the question the next island has to answer.":
+    "Escrita con la misión en enero de 2024: dónde están los pilotos, y la pregunta que la isla siguiente tiene que responder.",
 };

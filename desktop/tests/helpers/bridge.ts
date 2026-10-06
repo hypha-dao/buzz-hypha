@@ -637,8 +637,9 @@ type BridgeOptions = {
   /**
    * When true (default), seed every preview feature in preview-features.json as
    * enabled in localStorage so E2E tests can interact with gated UI without
-   * clicking through the Experiments settings panel. Set to false in specs
-   * that exercise the Experiments toggle UI itself.
+   * clicking through the Experiments settings panel. Set to false to turn the
+   * org doors off (`org: false`) even though `org.defaultEnabled` is true.
+   * Other preview features stay at their manifest default.
    */
   seedPreviewFeatures?: boolean;
   user?: keyof typeof TEST_IDENTITIES;
@@ -857,6 +858,16 @@ async function seedPreviewFeaturesEnabled(page: Page) {
   );
 }
 
+/** Explicit off for the org doors. `defaultEnabled: true` would show them. */
+async function seedOrgGateOff(page: Page) {
+  await page.addInitScript(
+    ({ key }) => {
+      window.localStorage.setItem(key, JSON.stringify({ org: false }));
+    },
+    { key: FEATURE_OVERRIDES_STORAGE_KEY },
+  );
+}
+
 export async function installBridge(page: Page, options: BridgeOptions) {
   const identity =
     options.mode === "relay"
@@ -876,9 +887,14 @@ export async function installBridge(page: Page, options: BridgeOptions) {
   if (!options.skipOnboardingSeed) {
     await seedOnboardingCompletionForKnownIdentities(page, options.relayWsUrl);
   }
-  // Default to opting every preview feature in. Specs that exercise the
-  // Experiments toggle UI itself pass `seedPreviewFeatures: false`.
-  if (options.seedPreviewFeatures !== false) {
+  // Default to opting every preview feature in. `org` is default-on in
+  // preview-features.json, so "do not seed" would still show the doors.
+  // Specs that need the gate off pass `seedPreviewFeatures: false`, which
+  // records an explicit `org: false` override. Other preview features stay
+  // at their manifest default.
+  if (options.seedPreviewFeatures === false) {
+    await seedOrgGateOff(page);
+  } else {
     await seedPreviewFeaturesEnabled(page);
   }
 

@@ -339,10 +339,11 @@ fn river_seed_counts_match_the_prototype_map() {
         "no waiting rows in River"
     );
     // 14 `seedProposals`: 3 project + 4 direction kept; 5 money + 2 join dropped.
-    // Direction history adds the versions before the head; Shapers adds the seats.
+    // Direction history adds the versions before the head, plus the situation
+    // head the prototype data does not carry. Shapers adds the seats.
     assert_eq!(
         proposals(&t, ProposalKind::Direction)[&ProposalStatus::Passed],
-        9
+        10
     );
     assert_eq!(
         proposals(&t, ProposalKind::Shapers)[&ProposalStatus::Passed],
@@ -374,7 +375,11 @@ fn river_seed_counts_match_the_prototype_map() {
     );
     assert_eq!(fixture.manifest.rooms.values().filter(|r| r.dm).count(), 2);
     assert_eq!(fixture.manifest.locales, vec!["en", "pt"]);
-    assert_eq!(fixture.manifest.direction.len(), 4);
+    assert_eq!(fixture.manifest.direction.len(), 5);
+    assert!(
+        fixture.manifest.direction.contains_key("situation"),
+        "situation is the fifth direction head"
+    );
     assert!(t.profiles >= 3, "Rafi, Priya, Lea have profiles");
     assert!(
         t.drafts_accepted >= 3,
@@ -415,7 +420,7 @@ fn energy_seed_counts_match_the_prototype_map() {
     );
     assert_eq!(
         proposals(&t, ProposalKind::Direction)[&ProposalStatus::Passed],
-        9
+        10
     );
     assert!(
         proposals(&t, ProposalKind::Money).is_empty(),
@@ -423,13 +428,14 @@ fn energy_seed_counts_match_the_prototype_map() {
     );
     assert_eq!(t.shapers, 3);
     assert_eq!(fixture.manifest.locales, vec!["en", "es"]);
-    assert_eq!(fixture.manifest.direction.len(), 4);
+    assert_eq!(fixture.manifest.direction.len(), 5);
+    assert!(fixture.manifest.direction.contains_key("situation"));
 }
 
-/// Prototype map §3: cold start is one founder, four `39100` at version 1,
-/// one `39103`, an empty tree, no profiles.
+/// Cold start is one founder, five `39100` at version 1 (mission, vision,
+/// situation, objectives, strategy), one `39103`, an empty tree, no profiles.
 #[test]
-fn cold_seed_is_one_founder_four_artifacts_and_an_empty_tree() {
+fn cold_seed_is_one_founder_five_artifacts_and_an_empty_tree() {
     let fixture = load_org("cold").expect("cold");
     let t = tally(&fixture);
     assert!(t.roots.is_empty() && t.tickets.is_empty(), "empty tree");
@@ -444,7 +450,7 @@ fn cold_seed_is_one_founder_four_artifacts_and_an_empty_tree() {
             _ => None,
         })
         .collect();
-    assert_eq!(heads, vec![1, 1, 1, 1]);
+    assert_eq!(heads, vec![1, 1, 1, 1, 1]);
     assert_eq!(fixture.manifest.locales, vec!["en"]);
     assert!(fixture.health.is_empty());
 }

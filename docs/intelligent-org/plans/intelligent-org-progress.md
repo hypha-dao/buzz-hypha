@@ -68,6 +68,16 @@ waits on the relay being live. Rows appear here as those early slices land.
 
 Sliced when their wave opens (plan § Waves 5–8).
 
+### Context, planning, and review
+
+One pull request. Slice ids are the
+[context-engine plan](./intelligent-org-context-engine-plan.md). Status stays
+`in progress` on this branch until that PR opens.
+
+| Slice | Status | Notes |
+| ----- | ------ | ----- |
+| L-0   | in progress | Situation is the fifth direction head in `world.mjs` (River, Energy, cold). `cargo test -p buzz-org-agent` fixture counts are five heads; River and Energy direction proposals are 10. `seedPreviewFeatures: false` writes `org: false` so `org-skeleton` 01 hides the doors while `preview-features.json` keeps `org.defaultEnabled: true`. |
+
 ---
 
 ## Follow-ups discovered
@@ -619,15 +629,16 @@ absorb an item into an unrelated slice.
   `buzz-org-agent/src/chat_act.rs`) and drafts the situation as one
   paragraph. Chat prose recovery opens a situation draft only on an explicit
   request ("create situation draft") and ignores the common noun.
-  Desktop renders it full width between Vision and Objectives. Not updated:
-  the eval fixtures (`tests/eval/fixtures`, `world.mjs`) still seed four
-  heads, and `orgAgentTyping` `CONCERN_WORDS` has no situation entry.
+  Desktop renders it full width between Vision and Objectives. L-0 seeds the
+  fifth head in the eval fixtures. `orgAgentTyping` `CONCERN_WORDS` still has
+  no situation entry.
 - **`intelligent_org_kinds_are_global_only` is stale** (`buzz-relay`
   `handlers/ingest.rs`): it lists `50022` as unregistered, but
   `KIND_IO_WITHDRAW` took it. Swap the neighbour for `50024`.
-- **`org-skeleton.spec.ts` 01 (gate off hides the group) fails** since O-3a
-  made the `org` preview `defaultEnabled: true`; the spec still expects the
-  group to be hidden with seeded preview features off.
+- ~~**`org-skeleton.spec.ts` 01 (gate off hides the group) fails** since O-3a
+  made the `org` preview `defaultEnabled: true`.~~ L-0: `seedPreviewFeatures:
+  false` writes an explicit `org: false` override, so test 01 hides the group
+  while the manifest default stays on.
 
 ---
 
