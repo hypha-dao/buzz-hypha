@@ -14,10 +14,12 @@ import {
   projectCoordinate,
   SEEDED_CONTEXT_PATHS,
   latestHealth,
+  latestWorkPrompt,
   parseWorkItem,
   stateChipLabel,
   trailForItem,
   workBoardColumn,
+  workPromptIsStale,
 } from "./model.ts";
 
 const ROOT = "11111111-1111-4111-8111-111111111111";
@@ -434,6 +436,31 @@ test("a ticket due date moves for the holder and the creator", () => {
   assert.equal(canChangeTicketDue(offered, HOLDER), false);
   assert.ok(held);
   assert.equal(canChangeTicketDue({ ...held, state: "done" }, HOLDER), false);
+});
+
+test("a prompt is stale when the ticket version or the commit moved", () => {
+  const older = "aa".repeat(32);
+  const newer = "bb".repeat(32);
+  const prompt = {
+    id: "p1",
+    pubkey: RELAY,
+    created_at: 20,
+    kind: 50104,
+    tags: [
+      ["i", CHILD],
+      ["based_on", older, "abc1234"],
+    ],
+    content: "Goal\nWrite the note\n",
+    sig: "s".repeat(128),
+  };
+  const other = { ...prompt, id: "p0", created_at: 10, content: "old" };
+  const latest = latestWorkPrompt([other, prompt], CHILD);
+  assert.equal(latest?.content, "Goal\nWrite the note\n");
+  assert.equal(latest?.basedOn, older);
+  assert.equal(latest?.commit, "abc1234");
+  assert.equal(workPromptIsStale(latest, older, "abc1234"), false);
+  assert.equal(workPromptIsStale(latest, newer, "abc1234"), true);
+  assert.equal(workPromptIsStale(latest, older, "def5678"), true);
 });
 
 test("open and offered sit in not-accepted; held work is ongoing", () => {

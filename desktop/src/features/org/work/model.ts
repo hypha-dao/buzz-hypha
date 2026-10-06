@@ -5,7 +5,11 @@
  */
 
 import type { RelayEvent } from "@/shared/api/types";
-import { KIND_IO_HEALTH, KIND_IO_WORK_ITEM } from "@/shared/constants/kinds";
+import {
+  KIND_IO_HEALTH,
+  KIND_IO_WORK_ITEM,
+  KIND_IO_WORK_PROMPT,
+} from "@/shared/constants/kinds";
 
 import { IO_COMMAND_KINDS } from "../hooks/filters";
 import { TAG_ITEM, TAG_PARENT, TAG_STATUS, TAG_TYPE } from "../tags";
@@ -453,6 +457,55 @@ export const SEEDED_CONTEXT_PATHS = [
   "context/decisions.md",
   "context/links.md",
 ] as const;
+
+/** The newest `50104` for a ticket. */
+export type WorkPrompt = {
+  content: string;
+  basedOn: string | null;
+  commit: string | null;
+  createdAt: number;
+};
+
+/** Newest `50104` whose `#i` is this ticket. */
+export function latestWorkPrompt(
+  events: readonly RelayEvent[],
+  itemId: string,
+): WorkPrompt | null {
+  let best: RelayEvent | null = null;
+  for (const event of events) {
+    if (event.kind !== KIND_IO_WORK_PROMPT) continue;
+    if (tagValue(event.tags, TAG_ITEM) !== itemId) continue;
+    if (
+      !best ||
+      event.created_at > best.created_at ||
+      (event.created_at === best.created_at && event.id > best.id)
+    ) {
+      best = event;
+    }
+  }
+  if (!best) return null;
+  const based = best.tags.find((tag) => tag[0] === "based_on");
+  return {
+    content: best.content,
+    basedOn: based?.[1] ?? null,
+    commit: based?.[2] ?? null,
+    createdAt: best.created_at,
+  };
+}
+
+/**
+ * Stale when `based_on` is not the current ticket event, or its commit is
+ * not the repository commit we have now.
+ */
+export function workPromptIsStale(
+  prompt: Pick<WorkPrompt, "basedOn" | "commit">,
+  ticketEventId: string,
+  repoCommit: string | null,
+): boolean {
+  if (prompt.basedOn !== ticketEventId) return true;
+  if (prompt.commit && repoCommit && prompt.commit !== repoCommit) return true;
+  return false;
+}
 
 /** Paths to list when the project has a home repository. */
 export function contextPaths(item: WorkItem | null): readonly string[] {

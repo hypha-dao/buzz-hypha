@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 
 import { useOrgCommands } from "../../useOrgCommands";
@@ -22,6 +23,8 @@ import {
   type LinkedRepository,
   type WorkHealth,
   type WorkItem,
+  type WorkPrompt,
+  workPromptIsStale,
 } from "../../work/model";
 import { PlanSteps } from "../../cards/PlanSteps";
 import { HealthCard } from "./HealthCard";
@@ -33,7 +36,9 @@ type WorkItemViewProps = {
   parent: WorkItem | null;
   childItems: WorkItem[];
   health: WorkHealth | null;
+  prompt: WorkPrompt | null;
   repositories: readonly LinkedRepository[];
+  repoCommit?: string | null;
 };
 
 export function WorkItemView({
@@ -41,7 +46,9 @@ export function WorkItemView({
   parent,
   childItems,
   health,
+  prompt,
   repositories,
+  repoCommit = null,
 }: WorkItemViewProps) {
   const viewer = useIdentityQuery().data?.pubkey ?? null;
   const commands = useOrgCommands();
@@ -52,6 +59,9 @@ export function WorkItemView({
   const [busy, setBusy] = React.useState<string | null>(null);
   const room = homeChannel(item);
   const files = contextPaths(item);
+  const stale = prompt
+    ? workPromptIsStale(prompt, item.eventId, repoCommit)
+    : false;
   const holder = item.state === "offered" ? item.offeredTo : item.dri;
   const dateLabel = item.type === "project" ? "Review" : "Due";
   const canEditDue = canChangeTicketDue(item, viewer);
@@ -123,6 +133,41 @@ export function WorkItemView({
           <StateChip item={item} who={undefined} />
         </div>
       </header>
+
+      {item.type === "ticket" && prompt ? (
+        <section
+          aria-label="Work prompt"
+          className="org-overview-settle space-y-3"
+          data-testid="org-work-prompt"
+          style={motionDelay(overviewCardDelayMs(1))}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+              Prompt
+            </h2>
+            {stale ? (
+              <p
+                className="text-2xs text-muted-foreground"
+                data-testid="org-prompt-stale"
+              >
+                Stale
+              </p>
+            ) : null}
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+            {prompt.content}
+          </pre>
+          <Button
+            data-testid="org-copy-prompt"
+            onClick={() => {
+              void writeTextToClipboard(prompt.content);
+            }}
+            type="button"
+          >
+            Copy prompt
+          </Button>
+        </section>
+      ) : null}
 
       {item.brief ? (
         <section

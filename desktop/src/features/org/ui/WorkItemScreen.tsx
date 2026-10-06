@@ -4,6 +4,7 @@ import { useLiveDoorEvents, useWorkItemEvents } from "@/features/org/hooks";
 import {
   KIND_IO_HEALTH,
   KIND_IO_WORK_ITEM,
+  KIND_IO_WORK_PROMPT,
   KIND_PROJECT_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 
@@ -13,6 +14,7 @@ import {
   childrenOf,
   itemById,
   latestHealth,
+  latestWorkPrompt,
   linkedRepositories,
   projectCoordinate,
 } from "../work/model";
@@ -63,9 +65,23 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
       },
     ];
   }, [projectRef]);
+  const promptFilters = React.useMemo(
+    () =>
+      item?.type === "ticket"
+        ? [
+            {
+              kinds: [KIND_IO_WORK_PROMPT],
+              [`#${TAG_ITEM}`]: [itemId],
+              limit: ORG_HISTORY_LIMIT,
+            },
+          ]
+        : [],
+    [item?.type, itemId],
+  );
   const parentEvents = useLiveDoorEvents(parentFilters);
   const healthEvents = useLiveDoorEvents(healthFilters);
   const projectEvents = useLiveDoorEvents(projectFilters);
+  const promptEvents = useLiveDoorEvents(promptFilters);
   const parent = parentId ? itemById(parentEvents.events, parentId) : null;
   const kids = childrenOf(events, itemId);
   const health = latestHealth(healthEvents.events, itemId);
@@ -90,6 +106,7 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
             health={health}
             item={item}
             parent={parent}
+            prompt={latestWorkPrompt(promptEvents.events, itemId)}
             repositories={repositories}
           />
         ) : null}

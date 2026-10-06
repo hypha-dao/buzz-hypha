@@ -8,8 +8,11 @@ import {
   GRAND_ID,
   LINKED_GITHUB,
   OPEN_ROOT_ID,
+  PROMPT_TEXT,
   ROOT_ID,
   depth3WorkEvents,
+  promptCopyEvents,
+  promptStaleEvents,
   projectFilesFixture,
 } from "./helpers/orgWork";
 
@@ -313,5 +316,40 @@ test.describe("Org project files (H-2)", () => {
     await expect(link).toBeVisible();
     await link.focus();
     await expect(link).toBeFocused();
+  });
+});
+
+test.describe("Org work prompt (M-2)", () => {
+  test("copy puts the prompt on the clipboard and a newer ticket shows stale", async ({
+    page,
+  }) => {
+    await installMockBridge(page, { org: { events: promptCopyEvents() } });
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
+
+    await expect(page.getByTestId("org-item-title")).toHaveText("Electrics");
+    await expect(page.getByTestId("org-prompt-stale")).toHaveCount(0);
+    const copy = page.getByRole("button", { name: "Copy prompt" });
+    await expect(copy).toHaveCount(1);
+    await copy.focus();
+    await expect(copy).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => window.__BUZZ_E2E_LAST_CLIPBOARD__?.text ?? null),
+      )
+      .toBe(PROMPT_TEXT);
+
+    await installMockBridge(page, { org: { events: promptStaleEvents() } });
+    await page.reload();
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
+    await expect(page.getByTestId("org-item-title")).toHaveText("Electrics");
+    await expect(page.getByTestId("org-prompt-stale")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Copy prompt" }),
+    ).toBeVisible();
   });
 });
