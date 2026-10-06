@@ -282,18 +282,22 @@ test.describe("Org My Work — the card set (D-2)", () => {
       .toBeGreaterThan(0);
 
     const review = page.getByTestId(`org-card-${REVIEW_ID}`);
-    await expect(review.getByText("Promised")).toBeVisible();
-    await expect(review.getByText("four sessions held")).toBeVisible();
-    await expect(review.getByText("Happened")).toBeVisible();
+    await expect(review.locator("dt", { hasText: "Promised" })).toBeVisible();
     await expect(
-      review.getByText("Evening licence application (done)"),
+      review.locator("dd", { hasText: "four sessions held" }),
     ).toBeVisible();
-    await expect(review.getByText("Next")).toBeVisible();
+    await expect(review.locator("dt", { hasText: "Happened" })).toBeVisible();
     await expect(
-      review.getByText("follow-up project. the trial answered"),
+      review.locator("dd", { hasText: "Evening licence application (done)" }),
+    ).toBeVisible();
+    await expect(review.locator("dt", { hasText: "Next" })).toBeVisible();
+    await expect(
+      review.locator("dd", { hasText: "follow-up project. the trial answered" }),
     ).toBeVisible();
     const stopped = page.getByTestId(`org-card-${STOP_REVIEW_ID}`);
-    await expect(stopped.getByText("stop. the trial missed")).toBeVisible();
+    await expect(
+      stopped.locator("dd", { hasText: "stop. the trial missed" }),
+    ).toBeVisible();
     await expect(
       stopped.getByRole("button", { name: "Open the follow-up" }),
     ).toHaveCount(0);
