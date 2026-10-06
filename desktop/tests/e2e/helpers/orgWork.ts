@@ -104,6 +104,48 @@ export function workItemEvent(input: {
   });
 }
 
+const RELAY_PUBKEY = "f".repeat(64);
+export const PROJECT_SLUG = "weekday-hall";
+export const LINKED_GITHUB = "https://github.com/hypha/weekday";
+
+/** Weekday hall with a home repository and one linked public GitHub repo. */
+export function projectFilesFixture(): {
+  events: RelayEvent[];
+  announcement: RelayEvent;
+} {
+  const repo = `30617:${RELAY_PUBKEY}:${PROJECT_SLUG}`;
+  const project = `30621:${RELAY_PUBKEY}:${PROJECT_SLUG}`;
+  const events = depth3WorkEvents().map((event) => {
+    if (event.kind !== 39101) return event;
+    const content = JSON.parse(event.content) as { id?: string };
+    if (content.id !== ROOT_ID) return event;
+    return {
+      ...event,
+      content: JSON.stringify({
+        ...JSON.parse(event.content),
+        home: {
+          channel: GENERAL_CHANNEL_ID,
+          repo,
+          project,
+        },
+      }),
+    };
+  });
+  const announcement = orgEvent({
+    id: "c".repeat(64),
+    kind: 30621,
+    pubkey: RELAY_PUBKEY,
+    tags: [
+      ["d", PROJECT_SLUG],
+      ["name", "Weekday hall"],
+      ["a", repo],
+      ["a", `30617:${MOCK_VIEWER}:weekday`, LINKED_GITHUB],
+    ],
+    content: "",
+  });
+  return { events, announcement };
+}
+
 export function depth3WorkEvents(): RelayEvent[] {
   return [
     workItemEvent({

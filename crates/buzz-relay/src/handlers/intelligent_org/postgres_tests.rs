@@ -2823,6 +2823,116 @@ async fn a_suggested_dri_who_agreed_holds_the_project() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn a_holder_github_clone_lands_on_the_project() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let (_, held) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Weekday hall","brief":"Book it","due_at":1800000000,"suggested_dri":"{owner_hex}"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(held.state, WorkItemState::Accepted);
+    let project = held
+        .home
+        .as_ref()
+        .and_then(|home| home.project.clone())
+        .expect("home.project");
+    let slug = project.rsplit(':').next().expect("slug").to_owned();
+
+    let credential = "https://user:token@github.com/hypha/weekday";
+    let blocked = signed(
+        &h.owner,
+        KIND_GIT_REPO_ANNOUNCEMENT,
+        vec![
+            tag(["d", "weekday-private"]),
+            tag(["clone", credential]),
+            tag(["web", credential]),
+            tag(["buzz-org", &held.id]),
+        ],
+        "",
+    );
+    announce_repo(&h, blocked.clone())
+        .await
+        .expect("a credentialed announcement is still stored");
+    let blocked_tags = live_project_tags(&h, &slug).await;
+    assert!(
+        blocked_tags.iter().all(|row| {
+            row.iter()
+                .all(|part| !part.contains("weekday-private") && !part.contains("token"))
+        }),
+        "a credentialed URL does not land on the 30621: {blocked_tags:?}"
+    );
+
+    let github = "https://github.com/hypha/weekday";
+    let linked = signed(
+        &h.owner,
+        KIND_GIT_REPO_ANNOUNCEMENT,
+        vec![
+            tag(["d", "weekday"]),
+            tag(["clone", github]),
+            tag(["web", github]),
+            tag(["buzz-org", &held.id]),
+        ],
+        "",
+    );
+    announce_repo(&h, linked)
+        .await
+        .expect("public GitHub announcement");
+    let tags = live_project_tags(&h, &slug).await;
+    let coord = format!("{KIND_GIT_REPO_ANNOUNCEMENT}:{owner_hex}:weekday");
+    assert!(
+        tags.iter()
+            .any(|row| { row.len() >= 3 && row[0] == "a" && row[1] == coord && row[2] == github }),
+        "30621 carries the public GitHub coordinate: {tags:?}"
+    );
+}
+
+async fn announce_repo(h: &Harness, event: Event) -> Result<String, IngestError> {
+    let auth = IngestAuth::Http {
+        pubkey: h.owner.public_key(),
+        scopes: vec![Scope::ReposWrite],
+        auth_method: HttpAuthMethod::Nip98,
+    };
+    ingest_event(&h.state, &h.tenant, event, auth)
+        .await
+        .map(|result| {
+            assert!(result.accepted, "an Ok ingest result must be accepted");
+            result.message
+        })
+}
+
+async fn live_project_tags(h: &Harness, slug: &str) -> Vec<Vec<String>> {
+    let tags: serde_json::Value = sqlx::query(
+        "SELECT tags FROM events \
+         WHERE community_id = $1 AND kind = $2 AND d_tag = $3 AND deleted_at IS NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(h.community().as_uuid())
+    .bind(KIND_PROJECT as i32)
+    .bind(slug)
+    .fetch_one(&h.pool)
+    .await
+    .expect("live 30621")
+    .get("tags");
+    tags.as_array()
+        .expect("tags")
+        .iter()
+        .map(|tag| {
+            tag.as_array()
+                .expect("tag")
+                .iter()
+                .map(|part| part.as_str().unwrap_or("").to_owned())
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn project_home_roster_follows_accept_release_and_dri() {
     let h = harness().await;
     h.bootstrap().await;

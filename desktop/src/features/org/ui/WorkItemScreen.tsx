@@ -1,11 +1,21 @@
 import * as React from "react";
 
 import { useLiveDoorEvents, useWorkItemEvents } from "@/features/org/hooks";
-import { KIND_IO_HEALTH, KIND_IO_WORK_ITEM } from "@/shared/constants/kinds";
+import {
+  KIND_IO_HEALTH,
+  KIND_IO_WORK_ITEM,
+  KIND_PROJECT_ANNOUNCEMENT,
+} from "@/shared/constants/kinds";
 
 import { ORG_HISTORY_LIMIT } from "../hooks/filters";
 import { TAG_ITEM } from "../tags";
-import { childrenOf, itemById, latestHealth } from "../work/model";
+import {
+  childrenOf,
+  itemById,
+  latestHealth,
+  linkedRepositories,
+  projectCoordinate,
+} from "../work/model";
 import { ORG_EMPTY_NOT_SET_YET, OrgDoorScreen } from "./OrgDoorScreen";
 import { WorkItemView } from "./work/WorkItemView";
 
@@ -40,11 +50,26 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
         : [],
     [itemId],
   );
+  const projectRef = item?.home?.project ?? null;
+  const projectFilters = React.useMemo(() => {
+    const parsed = projectCoordinate(projectRef);
+    if (!parsed) return [];
+    return [
+      {
+        kinds: [KIND_PROJECT_ANNOUNCEMENT],
+        authors: [parsed.owner],
+        "#d": [parsed.slug],
+        limit: 1,
+      },
+    ];
+  }, [projectRef]);
   const parentEvents = useLiveDoorEvents(parentFilters);
   const healthEvents = useLiveDoorEvents(healthFilters);
+  const projectEvents = useLiveDoorEvents(projectFilters);
   const parent = parentId ? itemById(parentEvents.events, parentId) : null;
   const kids = childrenOf(events, itemId);
   const health = latestHealth(healthEvents.events, itemId);
+  const repositories = linkedRepositories(projectEvents.events[0]?.tags ?? []);
 
   if (!isLoading && !item) {
     return (
@@ -65,6 +90,7 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
             health={health}
             item={item}
             parent={parent}
+            repositories={repositories}
           />
         ) : null}
       </div>

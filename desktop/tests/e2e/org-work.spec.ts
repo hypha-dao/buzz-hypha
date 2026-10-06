@@ -6,9 +6,11 @@ import { installMockBridge } from "../helpers/bridge";
 import {
   CHILD_ID,
   GRAND_ID,
+  LINKED_GITHUB,
   OPEN_ROOT_ID,
   ROOT_ID,
   depth3WorkEvents,
+  projectFilesFixture,
 } from "./helpers/orgWork";
 
 /**
@@ -280,5 +282,36 @@ test.describe("Org Work door and item page (D-3)", () => {
     expect(Number(signed[0]?.tags?.[1]?.[1])).toBe(
       Math.floor(Date.parse("2026-10-12T00:00:00Z") / 1000),
     );
+  });
+});
+
+test.describe("Org project files (H-2)", () => {
+  test.beforeEach(async ({ page }) => {
+    const { events, announcement } = projectFilesFixture();
+    await page.addInitScript((extra) => {
+      (
+        window as Window & {
+          __BUZZ_E2E_EXTRA_PROJECT_EVENTS__?: unknown[];
+        }
+      ).__BUZZ_E2E_EXTRA_PROJECT_EVENTS__ = [extra];
+    }, announcement);
+    await installMockBridge(page, { org: { events } });
+  });
+
+  test("lists context files and the linked GitHub repository", async ({
+    page,
+  }) => {
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+
+    const files = page.getByTestId("org-project-files");
+    await expect(files).toContainText("context/README.md");
+    await expect(files).toContainText("context/decisions.md");
+    await expect(files).toContainText("context/links.md");
+    await expect(files).not.toContainText("context/drafts");
+    const link = page.getByRole("link", { name: LINKED_GITHUB });
+    await expect(link).toBeVisible();
+    await link.focus();
+    await expect(link).toBeFocused();
   });
 });

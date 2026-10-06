@@ -447,6 +447,56 @@ export function homeChannel(item: WorkItem | null): string | null {
   return channel && channel.length > 0 ? channel : null;
 }
 
+/** The three files H-1 seeds. Project beliefs stay out of this list. */
+export const SEEDED_CONTEXT_PATHS = [
+  "context/README.md",
+  "context/decisions.md",
+  "context/links.md",
+] as const;
+
+/** Paths to list when the project has a home repository. */
+export function contextPaths(item: WorkItem | null): readonly string[] {
+  if (item?.type !== "project" || !item.home?.repo) return [];
+  return SEEDED_CONTEXT_PATHS;
+}
+
+/** `30621:<owner>:<slug>` from `39101.home.project`. */
+export function projectCoordinate(
+  project: string | null | undefined,
+): { owner: string; slug: string } | null {
+  if (!project) return null;
+  const parts = project.split(":");
+  if (parts.length !== 3) return null;
+  const [kind, owner, slug] = parts;
+  if (kind !== "30621" || owner.length !== 64 || slug.length === 0) return null;
+  return { owner, slug };
+}
+
+export type LinkedRepository = {
+  coordinate: string;
+  url: string | null;
+};
+
+/** `a` tags on the project's `30621`. A public GitHub hint is the link. */
+export function linkedRepositories(
+  tags: readonly (readonly string[])[],
+): LinkedRepository[] {
+  const seen = new Set<string>();
+  const repos: LinkedRepository[] = [];
+  for (const tag of tags) {
+    const coordinate = tag[1];
+    if (tag[0] !== "a" || !coordinate?.startsWith("30617:")) continue;
+    if (seen.has(coordinate)) continue;
+    seen.add(coordinate);
+    const hint = tag[2];
+    repos.push({
+      coordinate,
+      url: hint?.startsWith("https://github.com/") ? hint : null,
+    });
+  }
+  return repos;
+}
+
 export function canMarkDone(item: WorkItem, viewer: string | null): boolean {
   if (!viewer) return false;
   if (item.state !== "accepted" && item.state !== "in_review") return false;

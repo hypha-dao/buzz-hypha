@@ -35,6 +35,7 @@ mod profiles;
 #[path = "profiles_postgres_tests.rs"]
 mod profiles_postgres_tests;
 mod proposals;
+pub(crate) mod repo_link;
 pub mod scheduler;
 #[cfg(test)]
 #[path = "scheduler_postgres_tests.rs"]

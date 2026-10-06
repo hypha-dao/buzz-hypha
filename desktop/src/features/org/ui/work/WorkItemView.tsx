@@ -15,9 +15,11 @@ import {
 import {
   canChangeTicketDue,
   canMarkDone,
+  contextPaths,
   formatChildrenCounts,
   formatWorkDate,
   homeChannel,
+  type LinkedRepository,
   type WorkHealth,
   type WorkItem,
 } from "../../work/model";
@@ -31,6 +33,7 @@ type WorkItemViewProps = {
   parent: WorkItem | null;
   childItems: WorkItem[];
   health: WorkHealth | null;
+  repositories: readonly LinkedRepository[];
 };
 
 export function WorkItemView({
@@ -38,6 +41,7 @@ export function WorkItemView({
   parent,
   childItems,
   health,
+  repositories,
 }: WorkItemViewProps) {
   const viewer = useIdentityQuery().data?.pubkey ?? null;
   const commands = useOrgCommands();
@@ -47,6 +51,7 @@ export function WorkItemView({
   const [editingDue, setEditingDue] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const room = homeChannel(item);
+  const files = contextPaths(item);
   const holder = item.state === "offered" ? item.offeredTo : item.dri;
   const dateLabel = item.type === "project" ? "Review" : "Due";
   const canEditDue = canChangeTicketDue(item, viewer);
@@ -147,6 +152,55 @@ export function WorkItemView({
       ) : null}
 
       {item.planContent ? <PlanSteps content={item.planContent} /> : null}
+
+      {files.length > 0 || repositories.length > 0 ? (
+        <section
+          aria-label="Project files"
+          className="org-overview-settle space-y-4"
+          data-testid="org-project-files"
+          style={motionDelay(overviewCardDelayMs(1))}
+        >
+          {files.length > 0 ? (
+            <div className="space-y-2">
+              <h2 className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+                Context
+              </h2>
+              <ul className="space-y-1">
+                {files.map((path) => (
+                  <li className="text-sm" key={path}>
+                    {path}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {repositories.length > 0 ? (
+            <div className="space-y-2">
+              <h2 className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+                Repositories
+              </h2>
+              <ul className="space-y-1">
+                {repositories.map((repo) => (
+                  <li key={repo.coordinate}>
+                    {repo.url ? (
+                      <a
+                        className="rounded-sm text-sm underline-offset-2 hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                        href={repo.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {repo.url}
+                      </a>
+                    ) : (
+                      <span className="text-sm">{repo.coordinate}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <dl className="grid gap-4 sm:grid-cols-2" data-testid="org-item-facts">
         <Fact

@@ -7,8 +7,12 @@ import {
   childrenOf,
   formatChildrenCounts,
   formatReviewDate,
+  contextPaths,
   homeChannel,
   itemById,
+  linkedRepositories,
+  projectCoordinate,
+  SEEDED_CONTEXT_PATHS,
   latestHealth,
   parseWorkItem,
   stateChipLabel,
@@ -236,6 +240,53 @@ test("a rewritten parent 39101 is the children-counter source", () => {
     formatChildrenCounts(item.children),
     "0 open · 1 offered · 1 accepted · 3 done",
   );
+});
+
+test("a project page lists the three context files and a public GitHub link", () => {
+  assert.deepEqual(SEEDED_CONTEXT_PATHS, [
+    "context/README.md",
+    "context/decisions.md",
+    "context/links.md",
+  ]);
+  assert.equal(
+    SEEDED_CONTEXT_PATHS.some((path) => path.includes("drafts")),
+    false,
+  );
+  const owner = "ab".repeat(32);
+  const withRepo = parseWorkItem(
+    itemEvent(
+      ROOT,
+      {
+        ...JSON.parse(rootEvent.content),
+        home: {
+          channel: "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50",
+          repo: `30617:${owner}:weekday-hall`,
+          project: `30621:${owner}:weekday-hall`,
+        },
+      },
+      rootEvent.tags,
+    ),
+  );
+  assert.deepEqual(contextPaths(withRepo), SEEDED_CONTEXT_PATHS);
+  assert.deepEqual(contextPaths(parseWorkItem(rootEvent)), []);
+  assert.deepEqual(projectCoordinate(`30621:${owner}:weekday-hall`), {
+    owner,
+    slug: "weekday-hall",
+  });
+  assert.equal(projectCoordinate("30617:aa:slug"), null);
+  const repos = linkedRepositories([
+    ["d", "weekday-hall"],
+    ["a", `30617:${owner}:weekday-hall`],
+    ["a", `30617:${HOLDER}:weekday`, "https://github.com/hypha/weekday"],
+    ["a", `30617:${HOLDER}:weekday`, "https://github.com/hypha/other"],
+  ]);
+  assert.deepEqual(repos, [
+    { coordinate: `30617:${owner}:weekday-hall`, url: null },
+    {
+      coordinate: `30617:${HOLDER}:weekday`,
+      url: "https://github.com/hypha/weekday",
+    },
+  ]);
 });
 
 test("homeChannel is absent until 39101.home.channel is set", () => {
