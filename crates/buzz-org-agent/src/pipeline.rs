@@ -55,6 +55,8 @@ pub struct OrgAgent<M, R> {
     pub(crate) digest_cache: BTreeMap<String, CachedDigest>,
     /// Last prompt text published for a ticket. An unchanged prompt is not sent again.
     pub(crate) last_prompt: BTreeMap<String, String>,
+    /// `context/` file bodies keyed by `home.repo`, then path.
+    pub context_files: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Test hook: mutate STATE after a job snaps generation.
@@ -82,6 +84,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             listings: BTreeMap::new(),
             digest_cache: BTreeMap::new(),
             last_prompt: BTreeMap::new(),
+            context_files: BTreeMap::new(),
         })
     }
 

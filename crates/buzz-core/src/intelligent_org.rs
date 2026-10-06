@@ -563,9 +563,14 @@ pub enum ReviewRecommendation {
     /// Open a follow-up project.
     FollowUp {
         /// The follow-up, as a `project` payload.
-        project: ProjectDraft,
+        project: Box<ProjectDraft>,
     },
-    /// Nothing more to do here.
+    /// Redraw objective lines. No project payload.
+    ObjectivesRedraw {
+        /// Strike, move, or add. The Shapers confirm it.
+        objectives: Box<ObjectivesDraft>,
+    },
+    /// Stop. No project payload.
     NoFurtherWork {
         /// One line.
         why: String,

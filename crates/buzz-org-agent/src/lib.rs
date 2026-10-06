@@ -23,6 +23,7 @@ mod profile_fit;
 mod project_fit;
 pub mod prompt;
 pub mod relay;
+pub mod review;
 pub mod route;
 pub mod state;
 pub mod think;

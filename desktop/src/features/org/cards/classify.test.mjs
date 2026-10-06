@@ -143,6 +143,48 @@ test("each card type from 50100 / 39101 / 39102", () => {
     ctx,
   );
   assert.equal(review?.cardType, "review");
+  assert.equal(
+    review?.facts.find((fact) => fact.label === "Next")?.value,
+    "follow-up project",
+  );
+
+  const explained = classifyEvent(
+    event(
+      50100,
+      {
+        item: ITEM,
+        brief: [
+          { text: "Promised: four sessions held", rows: [] },
+          { text: "Happened: Evening licence application (done)", rows: [] },
+          { text: "Next: stop. the trial missed", rows: [] },
+        ],
+        recommendation: { type: "no_further_work", why: "the trial missed" },
+      },
+      [
+        ["n", "shaper"],
+        ["t", "review"],
+        ["i", ITEM],
+      ],
+      "ee".repeat(32),
+    ),
+    ctx,
+  );
+  assert.equal(
+    explained?.facts.find((fact) => fact.label === "Promised")?.value,
+    "four sessions held",
+  );
+  assert.equal(
+    explained?.facts.find((fact) => fact.label === "Happened")?.value,
+    "Evening licence application (done)",
+  );
+  assert.equal(
+    explained?.facts.find((fact) => fact.label === "Next")?.value,
+    "stop. the trial missed",
+  );
+  assert.equal(
+    explained?.facts.filter((fact) => fact.label === "Next").length,
+    1,
+  );
 });
 
 test("three columns: hold and offered 39101s", () => {

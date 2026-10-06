@@ -16,6 +16,7 @@ import {
   OFFERED_EVENT_ID,
   OPEN_PROJECT_ID,
   REVIEW_ID,
+  STOP_REVIEW_ID,
   SUGGEST_ID,
 } from "../helpers/orgMyWork";
 
@@ -281,6 +282,21 @@ test.describe("Org My Work — the card set (D-2)", () => {
       .toBeGreaterThan(0);
 
     const review = page.getByTestId(`org-card-${REVIEW_ID}`);
+    await expect(review.getByText("Promised")).toBeVisible();
+    await expect(review.getByText("four sessions held")).toBeVisible();
+    await expect(review.getByText("Happened")).toBeVisible();
+    await expect(
+      review.getByText("Evening licence application (done)"),
+    ).toBeVisible();
+    await expect(review.getByText("Next")).toBeVisible();
+    await expect(
+      review.getByText("follow-up project. the trial answered"),
+    ).toBeVisible();
+    const stopped = page.getByTestId(`org-card-${STOP_REVIEW_ID}`);
+    await expect(stopped.getByText("stop. the trial missed")).toBeVisible();
+    await expect(
+      stopped.getByRole("button", { name: "Open the follow-up" }),
+    ).toHaveCount(0);
     await review
       .getByRole("button", { name: "Open the follow-up" })
       .press("Enter");

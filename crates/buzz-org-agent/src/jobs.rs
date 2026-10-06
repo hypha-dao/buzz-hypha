@@ -1,7 +1,7 @@
 //! Jobs beside the chat loop. A transition becomes one fenced job.
 //!
-//! [`OrgAgent::handle`](crate::pipeline::OrgAgent::handle) enqueues. The job
-//! compiles a verdict. It does not call a model and it does not publish.
+//! [`OrgAgent::handle`](crate::pipeline::OrgAgent::handle) enqueues.
+//! [`JobQueue::finish`] compiles a verdict and does not call a model.
 //! `dm_chat::serve` answers talk and does not hold [`OrgState`].
 
 use buzz_core::intelligent_org::DirectionSlug;

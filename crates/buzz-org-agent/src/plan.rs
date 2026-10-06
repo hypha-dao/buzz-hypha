@@ -242,6 +242,20 @@ fn numerals_in(text: &str) -> Vec<String> {
     out
 }
 
+fn review_already_open(state: &OrgState, root_id: &str) -> bool {
+    state.drafts.values().any(|draft| {
+        draft.kind == DraftKind::Review
+            && draft.gap == root_id
+            && match &draft.outcome {
+                None => true,
+                Some(outcome) => matches!(
+                    outcome.status,
+                    DraftOutcomeStatus::Open | DraftOutcomeStatus::Amended
+                ),
+            }
+    })
+}
+
 fn gap_is_open(state: &OrgState, gap: &str) -> bool {
     state.drafts.values().any(|draft| {
         draft.gap == gap
@@ -307,6 +321,8 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
                 published += self.draft_ready_tickets(item)?;
             } else if let Some(item) = key.strip_prefix("prompt:") {
                 published += self.publish_ticket_prompt(item)?;
+            } else if let Some(root) = key.strip_prefix("review:") {
+                published += self.publish_review(root).await?;
             }
         }
         Ok(published)
@@ -456,6 +472,105 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             .map_err(|e| PublishError::Rejected(e.to_string()))?;
         self.outbox.append(event.clone(), card_now())?;
         self.try_send(&event)
+    }
+
+    /// Publish one `50100` review. The compiler picks the next step. The
+    /// model writes why. A dropped explanation publishes nothing.
+    async fn publish_review(&mut self, root_id: &str) -> Result<usize, crate::error::AgentError> {
+        if review_already_open(&self.state, root_id) {
+            return Ok(0);
+        }
+        let Some(root) = self.state.items.get(root_id).cloned() else {
+            return Ok(0);
+        };
+        if root.parent.is_some() || root.state != WorkItemState::InReview {
+            return Ok(0);
+        }
+        let decisions = self.decisions_body(&root);
+        let output = self
+            .model
+            .structured(crate::review::review_request(
+                &self.state,
+                root_id,
+                decisions.as_deref(),
+            ))
+            .await?;
+        let draft = match crate::review::judge_review(&self.state, root_id, &output.value) {
+            Ok(draft) => draft,
+            Err(_) => return Ok(0),
+        };
+        let Some(receipt) = self.state.item_generations.get(root_id).cloned() else {
+            return Ok(0);
+        };
+        self.publish_review_draft(&draft, &receipt)?;
+        self.publish_review_line(&root, &draft)?;
+        Ok(1)
+    }
+
+    fn decisions_body(&self, root: &WorkItem) -> Option<String> {
+        let repo = root.home.as_ref().and_then(|home| home.repo.clone())?;
+        self.context_files
+            .get(&repo)?
+            .get("context/decisions.md")
+            .cloned()
+    }
+
+    fn publish_review_draft(
+        &mut self,
+        draft: &buzz_core::intelligent_org::ReviewDraft,
+        receipt: &str,
+    ) -> Result<(), PublishError> {
+        let content =
+            serde_json::to_string(draft).map_err(|error| PublishError::Sign(error.to_string()))?;
+        let tags = vec![
+            parsed_tag(&["n", "shaper"])?,
+            parsed_tag(&["t", "review"])?,
+            parsed_tag(&["move", "3"])?,
+            parsed_tag(&["origin", "gap"])?,
+            parsed_tag(&["gap", &draft.item])?,
+            parsed_tag(&["i", &draft.item])?,
+            parsed_tag(&["e", receipt, "", "receipt"])?,
+        ];
+        let event = sign(&self.keys, Permitted::Draft, &content, tags)?;
+        self.state
+            .apply(&event)
+            .map_err(|error| PublishError::Rejected(error.to_string()))?;
+        self.outbox.append(event.clone(), card_now())?;
+        self.try_send(&event)
+    }
+
+    fn publish_review_line(
+        &mut self,
+        root: &WorkItem,
+        draft: &buzz_core::intelligent_org::ReviewDraft,
+    ) -> Result<(), PublishError> {
+        let Some(room) = self
+            .state
+            .shapers
+            .as_ref()
+            .and_then(|shapers| shapers.room.clone())
+        else {
+            return Ok(());
+        };
+        let next = match &draft.recommendation {
+            buzz_core::intelligent_org::ReviewRecommendation::FollowUp { .. } => {
+                "a follow-up project"
+            }
+            buzz_core::intelligent_org::ReviewRecommendation::ObjectivesRedraw { .. } => {
+                "an objectives redraw"
+            }
+            buzz_core::intelligent_org::ReviewRecommendation::NoFurtherWork { .. } => "stop",
+        };
+        let content = format!(
+            "I drafted a review of \"{}\". The next step is {next}. It is in My work.",
+            root.title
+        );
+        self.publish_permitted(
+            Permitted::Chat,
+            &content,
+            vec![parsed_tag(&["h", &room])?],
+            card_now(),
+        )
     }
 
     /// Publish one `50104` for an offered or accepted ticket. A code ticket

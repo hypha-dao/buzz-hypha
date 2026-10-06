@@ -237,6 +237,19 @@ export function receiptsOf(event: OrgEventLike): OrgReceipt[] {
   return receipts;
 }
 
+export function reviewSentences(
+  content: Record<string, unknown> | null,
+): string[] {
+  const brief = content?.brief;
+  if (!Array.isArray(brief)) return [];
+  return brief
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      return asString((row as Record<string, unknown>).text);
+    })
+    .filter((text): text is string => text !== null);
+}
+
 export function claimOf(event: OrgEventLike): string {
   const content = parseJsonObject(event.content);
   if (event.kind === KIND_IO_DRAFT) {
@@ -245,7 +258,11 @@ export function claimOf(event: OrgEventLike): string {
     const why = asString(content?.why);
     const brief = asString(content?.brief);
     if (kind === "done") return why ?? "Mark this done?";
-    if (kind === "review") return brief ?? why ?? "What next for this project?";
+    if (kind === "review") {
+      const sentences = reviewSentences(content);
+      if (sentences.length > 0) return sentences.join(" ");
+      return "What next for this project?";
+    }
     if (kind === "dri") return why ?? "A holder for this work";
     if (kind === "profile") return asString(content?.about) ?? "About & skills";
     if (kind === "direction" || kind === "objectives") {

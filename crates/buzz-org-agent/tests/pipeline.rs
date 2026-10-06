@@ -669,3 +669,214 @@ async fn an_offered_ticket_publishes_a_prompt_and_a_failed_digest_does_not() {
         .iter()
         .all(|event| !event.content.contains("Patch the door")));
 }
+
+fn trial_root(done: bool) -> OrgState {
+    use buzz_core::intelligent_org::{
+        DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,
+    };
+
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Weekday hall trial");
+    root.state = WorkItemState::InReview;
+    root.objective_ref = Some("objectives@1#line-a".into());
+    let mut state = OrgState::new();
+    state
+        .direction
+        .insert("objectives".into(), objectives_head(&gen));
+    state.item_generations.insert(root.id.clone(), gen);
+    let child = WorkItem {
+        id: "step-1".into(),
+        parent: Some(root.id.clone()),
+        root: root.id.clone(),
+        depth: 1,
+        path: vec![root.id.clone()],
+        title: "Evening licence application".into(),
+        brief: "File it.".into(),
+        state: if done {
+            WorkItemState::Done
+        } else {
+            WorkItemState::Accepted
+        },
+        dri: Some("aa".repeat(32)),
+        offered_to: None,
+        offered_by: None,
+        offered_at: None,
+        created_by: None,
+        offered_by_member: None,
+        due_at: 1_785_488_400,
+        approved_at: None,
+        objective_ref: None,
+        created_from: "cc".repeat(32),
+        draft: None,
+        done_receipt: None,
+        closed_by: None,
+        children: ChildrenCounts::default(),
+        home: None,
+        branch: None,
+        after: vec![],
+        last_progress: None,
+    };
+    let root_id = root.id.clone();
+    state.items.insert(child.id.clone(), child);
+    state.items.insert(root_id.clone(), root);
+    state.proposals.insert(
+        "prop-1".into(),
+        Proposal {
+            id: "prop-1".into(),
+            kind: ProposalKind::Project,
+            status: ProposalStatus::Passed,
+            opened_by: "aa".repeat(32),
+            opened_at: 1,
+            expires_at: 2,
+            draft: None,
+            payload: serde_json::json!({
+                "title": "Weekday hall trial",
+                "change": {
+                    "from": "no weekday night",
+                    "to": "a trial has answered whether buyers come",
+                    "done_when": ["sessions held"],
+                    "moves": ["objectives@1#line-a"]
+                },
+                "plan": [
+                    { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] }
+                ]
+            }),
+            rule: DecisionRule::MAJORITY,
+            needed: 1,
+            eligible: vec![],
+            votes: vec![],
+            decided_at: Some(2),
+            executed: Some(Executed {
+                kind: "work_item".into(),
+                id: root_id,
+            }),
+            settlement: None,
+        },
+    );
+    state.shapers = Some(buzz_core::intelligent_org::Shapers {
+        founder: "aa".repeat(32),
+        shapers: vec!["aa".repeat(32)],
+        offered: vec![],
+        room: Some("shapers-room".into()),
+        agent: None,
+        agent_hosted: false,
+        rules: Default::default(),
+        decision_window_secs: 60,
+        offer_window_secs: 60,
+        updated_at: 1,
+        receipt: "11".repeat(32),
+    });
+    state
+}
+
+#[tokio::test]
+async fn a_root_in_review_publishes_one_review_draft() {
+    let gen = "ab".repeat(32);
+    let follow = serde_json::json!({
+        "recommendation": "follow_up",
+        "why": "the trial answered whether buyers come",
+        "project": {
+            "title": "Second weekday night",
+            "brief": "Keep the night the trial filled.",
+            "objective_ref": "objectives@1#line-a",
+            "due_at": 1785488400,
+            "suggested_dri": null,
+            "why": "the trial answered whether buyers come",
+            "gaps": [],
+            "gap": { "ref": "objectives@1#line-a", "verdict": "covered" },
+            "options": [
+                { "title": "Second weekday night", "mechanism": "keeps the night the trial filled", "kept": true },
+                { "title": "Wait a season", "mechanism": "leave the hall dark", "kept": false, "why_not": "the question is answered" }
+            ],
+            "change": {
+                "from": "one trial and no second night",
+                "to": "a second weekday night is open",
+                "done_when": ["sessions held"],
+                "moves": ["objectives@1#line-a"]
+            },
+            "plan": [
+                { "piece": "Book the second night", "kind": "ops", "gate": true, "produces": ["sessions held"] }
+            ]
+        }
+    });
+    let (mut following, _dir) = agent(trial_root(true));
+    following
+        .link
+        .connect(&Default::default())
+        .expect("connect");
+    following.model.push(ModelOutput {
+        value: follow,
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    following
+        .handle(
+            Transition::EnteredReview {
+                root: "root-1".into(),
+                generation: gen.clone(),
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("review");
+    let published = following.run_jobs().await.expect("jobs");
+    assert_eq!(published, 1);
+    let drafts: Vec<_> = following
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+        .collect();
+    assert_eq!(drafts.len(), 1);
+    assert!(drafts[0].content.contains("objectives@1#line-a"));
+    assert!(drafts[0].content.contains("Promised:"));
+    assert!(drafts[0].content.contains("Happened:"));
+    assert!(drafts[0].tags.iter().any(|tag| {
+        tag.as_slice().first().is_some_and(|name| name == "t")
+            && tag.as_slice().get(1).is_some_and(|value| value == "review")
+    }));
+    following
+        .handle(
+            Transition::EnteredReview {
+                root: "root-1".into(),
+                generation: gen.clone(),
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("review again");
+    assert_eq!(following.run_jobs().await.expect("second"), 0);
+
+    let (mut stopped, _dir) = agent(trial_root(false));
+    stopped.link.connect(&Default::default()).expect("connect");
+    stopped.model.push(ModelOutput {
+        value: serde_json::json!({
+            "recommendation": "stop",
+            "why": "the trial did not answer the question"
+        }),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    stopped
+        .handle(
+            Transition::EnteredReview {
+                root: "root-1".into(),
+                generation: gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("stop");
+    assert_eq!(stopped.run_jobs().await.expect("stop jobs"), 1);
+    let stop_drafts: Vec<_> = stopped
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+        .collect();
+    assert_eq!(stop_drafts.len(), 1);
+    assert!(!stop_drafts[0].content.contains("\"project\""));
+    assert!(stop_drafts[0].content.contains("no_further_work"));
+}

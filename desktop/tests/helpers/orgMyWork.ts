@@ -16,6 +16,7 @@ export const OFFERED_EVENT_ID = "b3".repeat(32);
 export const DECISION_ID = "d1".repeat(32);
 export const DONE_ID = "d2".repeat(32);
 export const REVIEW_ID = "d3".repeat(32);
+export const STOP_REVIEW_ID = "d4".repeat(32);
 export const RECEIPT_ID = "e1".repeat(32);
 
 export const ITEM_OPEN = "10101010-1010-4010-8010-101010101010";
@@ -190,7 +191,14 @@ export function myWorkSeedEvents(): RelayEvent[] {
       50100,
       {
         item: ITEM_REVIEW,
-        brief: [{ text: "The stall ran.", rows: [RECEIPT_ID] }],
+        brief: [
+          { text: "Promised: four sessions held", rows: [RECEIPT_ID] },
+          {
+            text: "Happened: Evening licence application (done)",
+            rows: [RECEIPT_ID],
+          },
+          { text: "Next: follow-up project. the trial answered", rows: [] },
+        ],
         recommendation: {
           type: "follow_up",
           project: {
@@ -210,6 +218,32 @@ export function myWorkSeedEvents(): RelayEvent[] {
       ],
       ORG_AGENT_PUBKEY,
       1_700_000_030,
+    ),
+    ev(
+      STOP_REVIEW_ID,
+      50100,
+      {
+        item: ITEM_REVIEW,
+        brief: [
+          { text: "Promised: four sessions held", rows: [] },
+          {
+            text: "Happened: Evening licence application (not done)",
+            rows: [],
+          },
+          { text: "Next: stop. the trial missed", rows: [] },
+        ],
+        recommendation: { type: "no_further_work", why: "the trial missed" },
+      },
+      [
+        ["n", "shaper"],
+        ["t", "review"],
+        ["move", "3"],
+        ["origin", "gap"],
+        ["i", ITEM_REVIEW],
+        ["e", RECEIPT_ID, "", "receipt"],
+      ],
+      ORG_AGENT_PUBKEY,
+      1_700_000_029,
     ),
     ev(
       HELD_EVENT_ID,

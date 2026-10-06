@@ -26,6 +26,7 @@ import {
   proposalNeeded,
   proposalSubject,
   receiptsOf,
+  reviewSentences,
   suggestedPubkey,
   viewerIsNamedShaper,
   workDri,
@@ -36,7 +37,7 @@ import {
   workParentId,
   workState,
 } from "./parse";
-import { anyTag } from "./tags";
+import { anyTag, asString, parseJsonObject } from "./tags";
 import type {
   CardNameLookup,
   MyWorkColumn,
@@ -210,6 +211,40 @@ function factsFor(
   }
   if (suggested) {
     facts.push({ label: "Suggested", value: ctx.nameOf(suggested) });
+  }
+  if (kind === "review") {
+    facts.push(...reviewFacts(event));
+  }
+  return facts;
+}
+
+function reviewFacts(event: OrgEventLike): OrgCardModel["facts"] {
+  const content = parseJsonObject(event.content);
+  const facts: OrgCardModel["facts"] = [];
+  for (const text of reviewSentences(content)) {
+    const split = text.indexOf(":");
+    if (split <= 0) continue;
+    const label = text.slice(0, split);
+    if (label !== "Promised" && label !== "Happened" && label !== "Next") {
+      continue;
+    }
+    facts.push({ label, value: text.slice(split + 1).trim() });
+  }
+  if (!facts.some((fact) => fact.label === "Next")) {
+    const recommendation =
+      content?.recommendation && typeof content.recommendation === "object"
+        ? (content.recommendation as Record<string, unknown>)
+        : null;
+    const type = asString(recommendation?.type);
+    const next =
+      type === "follow_up"
+        ? "follow-up project"
+        : type === "objectives_redraw"
+          ? "objectives redraw"
+          : type === "no_further_work"
+            ? "stop"
+            : null;
+    if (next) facts.push({ label: "Next", value: next });
   }
   return facts;
 }
