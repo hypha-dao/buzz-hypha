@@ -5,7 +5,8 @@
 //! [`move_1_enabled`] is on (`IO_MOVE_1_ENABLED`).
 
 use buzz_core::intelligent_org::{
-    DraftKind, DraftOutcomeStatus, PlanChange, PlanStep, ProjectDraft, StrategyLineType,
+    CoveragePiece, DraftKind, DraftOutcomeStatus, PlanChange, PlanStep, ProjectDraft, ProposalKind,
+    StrategyLineType, TicketDraft, WorkItemState,
 };
 use nostr::Tag;
 
@@ -285,12 +286,24 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
     pub async fn run_jobs(&mut self) -> Result<usize, crate::error::AgentError> {
         let mut published = 0;
         while self.jobs.start() {
-            let fresh = self.jobs.finish(&self.state);
-            let direction = self.jobs.log().last().is_some_and(|entry| {
-                matches!(entry, JobLog::Verdict { key, .. } if key.starts_with("direction:"))
+            let fresh = self.jobs.finish(&self.state).is_some();
+            let key = self.jobs.log().last().and_then(|entry| match entry {
+                JobLog::Verdict { key, .. } => Some(key.clone()),
+                JobLog::Stale { .. } => None,
             });
-            if fresh.is_some() && direction {
+            let Some(key) = key else {
+                continue;
+            };
+            if !fresh {
+                continue;
+            }
+            if key.starts_with("direction:") {
                 published += self.draft_uncovered().await?;
+            } else if let Some(item) = key
+                .strip_prefix("holder:")
+                .or_else(|| key.strip_prefix("done:"))
+            {
+                published += self.draft_ready_tickets(item)?;
             }
         }
         Ok(published)
@@ -374,6 +387,181 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             vec![parsed_tag(&["h", &room])?],
             card_now(),
         )
+    }
+
+    /// Draft the plan steps that can start. Held steps stay in coverage.
+    /// At most seven. A step already drafted or already a child is skipped.
+    fn draft_ready_tickets(&mut self, item: &str) -> Result<usize, PublishError> {
+        let Some(root_id) = root_id(&self.state, item) else {
+            return Ok(0);
+        };
+        let Some(plan) = plan_for_root(&self.state, &root_id) else {
+            return Ok(0);
+        };
+        let root = self.state.items.get(&root_id).cloned();
+        let Some(root) = root else {
+            return Ok(0);
+        };
+        let Some(dri) = root.dri.clone() else {
+            return Ok(0);
+        };
+        let Some(receipt) = self.state.item_generations.get(&root_id).cloned() else {
+            return Ok(0);
+        };
+        let mut published = 0;
+        for step in &plan {
+            if published >= MAX_STEPS {
+                break;
+            }
+            if !step_can_start(&self.state, &root_id, step) {
+                continue;
+            }
+            let after = sibling_ids(&self.state, &root_id, step);
+            let draft = ticket_from_step(&root, &dri, &plan, step, after);
+            self.publish_ticket_draft(&root_id, &dri, &receipt, &draft)?;
+            published += 1;
+        }
+        Ok(published)
+    }
+
+    fn publish_ticket_draft(
+        &mut self,
+        root_id: &str,
+        dri: &str,
+        receipt: &str,
+        draft: &TicketDraft,
+    ) -> Result<(), PublishError> {
+        let content =
+            serde_json::to_string(draft).map_err(|e| PublishError::Sign(e.to_string()))?;
+        let gap = format!("{root_id}#{}", draft.title);
+        let mut tags = vec![
+            parsed_tag(&["n", dri])?,
+            parsed_tag(&["p", dri, "", "needs"])?,
+            parsed_tag(&["t", "ticket"])?,
+            parsed_tag(&["move", "2"])?,
+            parsed_tag(&["origin", "gap"])?,
+            parsed_tag(&["gap", &gap])?,
+            parsed_tag(&["u", root_id])?,
+            parsed_tag(&["e", receipt, "", "receipt"])?,
+        ];
+        if let Some(holder) = &draft.suggested_holder {
+            tags.push(parsed_tag(&["p", holder, "", "suggested"])?);
+        }
+        let event = sign(&self.keys, Permitted::Draft, &content, tags)?;
+        self.state
+            .apply(&event)
+            .map_err(|e| PublishError::Rejected(e.to_string()))?;
+        self.outbox.append(event.clone(), card_now())?;
+        self.try_send(&event)
+    }
+}
+
+fn root_id(state: &OrgState, item: &str) -> Option<String> {
+    let found = state.items.get(item)?;
+    if found.parent.is_none() {
+        Some(found.id.clone())
+    } else {
+        found.parent.clone()
+    }
+}
+
+fn plan_for_root(state: &OrgState, root_id: &str) -> Option<Vec<PlanStep>> {
+    let proposal = state.proposals.values().find(|proposal| {
+        proposal.kind == ProposalKind::Project
+            && proposal
+                .executed
+                .as_ref()
+                .is_some_and(|executed| executed.id == root_id)
+    })?;
+    serde_json::from_value(proposal.payload.get("plan")?.clone()).ok()
+}
+
+fn step_can_start(state: &OrgState, root_id: &str, step: &PlanStep) -> bool {
+    if already_named(state, root_id, &step.piece) {
+        return false;
+    }
+    let deps_done = step.after.iter().all(|previous| {
+        state.items.values().any(|item| {
+            item.parent.as_deref() == Some(root_id)
+                && item.title == *previous
+                && item.state == WorkItemState::Done
+        })
+    });
+    if step.held.is_some() {
+        deps_done && !step.after.is_empty()
+    } else {
+        deps_done
+    }
+}
+
+fn already_named(state: &OrgState, root_id: &str, piece: &str) -> bool {
+    if state
+        .items
+        .values()
+        .any(|item| item.parent.as_deref() == Some(root_id) && item.title == piece)
+    {
+        return true;
+    }
+    state.drafts.values().any(|draft| {
+        draft.kind == DraftKind::Ticket
+            && draft.gap == format!("{root_id}#{piece}")
+            && match &draft.outcome {
+                None => true,
+                Some(outcome) => !matches!(
+                    outcome.status,
+                    DraftOutcomeStatus::Declined | DraftOutcomeStatus::Expired
+                ),
+            }
+    })
+}
+
+fn sibling_ids(state: &OrgState, root_id: &str, step: &PlanStep) -> Vec<String> {
+    step.after
+        .iter()
+        .filter_map(|previous| {
+            state.items.values().find_map(|item| {
+                if item.parent.as_deref() == Some(root_id) && item.title == *previous {
+                    Some(item.id.clone())
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+fn ticket_from_step(
+    root: &buzz_core::intelligent_org::WorkItem,
+    dri: &str,
+    plan: &[PlanStep],
+    step: &PlanStep,
+    after: Vec<String>,
+) -> TicketDraft {
+    TicketDraft {
+        parent: root.id.clone(),
+        title: step.piece.clone(),
+        brief: step.piece.clone(),
+        due_at: root.due_at,
+        requires: step.requires.clone(),
+        suggested_holder: Some(dri.to_string()),
+        unfilled: None,
+        covers: step.piece.clone(),
+        after,
+        gate: step.gate,
+        coverage: plan
+            .iter()
+            .enumerate()
+            .map(|(index, piece)| CoveragePiece {
+                piece: piece.piece.clone(),
+                covered_by: None,
+                order: (index as u32) + 1,
+                after: piece.after.clone(),
+                held: piece.held.clone(),
+            })
+            .collect(),
+        matched: None,
+        done_when: step.produces.clone(),
+        kind: Some(step.kind.clone()),
     }
 }
 

@@ -40,6 +40,7 @@ enum Kind {
     Direction,
     Holder,
     Review,
+    Done,
 }
 
 /// Coalesced queue. One pending job per object, one job in flight.
@@ -205,6 +206,9 @@ fn watched(transition: &Transition, state: &OrgState) -> Option<Queued> {
         Transition::EnteredReview { root, generation } => {
             Some(queued(&format!("review:{root}"), generation, Kind::Review))
         }
+        Transition::ItemDone {
+            item, generation, ..
+        } => Some(queued(&format!("done:{item}"), generation, Kind::Done)),
         _ => None,
     }
 }
@@ -346,6 +350,10 @@ fn current_generation<'a>(state: &'a OrgState, job: &Queued) -> Option<&'a str> 
         }
         Kind::Review => {
             let item = job.key.strip_prefix("review:")?;
+            state.item_generations.get(item).map(String::as_str)
+        }
+        Kind::Done => {
+            let item = job.key.strip_prefix("done:")?;
             state.item_generations.get(item).map(String::as_str)
         }
     }

@@ -391,3 +391,149 @@ async fn direction_confirmed_publishes_one_project_draft() {
         1
     );
 }
+
+fn five_step_plan() -> serde_json::Value {
+    serde_json::json!([
+        { "piece": "Evening licence application", "kind": "writing", "gate": true, "after": [], "produces": ["licence filed"] },
+        { "piece": "Hygiene certificate", "kind": "ops", "gate": true, "after": [], "produces": ["certificate held"] },
+        { "piece": "Book four Tuesdays", "kind": "ops", "gate": false, "after": ["Evening licence application"], "held": "after Evening licence application" },
+        { "piece": "Publicity", "kind": "outreach", "gate": false, "after": ["Book four Tuesdays"], "held": "after Book four Tuesdays" },
+        { "piece": "Run four sessions", "kind": "ops", "gate": false, "after": ["Book four Tuesdays", "Hygiene certificate"], "held": "after both gates" }
+    ])
+}
+
+#[tokio::test]
+async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
+    use buzz_core::intelligent_org::{
+        ClosedBy, DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,
+    };
+
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Weekday hall trial");
+    root.due_at = 1_785_488_400;
+    let mut state = OrgState::new();
+    state.item_generations.insert(root.id.clone(), gen.clone());
+    state.items.insert(root.id.clone(), root);
+    state.proposals.insert(
+        "prop-1".into(),
+        Proposal {
+            id: "prop-1".into(),
+            kind: ProposalKind::Project,
+            status: ProposalStatus::Passed,
+            opened_by: "aa".repeat(32),
+            opened_at: 1,
+            expires_at: 2,
+            draft: None,
+            payload: serde_json::json!({
+                "title": "Weekday hall trial",
+                "brief": "A trial.",
+                "due_at": 1785488400,
+                "plan": five_step_plan(),
+            }),
+            rule: DecisionRule::MAJORITY,
+            needed: 1,
+            eligible: vec![],
+            votes: vec![],
+            decided_at: Some(2),
+            executed: Some(Executed {
+                kind: "work_item".into(),
+                id: "root-1".into(),
+            }),
+            settlement: None,
+        },
+    );
+    let (mut agent, _dir) = agent(state);
+    agent.link.connect(&Default::default()).expect("connect");
+    agent
+        .handle(
+            Transition::HolderSet {
+                item: "root-1".into(),
+                dri: "aa".repeat(32),
+                generation: gen.clone(),
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("hold");
+    let published = agent.run_jobs().await.expect("tickets");
+    assert_eq!(published, 2);
+    let titles: Vec<String> = agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+        .map(|event| {
+            serde_json::from_str::<serde_json::Value>(&event.content)
+                .expect("ticket json")["title"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        vec![
+            "Evening licence application".to_string(),
+            "Hygiene certificate".to_string()
+        ]
+    );
+    assert!(agent.link.io().published().iter().all(|event| {
+        serde_json::from_str::<serde_json::Value>(&event.content)
+            .ok()
+            .and_then(|value| value.get("gate").and_then(|gate| gate.as_bool()))
+            .unwrap_or(true)
+    }));
+
+    let mut gate = held_root("Evening licence application");
+    gate.id = "gate-1".into();
+    gate.parent = Some("root-1".into());
+    gate.root = "root-1".into();
+    gate.depth = 1;
+    gate.state = buzz_core::intelligent_org::WorkItemState::Done;
+    gate.closed_by = Some(ClosedBy::Dri);
+    let child_gen = "cd".repeat(32);
+    agent
+        .state
+        .item_generations
+        .insert(gate.id.clone(), child_gen.clone());
+    agent.state.items.insert(gate.id.clone(), gate);
+    agent
+        .handle(
+            Transition::ItemDone {
+                item: "gate-1".into(),
+                closed_by: Some(ClosedBy::Dri),
+                generation: child_gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("done");
+    let unblocked = agent.run_jobs().await.expect("unblocked");
+    assert_eq!(unblocked, 1);
+    let tickets: Vec<_> = agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+        .collect();
+    assert_eq!(tickets.len(), 3);
+    assert!(tickets
+        .last()
+        .expect("ticket")
+        .content
+        .contains("Book four Tuesdays"));
+    let again = agent.run_jobs().await.expect("quiet");
+    assert_eq!(again, 0);
+    assert_eq!(
+        agent
+            .link
+            .io()
+            .published()
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .count(),
+        3
+    );
+}

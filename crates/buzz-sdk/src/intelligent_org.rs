@@ -979,6 +979,8 @@ mod tests {
                 about: None,
                 items: vec![],
             }),
+            done_when: vec![],
+            kind: None,
         })
     }
 

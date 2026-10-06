@@ -288,6 +288,8 @@ fn child_done_brief_unmet() {
                     held: None,
                 }],
                 matched: None,
+                done_when: vec![],
+                kind: None,
             }),
             needs: pk(4),
             gap: "ticket:covers".into(),

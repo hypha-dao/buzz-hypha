@@ -527,6 +527,12 @@ pub struct TicketDraft {
     /// Evidence for `suggested_holder`, when named.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched: Option<HolderMatch>,
+    /// Checks a person could answer yes or no.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub done_when: Vec<String>,
+    /// `code`, `research`, `writing`, `outreach`, `design`, or `ops`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// `t = done` payload.
