@@ -371,6 +371,7 @@ fn repository_items(user: &str) -> Option<Vec<CodebaseLink>> {
             name: String::new(),
             url: String::new(),
             about: "no repository yet".to_string(),
+            ..Default::default()
         }]);
     }
     let items: Vec<CodebaseLink> = https_urls(user)
@@ -380,6 +381,7 @@ fn repository_items(user: &str) -> Option<Vec<CodebaseLink>> {
             name: name_from_url(url),
             url: url.to_string(),
             about: String::new(),
+            ..Default::default()
         })
         .collect();
     if items.is_empty() {
@@ -399,6 +401,7 @@ fn site_items(user: &str) -> Option<Vec<CodebaseLink>> {
             name: name_from_url(url),
             url: url.to_string(),
             about: String::new(),
+            ..Default::default()
         }]);
     }
     if declines_site(user) {
@@ -407,6 +410,7 @@ fn site_items(user: &str) -> Option<Vec<CodebaseLink>> {
             name: String::new(),
             url: String::new(),
             about: "no landing page yet".to_string(),
+            ..Default::default()
         }]);
     }
     None

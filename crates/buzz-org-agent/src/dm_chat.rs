@@ -818,7 +818,8 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
                 let confirmed = newly_confirmed(&event, &mut seen_heads, saw_org);
                 let transitions = remember_org(&mut org, &event);
                 if org.live && due_tickets(&transitions) {
-                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org).await {
+                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org, &board).await
+                    {
                         eprintln!("org agent: tickets: {error}");
                     }
                 }
@@ -914,7 +915,8 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
                 } else if subscription_id == "org" {
                     saw_org = true;
                     org.mark_live();
-                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org).await {
+                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org, &board).await
+                    {
                         eprintln!("org agent: tickets: {error}");
                     }
                     reply_open(&mut conn, keys, me, &board, &mut rooms, &ready, &agent_dms).await?;
@@ -1001,8 +1003,11 @@ async fn publish_due_tickets(
     conn: &mut NostrWsConnection,
     keys: &Keys,
     org: &mut OrgState,
+    board: &Board,
 ) -> Result<(), String> {
-    ensure_held_plans(org).await;
+    let digest = board.planner_digest();
+    crate::plan::remember_digest(org, "", &crate::plan::digest_paths_in(&digest));
+    ensure_held_plans(org, &digest).await;
     let events = crate::plan::take_due_tickets(org, keys).map_err(|error| error.to_string())?;
     for event in events {
         let ok = conn
@@ -2414,14 +2419,19 @@ async fn ensure_project_steps(act: Option<ResolvedAct>, overview: &str) -> Optio
     }
 }
 
-async fn ensure_held_plans(org: &mut OrgState) {
+async fn ensure_held_plans(org: &mut OrgState, digest: &str) {
     let mut missing = crate::plan::projects_without_steps(org);
     for row in crate::plan::projects_needing_how(org) {
         if !missing.iter().any(|(id, _, _)| id == &row.0) {
             missing.push(row);
         }
     }
-    let context = crate::plan::direction_excerpt(org);
+    let direction = crate::plan::direction_excerpt(org);
+    let context = if digest.trim().is_empty() {
+        direction
+    } else {
+        format!("{direction}\n{digest}")
+    };
     for (id, title, brief) in missing.into_iter().take(4) {
         match think_project_steps(&title, &brief, &context).await {
             Ok(steps) => {
@@ -2454,7 +2464,9 @@ async fn think_project_steps(
                 continue;
             }
         };
-        if let Some(steps) = crate::plan::steps_ready(title, &value) {
+        if let Some(steps) =
+            crate::plan::steps_ready_in(title, &value, &crate::plan::digest_paths_in(context))
+        {
             return Ok(steps);
         }
         last = "plan was not two to seven steps".into();

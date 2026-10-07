@@ -446,10 +446,32 @@ async fn a_held_project_without_a_plan_asks_for_steps() {
     let gen = "ab".repeat(32);
     let mut root = held_root("Continuous task flow");
     root.brief = "The AI suggests the next task.".into();
+    root.home = Some(buzz_core::intelligent_org::ProjectHome {
+        channel: "room-1".into(),
+        repo: Some("30617:aa:buzz".into()),
+        project: Some("30621:aa:buzz".into()),
+    });
     let mut state = OrgState::new();
     state.item_generations.insert(root.id.clone(), gen.clone());
     state.items.insert(root.id.clone(), root);
     let (mut agent, _dir) = agent(state);
+    agent.listings.insert(
+        "30617:aa:buzz".into(),
+        buzz_org_agent::prompt::RepoListing {
+            commit: "abc1234".into(),
+            files: vec![
+                buzz_org_agent::prompt::RepoFile {
+                    path: "desktop/src/features/org/work/model.ts".into(),
+                    bytes: 10,
+                },
+                buzz_org_agent::prompt::RepoFile {
+                    path: "crates/buzz-org-agent/src/plan.rs".into(),
+                    bytes: 10,
+                },
+            ],
+            elapsed: std::time::Duration::ZERO,
+        },
+    );
     agent.link.connect(&Default::default()).expect("connect");
     agent.model.push(ModelOutput {
         value: serde_json::json!({
@@ -505,8 +527,90 @@ async fn a_held_project_without_a_plan_asks_for_steps() {
     );
     assert_ne!(body["title"], "Continuous task flow");
     assert!(body["how"].as_array().is_some_and(|lines| lines.len() >= 2));
+    let request = agent.model.last_request().expect("the planner was asked");
+    assert!(
+        request
+            .system
+            .contains("desktop/src/features/org/work/model.ts"),
+        "the digest path is in the prompt"
+    );
+    assert!(
+        request.system.contains("abc1234"),
+        "the digest commit is in the prompt"
+    );
     let again = agent.run_jobs().await.expect("quiet");
     assert_eq!(again, 0);
+}
+
+#[tokio::test]
+async fn a_code_file_outside_the_digest_publishes_nothing() {
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Continuous task flow");
+    root.brief = "The AI suggests the next task.".into();
+    root.home = Some(buzz_core::intelligent_org::ProjectHome {
+        channel: "room-1".into(),
+        repo: Some("30617:aa:buzz".into()),
+        project: Some("30621:aa:buzz".into()),
+    });
+    let mut state = OrgState::new();
+    state.item_generations.insert(root.id.clone(), gen.clone());
+    state.items.insert(root.id.clone(), root);
+    let (mut agent, _dir) = agent(state);
+    agent.listings.insert(
+        "30617:aa:buzz".into(),
+        buzz_org_agent::prompt::RepoListing {
+            commit: "abc1234".into(),
+            files: vec![buzz_org_agent::prompt::RepoFile {
+                path: "desktop/src/features/org/work/model.ts".into(),
+                bytes: 10,
+            }],
+            elapsed: std::time::Duration::ZERO,
+        },
+    );
+    agent.link.connect(&Default::default()).expect("connect");
+    agent.model.push(ModelOutput {
+        value: serde_json::json!({
+            "steps": [
+                {
+                    "piece": "Show the next task on My work",
+                    "brief": "Show the next offered task in the My work column.",
+                    "kind": "code",
+                    "after": [],
+                    "files": ["src/missing.rs"],
+                    "produces": ["the next task is visible on My work"],
+                    "how": ["Open the My work column.", "Render the next offered task there."]
+                },
+                {
+                    "piece": "Offer the next task when one is done",
+                    "brief": "Offer the waiting task when the one it follows is done.",
+                    "kind": "code",
+                    "after": ["Show the next task on My work"],
+                    "files": ["src/also-missing.rs"],
+                    "produces": ["done work opens the next task"],
+                    "how": ["Read the done event.", "Offer the task that names it in after."]
+                }
+            ]
+        }),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    agent
+        .handle(
+            Transition::HolderSet {
+                item: "root-1".into(),
+                dri: "aa".repeat(32),
+                generation: gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("hold");
+    let published = agent.run_jobs().await.expect("tickets");
+    assert_eq!(published, 0, "files outside the digest are not tickets");
+    let request = agent.model.last_request().expect("the planner was asked");
+    assert!(request
+        .system
+        .contains("desktop/src/features/org/work/model.ts"));
 }
 
 #[tokio::test]

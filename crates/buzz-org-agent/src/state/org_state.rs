@@ -149,6 +149,11 @@ pub struct OrgState {
     /// Step lists written for a held project whose proposal had none.
     /// Not an event. A later restart reads the same list off ticket coverage.
     pub plans: BTreeMap<String, Vec<PlanStep>>,
+    /// Paths a code step may name. Keyed by `home.repo`, or `""` for the
+    /// org codebases list when a project has no home repository yet.
+    /// Not an event. Empty means this process has not read a digest.
+    #[serde(skip)]
+    pub code_paths: BTreeMap<String, Vec<String>>,
 }
 
 impl OrgState {

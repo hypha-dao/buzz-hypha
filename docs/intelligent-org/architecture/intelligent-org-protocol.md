@@ -93,7 +93,7 @@ Rules that follow from the shape:
 | `39103`   | `shapers`                                      | The **Shaper set** and decision rules     |
 | `39104`   | draft event id                                 | The **outcome** of one draft (L4)         |
 | `39105`   | member pubkey                                  | One member's **org profile** — about, skills, limit |
-| `39106`   | `codebases`                                    | The org **codebases** list — repositories and the landing page |
+| `39106`   | `codebases`                                    | The org **codebases** list — repositories and the landing page. A repository may also carry `commit` and `files` (at most 80 paths, no `..`). That list is the digest a code step may name |
 
 All are `is_relay_only_kind`: a client `EVENT` of these kinds is rejected.
 All are `is_global_only_kind`. Tags on each state event are chosen so that

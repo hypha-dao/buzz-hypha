@@ -417,18 +417,27 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
     /// asked for again.
     async fn draft_ready_tickets(&mut self, item: &str) -> Result<usize, crate::error::AgentError> {
         if let Some(root_id) = root_id(&self.state, item) {
+            let root = self.state.items.get(&root_id).cloned();
+            let (repo, commit, paths) = root
+                .as_ref()
+                .map(|root| self.planner_digest(root))
+                .unwrap_or_default();
+            if !paths.is_empty() {
+                self.state.code_paths.insert(repo.clone(), paths.clone());
+            }
             let recovered = plan_for_root(&self.state, &root_id);
             let needs_steps = match &recovered {
                 None => true,
                 Some(plan) => !plan_ready(plan) && !self.state.plans.contains_key(&root_id),
             };
             if needs_steps {
-                if let Some(root) = self.state.items.get(&root_id).cloned() {
+                if let Some(root) = root {
+                    let context = digest_block(&repo, &commit, &paths);
                     let output = self
                         .model
-                        .structured(steps_model_request(&root.title, &root.brief))
+                        .structured(steps_model_request(&root.title, &root.brief, &context))
                         .await?;
-                    if let Some(steps) = steps_ready(&root.title, &output.value) {
+                    if let Some(steps) = steps_ready_in(&root.title, &output.value, &paths) {
                         self.state.plans.insert(root_id, steps);
                     }
                 }
@@ -674,6 +683,29 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             paths,
         })
     }
+
+    /// Paths a code step may name for this project's home repository.
+    fn planner_digest(&self, root: &WorkItem) -> (String, String, Vec<String>) {
+        let Some(repo) = root
+            .home
+            .as_ref()
+            .and_then(|home| home.repo.clone())
+            .filter(|repo| !repo.is_empty())
+        else {
+            return (String::new(), String::new(), Vec::new());
+        };
+        let Some(listing) = self.listings.get(&repo) else {
+            return (repo, String::new(), Vec::new());
+        };
+        let paths = listing
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .filter(|path| !path.is_empty() && !path.contains(".."))
+            .take(80)
+            .collect();
+        (repo, listing.commit.clone(), paths)
+    }
 }
 
 fn change_ends(state: &OrgState, root_id: &str) -> (String, String) {
@@ -773,15 +805,16 @@ fn draft_ready(
     let Some(root_id) = root_id(state, item) else {
         return Ok(Vec::new());
     };
-    let Some(plan) = plan_for_root(state, &root_id) else {
-        return Ok(Vec::new());
-    };
-    if !plan_ready(&plan) {
-        return Ok(Vec::new());
-    }
     let Some(root) = state.items.get(&root_id).cloned() else {
         return Ok(Vec::new());
     };
+    let Some(plan) = plan_for_root(state, &root_id) else {
+        return Ok(Vec::new());
+    };
+    let plan = ground_code_files(plan, &allowed_paths(state, &root));
+    if !plan_ready(&plan) {
+        return Ok(Vec::new());
+    }
     let Some(dri) = root.dri.clone() else {
         return Ok(Vec::new());
     };
@@ -863,12 +896,19 @@ fn plan_for_root(state: &OrgState, root_id: &str) -> Option<Vec<PlanStep>> {
         .get(root_id)
         .map(|item| item.title.clone())
         .unwrap_or_default();
-    let proposal = proposal_plan(state, root_id).and_then(|plan| without_title_clone(&title, plan));
-    let memory = state
-        .plans
+    let allowed = state
+        .items
         .get(root_id)
-        .and_then(|plan| without_title_clone(&title, plan.clone()));
-    let drafts = plan_from_drafts(state, root_id, &title);
+        .map(|root| allowed_paths(state, root))
+        .unwrap_or_default();
+    let proposal = proposal_plan(state, root_id).and_then(|plan| {
+        without_title_clone(&title, plan).map(|plan| ground_code_files(plan, &allowed))
+    });
+    let memory = state.plans.get(root_id).and_then(|plan| {
+        without_title_clone(&title, plan.clone()).map(|plan| ground_code_files(plan, &allowed))
+    });
+    let drafts =
+        plan_from_drafts(state, root_id, &title).map(|plan| ground_code_files(plan, &allowed));
     for candidate in [&memory, &proposal, &drafts] {
         if candidate.as_ref().is_some_and(|plan| plan_ready(plan)) {
             return candidate.clone();
@@ -957,7 +997,7 @@ pub(crate) fn project_steps_prompt(title: &str, brief: &str, context: &str) -> S
          If a later step needs an answer, an earlier step is the one that gets that answer, and the later step names that piece in after.\n\
          produces is the check that the step is done. It is not the title and not \"the step is done\".\n\
          how is two to four imperative sentences. Do not copy produces into how.\n\
-         A code step's files are paths from the digest in the context. Do not invent a path.\n\
+         A code step's files are paths from the Digest files list in the context. Do not invent a path. A code step with no file from that list is not a step.\n\
          Do not repeat the project as a step. Do not mention money."
     )
 }
@@ -1010,10 +1050,10 @@ pub(crate) fn direction_excerpt(state: &OrgState) -> String {
     text.chars().take(1500).collect()
 }
 
-fn steps_model_request(title: &str, brief: &str) -> ModelRequest {
+fn steps_model_request(title: &str, brief: &str, context: &str) -> ModelRequest {
     ModelRequest {
         tier: Tier::Fast,
-        system: project_steps_prompt(title, brief, ""),
+        system: project_steps_prompt(title, brief, context),
         messages: vec![crate::think::model::Message {
             role: "user".into(),
             content: format!("Title: {title}\nBrief: {brief}"),
@@ -1029,13 +1069,101 @@ fn steps_model_request(title: &str, brief: &str) -> ModelRequest {
 /// Two to seven offerable steps that are not the project title. `raw` is
 /// the model's JSON object, or the `plan` array on a project act.
 pub fn steps_ready(title: &str, raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
+    steps_ready_in(title, raw, &[])
+}
+
+/// [`steps_ready`], and when `allowed` is non-empty every code file must be
+/// in that digest. A code step whose files are all outside it is not offerable.
+pub fn steps_ready_in(
+    title: &str,
+    raw: &serde_json::Value,
+    allowed: &[String],
+) -> Option<Vec<PlanStep>> {
     let parsed = parse_step_array(raw)?;
     let steps = without_title_clone(title, parsed)?;
+    let steps = ground_code_files(steps, allowed);
     if plan_ready(&steps) {
         Some(steps)
     } else {
         None
     }
+}
+
+/// Record a digest the accept path can enforce. An empty list is not a digest.
+pub(crate) fn remember_digest(state: &mut OrgState, repo: &str, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    state.code_paths.insert(repo.to_string(), paths.to_vec());
+}
+
+fn allowed_paths(state: &OrgState, root: &WorkItem) -> Vec<String> {
+    if let Some(repo) = root.home.as_ref().and_then(|home| home.repo.as_deref()) {
+        if let Some(paths) = state.code_paths.get(repo) {
+            return paths.clone();
+        }
+    }
+    state.code_paths.get("").cloned().unwrap_or_default()
+}
+
+fn ground_code_files(mut steps: Vec<PlanStep>, allowed: &[String]) -> Vec<PlanStep> {
+    if allowed.is_empty() {
+        return steps;
+    }
+    let allow: HashSet<&str> = allowed.iter().map(String::as_str).collect();
+    for step in &mut steps {
+        if step.kind == "code" {
+            step.files.retain(|path| allow.contains(path.as_str()));
+        }
+    }
+    steps
+}
+
+/// `Digest files (repo@commit):` followed by `- path` lines. Empty when
+/// there is nothing to name.
+pub(crate) fn digest_block(repo: &str, commit: &str, paths: &[String]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("Digest files ({repo}");
+    if !commit.is_empty() {
+        out.push('@');
+        out.push_str(commit);
+    }
+    out.push_str("):\n");
+    for path in paths.iter().take(80) {
+        out.push_str("- ");
+        out.push_str(path);
+        out.push('\n');
+    }
+    out
+}
+
+/// Paths under a `Digest files` block. Anything else in the context is ignored.
+pub(crate) fn digest_paths_in(context: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut in_digest = false;
+    for line in context.lines() {
+        let line = line.trim();
+        if line.starts_with("Digest files") {
+            in_digest = true;
+            continue;
+        }
+        if !in_digest {
+            continue;
+        }
+        let Some(path) = line.strip_prefix('-') else {
+            if line.is_empty() {
+                continue;
+            }
+            break;
+        };
+        let path = path.trim();
+        if !path.is_empty() && !path.contains("..") {
+            paths.push(path.to_string());
+        }
+    }
+    paths
 }
 
 fn parse_step_array(raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
@@ -1569,6 +1697,16 @@ mod tests {
         assert_eq!(steps.len(), 2);
         assert!(steps[0].after.is_empty());
         assert_eq!(steps[1].after, vec!["Show the next task on My work"]);
+        let allowed = vec![
+            "desktop/src/features/org/work/model.ts".into(),
+            "crates/buzz-org-agent/src/plan.rs".into(),
+        ];
+        assert!(steps_ready_in("Continuous task flow", &raw, &allowed).is_some());
+        let missing = vec!["desktop/src/features/org/work/model.ts".into()];
+        assert!(
+            steps_ready_in("Continuous task flow", &raw, &missing).is_none(),
+            "a code file outside the digest is not a plan"
+        );
     }
 
     #[test]
@@ -1742,5 +1880,123 @@ mod tests {
             again.is_empty(),
             "a second pass does not draft the same steps"
         );
+    }
+
+    #[test]
+    fn accept_drops_a_code_file_outside_the_digest() {
+        use buzz_core::intelligent_org::{
+            DecisionRule, Executed, ProjectHome, Proposal, ProposalKind, ProposalStatus,
+        };
+
+        let gen = "ab".repeat(32);
+        let mut root = crate::test_support::root_held(&"aa".repeat(32));
+        root.title = "Show the next task".into();
+        root.home = Some(ProjectHome {
+            channel: "room-1".into(),
+            repo: Some("30617:aa:buzz".into()),
+            project: Some("30621:aa:buzz".into()),
+        });
+        let mut state = OrgState::new();
+        state.item_generations.insert(root.id.clone(), gen);
+        state.items.insert(root.id.clone(), root);
+        remember_digest(
+            &mut state,
+            "30617:aa:buzz",
+            &[
+                "desktop/src/features/org/work/model.ts".into(),
+                "crates/buzz-org-agent/src/plan.rs".into(),
+            ],
+        );
+        state.proposals.insert(
+            "prop-1".into(),
+            Proposal {
+                id: "prop-1".into(),
+                kind: ProposalKind::Project,
+                status: ProposalStatus::Passed,
+                opened_by: "aa".repeat(32),
+                opened_at: 1,
+                expires_at: 2,
+                draft: None,
+                payload: serde_json::json!({
+                    "title": "Show the next task",
+                    "brief": "The next offered task is visible on My work.",
+                    "plan": [
+                        {
+                            "piece": "Render the next task",
+                            "brief": "Render the next offered task in the My work column.",
+                            "kind": "code",
+                            "files": ["desktop/src/features/org/work/model.ts"],
+                            "produces": ["the next task is visible on My work"],
+                            "how": ["Open the My work column.", "Render the next offered task there."]
+                        },
+                        {
+                            "piece": "Offer the waiting task",
+                            "brief": "Offer the task that was waiting when the first one is done.",
+                            "kind": "code",
+                            "after": ["Render the next task"],
+                            "files": ["src/missing.rs"],
+                            "produces": ["done work opens the next task"],
+                            "how": ["Read the done event.", "Offer the task that names it in after."]
+                        }
+                    ]
+                }),
+                rule: DecisionRule::MAJORITY,
+                needed: 1,
+                eligible: vec![],
+                votes: vec![],
+                decided_at: Some(2),
+                executed: Some(Executed {
+                    kind: "work_item".into(),
+                    id: "root-1".into(),
+                }),
+                settlement: None,
+            },
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        assert!(
+            events.is_empty(),
+            "a code file outside the digest publishes no ticket"
+        );
+    }
+
+    #[test]
+    fn the_buzz_repo_digest_is_the_allow_list() {
+        let digest: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/eval/digests/buzz.json")).expect("digest");
+        let files: Vec<String> = digest["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .filter_map(|path| path.as_str().map(str::to_string))
+            .collect();
+        assert!(files.len() <= 80);
+        assert!(files.iter().any(|path| path.ends_with("plan.rs")));
+        assert!(!digest["commit"].as_str().unwrap_or("").is_empty());
+        let raw = serde_json::json!({
+            "steps": [
+                {
+                    "piece": "Ground code steps in the digest",
+                    "brief": "Keep a code step only when its file is in the digest.",
+                    "kind": "code",
+                    "files": ["crates/buzz-org-agent/src/plan.rs"],
+                    "produces": ["a code step outside the digest is not a ticket"],
+                    "how": ["Read the digest file list.", "Drop a path the list does not contain."]
+                },
+                {
+                    "piece": "Show the waiting step",
+                    "brief": "Show a step that waits on the digest check.",
+                    "kind": "code",
+                    "after": ["Ground code steps in the digest"],
+                    "files": ["desktop/src/features/org/work/model.ts"],
+                    "produces": ["the waiting step is on the project"],
+                    "how": ["Open the project page.", "Render the step that names its wait."]
+                }
+            ]
+        });
+        assert!(steps_ready_in("Digest allow list", &raw, &files).is_some());
+        let mut missing = raw;
+        missing["steps"][1]["files"] = serde_json::json!(["src/missing.rs"]);
+        assert!(steps_ready_in("Digest allow list", &missing, &files).is_none());
     }
 }

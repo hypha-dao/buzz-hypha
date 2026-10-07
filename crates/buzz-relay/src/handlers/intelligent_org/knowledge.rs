@@ -48,6 +48,12 @@ struct ItemIn {
     url: String,
     #[serde(default)]
     about: String,
+    /// Commit the file list was read from. Empty when the repo was not read.
+    #[serde(default)]
+    commit: String,
+    /// Paths a code step may name. Empty when the repo was not read.
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +63,10 @@ struct StoredItem {
     name: String,
     url: String,
     about: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    commit: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    files: Vec<String>,
 }
 
 fn invalid(reason: &str) -> IngestError {
@@ -103,15 +113,54 @@ fn normalize_items(items: &[ItemIn]) -> Result<Vec<StoredItem>, IngestError> {
             return Err(invalid("duplicate codebase url"));
         }
         let id = item_id(&item.id, kind, name, index, &mut seen_id);
+        let (commit, files) = if kind == "repository" {
+            digest_of(&item.commit, &item.files)?
+        } else {
+            (String::new(), Vec::new())
+        };
         stored.push(StoredItem {
             id,
             kind: kind.to_string(),
             name: name.to_string(),
             url: url.to_string(),
             about: about.to_string(),
+            commit,
+            files,
         });
     }
     Ok(stored)
+}
+
+const DIGEST_MAX_FILES: usize = 80;
+const DIGEST_PATH_MAX: usize = 180;
+
+/// A repository digest the planner may name. A path with `..` is refused.
+fn digest_of(commit: &str, files: &[String]) -> Result<(String, Vec<String>), IngestError> {
+    let commit = commit.trim();
+    if commit.chars().count() > 80 || commit.chars().any(char::is_whitespace) {
+        return Err(invalid("codebase commit is not a single token"));
+    }
+    if files.len() > DIGEST_MAX_FILES {
+        return Err(invalid(&format!("at most {DIGEST_MAX_FILES} digest files")));
+    }
+    let mut kept = Vec::with_capacity(files.len());
+    for file in files {
+        let path = file.trim();
+        if path.is_empty() {
+            continue;
+        }
+        if path.chars().count() > DIGEST_PATH_MAX
+            || path.contains("..")
+            || path.starts_with('/')
+            || path.chars().any(char::is_whitespace)
+        {
+            return Err(invalid("digest path is not a file in the repository"));
+        }
+        if !kept.iter().any(|seen: &String| seen == path) {
+            kept.push(path.to_string());
+        }
+    }
+    Ok((commit.to_string(), kept))
 }
 
 fn item_id(
@@ -313,6 +362,8 @@ mod tests {
             name: name.into(),
             url: url.into(),
             about: about.into(),
+            commit: String::new(),
+            files: Vec::new(),
         }
     }
 
@@ -349,5 +400,28 @@ mod tests {
         assert!(reason(bad.expect_err("scheme")).contains("http(s)"));
         let wrong = normalize_items(&[item("strategy", "x", "https://example.com", "no")]);
         assert!(reason(wrong.expect_err("kind")).contains("repository or site"));
+    }
+
+    #[test]
+    fn a_repository_digest_is_kept_and_a_parent_path_is_refused() {
+        let mut repo = item(
+            "repository",
+            "buzz",
+            "https://github.com/hypha-dao/buzz-hypha",
+            "The product",
+        );
+        repo.commit = "abc1234".into();
+        repo.files = vec!["crates/buzz-org-agent/src/plan.rs".into()];
+        let items = normalize_items(&[repo]).expect("digest");
+        assert_eq!(items[0].commit, "abc1234");
+        assert_eq!(items[0].files, vec!["crates/buzz-org-agent/src/plan.rs"]);
+        let mut bad = item(
+            "repository",
+            "buzz",
+            "https://example.com/buzz",
+            "The product",
+        );
+        bad.files = vec!["../secrets.env".into()];
+        assert!(reason(normalize_items(&[bad]).expect_err("parent")).contains("digest path"));
     }
 }
