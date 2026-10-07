@@ -69,6 +69,10 @@ export type WorkItem = {
   how: string | null;
   /** Checks that say the ticket is done. */
   doneWhen: string[];
+  /** Piece titles this ticket waits on. */
+  waitsOn: string[];
+  /** `50100` this ticket was agreed from, when the relay stored it. */
+  sourceDraftId: string | null;
 };
 
 export type WorkHealthSentence = {
@@ -288,6 +292,8 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
         : null,
     how: joinedLines(content.how),
     doneWhen: linesOf(content.done_when),
+    waitsOn: [],
+    sourceDraftId: asString(content.draft),
   };
 }
 
@@ -362,7 +368,22 @@ export function parseOfferedTicket(event: RelayEvent): WorkItem | null {
     planContent: null,
     how,
     doneWhen: linesOf(content.done_when),
+    waitsOn: waitsOnOf(content, title),
+    sourceDraftId: event.id,
   };
+}
+
+function waitsOnOf(content: Record<string, unknown>, title: string): string[] {
+  const named = linesOf(content.waits_on);
+  if (named.length > 0) return named;
+  if (!Array.isArray(content.coverage)) return [];
+  for (const row of content.coverage) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    if (asString(record.piece) !== title) continue;
+    return linesOf(record.after);
+  }
+  return [];
 }
 
 /** Newest `39104` status per draft id. Missing means still open. */
@@ -616,6 +637,21 @@ export const SEEDED_CONTEXT_PATHS = [
   "context/links.md",
 ] as const;
 
+/** How, done-when, and waits from the draft the ticket was agreed from. */
+export function withDraftDetail(
+  item: WorkItem,
+  draft: WorkItem | null,
+): WorkItem {
+  if (!draft) return item;
+  return {
+    ...item,
+    brief: item.brief.length > 0 ? item.brief : draft.brief,
+    how: item.how ?? draft.how,
+    doneWhen: item.doneWhen.length > 0 ? item.doneWhen : draft.doneWhen,
+    waitsOn: item.waitsOn.length > 0 ? item.waitsOn : draft.waitsOn,
+  };
+}
+
 /** The newest `50104` for a ticket. */
 export type WorkPrompt = {
   content: string;
@@ -624,15 +660,17 @@ export type WorkPrompt = {
   createdAt: number;
 };
 
-/** Newest `50104` whose `#i` is this ticket. */
+/** Newest `50104` whose `#i` is this ticket or the draft it was agreed from. */
 export function latestWorkPrompt(
   events: readonly RelayEvent[],
-  itemId: string,
+  itemId: string | readonly string[],
 ): WorkPrompt | null {
+  const ids = new Set(typeof itemId === "string" ? [itemId] : itemId);
   let best: RelayEvent | null = null;
   for (const event of events) {
     if (event.kind !== KIND_IO_WORK_PROMPT) continue;
-    if (tagValue(event.tags, TAG_ITEM) !== itemId) continue;
+    const tagged = tagValue(event.tags, TAG_ITEM);
+    if (!tagged || !ids.has(tagged)) continue;
     if (
       !best ||
       event.created_at > best.created_at ||

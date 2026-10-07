@@ -291,6 +291,8 @@ fn child_done_brief_unmet() {
                 done_when: vec![],
                 kind: None,
                 how: vec![],
+                waits_on: vec![],
+                files: vec![],
             }),
             needs: pk(4),
             gap: "ticket:covers".into(),

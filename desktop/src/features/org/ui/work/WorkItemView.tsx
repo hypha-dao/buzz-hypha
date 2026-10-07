@@ -67,7 +67,10 @@ export function WorkItemView({
   const room = homeChannel(item);
   const files = contextPaths(item);
   const stale = prompt
-    ? workPromptIsStale(prompt, item.eventId, repoCommit)
+    ? [item.eventId, item.sourceDraftId].every(
+        (anchor) =>
+          anchor == null || workPromptIsStale(prompt, anchor, repoCommit),
+      )
     : false;
   const holder = item.state === "offered" ? item.offeredTo : item.dri;
   const dateLabel = item.type === "project" ? "Review" : "Due";
@@ -177,6 +180,25 @@ export function WorkItemView({
           >
             Copy prompt
           </Button>
+        </section>
+      ) : null}
+
+      {item.waitsOn.length > 0 ? (
+        <section aria-labelledby="org-item-waits-heading" className="space-y-2">
+          <h2
+            className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
+            id="org-item-waits-heading"
+          >
+            Waits on
+          </h2>
+          <ul
+            className="list-disc space-y-1 pl-5 text-sm"
+            data-testid="org-item-waits"
+          >
+            {item.waitsOn.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -502,8 +524,15 @@ export function WorkItemView({
                     style={motionDelay(overviewLineDelayMs(5, index))}
                     to="/org/work/$itemId"
                   >
-                    <span className="min-w-0 truncate text-sm">
-                      {child.title}
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">
+                        {child.title}
+                      </span>
+                      {child.waitsOn.length > 0 ? (
+                        <span className="block truncate text-2xs text-muted-foreground">
+                          Waits on {child.waitsOn.join(", ")}
+                        </span>
+                      ) : null}
                     </span>
                     <StateChip item={child} who={undefined} />
                   </Link>

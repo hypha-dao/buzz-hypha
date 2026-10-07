@@ -1013,7 +1013,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     body holds only the lines being added. The published lines stay on the draft, where they can edit or drop any. \
     mission and vision stay a single sentence. situation is one paragraph with no line breaks. \
     act is null, or exactly one of: \
-    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null,\"plan\":[{{\"piece\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"]}}]}} \
+    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null,\"plan\":[{{\"piece\":\"...\",\"brief\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"],\"how\":[\"...\",\"...\"],\"files\":[]}}]}} \
     {{\"kind\":\"done\",\"item\":\"<exact title from the overview>\"}} \
     {{\"kind\":\"ticket\",\"parent\":\"<title, a description, or empty>\",\"title\":\"...\",\"brief\":\"...\",\"who\":\"me\" or a person's name or null,\"due_days\":14}} \
     {{\"kind\":\"dri\",\"item\":\"<exact title>\",\"who\":\"me\" or a person's name}} \
@@ -1028,7 +1028,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     When they agree to a ticket, done, or a ticket removal — yes, publish it, assign to me, remove it, delete it — set act again and say that you are opening it. A proposal is not opened by yes; they publish the draft. \
     When they name a DRI, set the dri act. It is a draft they publish. When they mark work done, set act and say that it is done. Do not ask them to confirm done. \
     project opens a project proposal. due_days is the review date the Shapers named, in days from today. who is a suggested holder only when they named a person; otherwise who is null. Do not set who to the speaker unless they said the project is for them. A null who is filled from Profiles when someone's about or the work they want matches, and they are under their limit. \
-    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Each step has piece, kind (code, research, writing, outreach, design, or ops), gate, after, and produces. piece is the step itself, never the project title. A step that can start now has an empty after. A later step names the earlier piece in after. produces is the check for that step. \
+    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Every step becomes a ticket when the project is accepted, including a step that waits on another. Each step has piece, brief, kind (code, research, writing, outreach, design, or ops), gate, after, produces, how, and files. piece is a short specific title, never the project title. brief is one sentence of what to do, and it is not the title. how is two to four imperative sentences, and it is not a copy of produces. produces is the check that the step is done. It is not the title and it is not \"the step is done\". A step that can start now has an empty after. A later step names the earlier piece in after. A code step's files are paths from the digest in the overview. Do not invent a path. \
     done marks a ticket they already hold. \
     ticket creates a child under a project or ticket they hold, offered to them (who=me) or to someone else. who null means the same match: the person whose profile fits and who is holding the least. When nobody fits, leave who null and still set the ticket act. The ticket stays open for a match. When they say create the ticket, or put themselves as DRI, that is the yes: set the ticket act again, and set who to me when they named themselves. \
     parent is the overview title when you know it, copied in full. A shorter name is only safe when one live item starts with it. \
@@ -5515,8 +5515,23 @@ mod tests {
                 "moves": ["objectives@1#line-a"]
             },
             "plan": [
-                { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] },
-                { "piece": "Run the first session", "kind": "ops", "gate": false, "after": ["Evening licence application"], "produces": ["one session held"] }
+                {
+                    "piece": "Evening licence application",
+                    "brief": "File the evening licence so a weekday night can be booked.",
+                    "kind": "writing",
+                    "gate": true,
+                    "produces": ["sessions held"],
+                    "how": ["Open the council licence form.", "Write the dates the trial needs."]
+                },
+                {
+                    "piece": "Run the first session",
+                    "brief": "Hold the first Tuesday and count who comes.",
+                    "kind": "ops",
+                    "gate": false,
+                    "after": ["Evening licence application"],
+                    "produces": ["one session held"],
+                    "how": ["Open the hall on the booked Tuesday.", "Count who comes and write it down."]
+                }
             ]
         });
         let (_, _, _, act) =
@@ -5578,8 +5593,23 @@ mod tests {
                     "brief": "The AI suggests the next task.",
                     "due_days": 14,
                     "plan": [
-                        { "piece": "Show the next task", "kind": "code", "produces": ["the next task is visible"] },
-                        { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task"], "produces": ["done work opens the next task"] }
+                        {
+                            "piece": "Show the next task",
+                            "brief": "Show the next offered task on My work.",
+                            "kind": "code",
+                            "files": ["desktop/src/features/org/work/model.ts"],
+                            "produces": ["the next task is visible"],
+                            "how": ["Open the My work column.", "Render the next offered task."]
+                        },
+                        {
+                            "piece": "Offer the next task when one is done",
+                            "brief": "Offer the waiting task when the one it follows is done.",
+                            "kind": "code",
+                            "files": ["crates/buzz-org-agent/src/plan.rs"],
+                            "after": ["Show the next task"],
+                            "produces": ["done work opens the next task"],
+                            "how": ["Read the done event for the held task.", "Offer the task that names it."]
+                        }
                     ]
                 }
             })

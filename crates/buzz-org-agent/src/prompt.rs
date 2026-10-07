@@ -144,6 +144,12 @@ pub struct WorkPromptInput<'a> {
     pub constraints: &'a [String],
     /// `code`, `writing`, or another step kind.
     pub kind: &'a str,
+    /// Two to four imperative lines. Not the title.
+    pub how: &'a [String],
+    /// Piece titles this ticket waits on.
+    pub waits_on: &'a [String],
+    /// Paths a code ticket changes. Empty for other kinds.
+    pub files: &'a [String],
 }
 
 /// Render the prompt, or `None` when a code digest failed.
@@ -155,14 +161,85 @@ pub fn prompt_text(
     digest: Result<Option<CodeDigest>, DigestError>,
 ) -> Option<String> {
     let code = if input.kind == "code" {
-        match digest {
-            Ok(Some(code)) => Some(code),
-            _ => return None,
+        match code_for_prompt(input, digest) {
+            Some(code) => Some(code),
+            None => return None,
         }
     } else {
         None
     };
-    Some(render(input, code.as_ref()))
+    let text = render(input, code.as_ref());
+    if prompt_is_only_the_title(&text, input.title) {
+        return None;
+    }
+    Some(text)
+}
+
+/// Files a code prompt may name. A digest that failed publishes nothing.
+/// Named files are kept only when the digest listed them. With no digest,
+/// the step's own files are the list, and an empty list publishes nothing.
+fn code_for_prompt(
+    input: &WorkPromptInput<'_>,
+    digest: Result<Option<CodeDigest>, DigestError>,
+) -> Option<CodeDigest> {
+    let listed = match digest {
+        Ok(code) => code,
+        Err(_) => return None,
+    };
+    let paths: Vec<String> = if input.files.is_empty() {
+        listed
+            .as_ref()
+            .map(|code| code.paths.clone())
+            .unwrap_or_default()
+    } else if let Some(code) = listed.as_ref() {
+        input
+            .files
+            .iter()
+            .filter(|file| code.paths.iter().any(|path| path == *file))
+            .cloned()
+            .collect()
+    } else {
+        input.files.to_vec()
+    };
+    if paths.is_empty() {
+        return None;
+    }
+    let (repo, commit) = listed
+        .map(|code| (code.repo, code.commit))
+        .unwrap_or_else(|| ("the project repository".into(), String::new()));
+    Some(CodeDigest {
+        repo,
+        commit,
+        paths,
+    })
+}
+
+fn prompt_is_only_the_title(text: &str, title: &str) -> bool {
+    let title = title.trim();
+    let body: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            !matches!(
+                *line,
+                "Goal"
+                    | "How"
+                    | "Why"
+                    | "Done when"
+                    | "Constraints"
+                    | "Where the output goes"
+                    | "Report back"
+                    | "Waits on"
+                    | "Repository"
+                    | "Branch"
+                    | "Paths"
+                    | "Leave alone"
+            )
+        })
+        .filter(|line| *line != title)
+        .collect();
+    body.is_empty()
 }
 
 /// Call `publish` only when `text` is `Some`. A failed digest passes `None`
@@ -214,7 +291,15 @@ pub fn work_branch(id: &str, title: &str) -> String {
 fn render(input: &WorkPromptInput<'_>, code: Option<&CodeDigest>) -> String {
     let mut out = String::new();
     out.push_str("Goal\n");
-    out.push_str(input.title);
+    out.push_str(&goal_line(input));
+    if !input.how.is_empty() {
+        out.push_str("\n\nHow\n");
+        for line in input.how {
+            out.push_str("- ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
     out.push_str("\n\nWhy\n");
     out.push_str(input.objective);
     out.push('\n');
@@ -222,7 +307,18 @@ fn render(input: &WorkPromptInput<'_>, code: Option<&CodeDigest>) -> String {
     out.push_str(" → ");
     out.push_str(input.change_to);
     out.push('\n');
-    out.push_str(input.step);
+    if input.step.trim() != input.title.trim() && input.step.trim() != goal_line(input).trim() {
+        out.push_str(input.step);
+        out.push('\n');
+    }
+    if !input.waits_on.is_empty() {
+        out.push_str("\nWaits on\n");
+        for name in input.waits_on {
+            out.push_str("- ");
+            out.push_str(name);
+            out.push('\n');
+        }
+    }
     out.push_str("\n\nDone when\n");
     for line in input.done_when {
         out.push_str("- ");
@@ -246,9 +342,13 @@ fn render(input: &WorkPromptInput<'_>, code: Option<&CodeDigest>) -> String {
     if let Some(code) = code {
         out.push_str("\nRepository\n");
         out.push_str(&code.repo);
-        out.push('@');
-        out.push_str(&code.commit);
-        out.push_str("\n\nBranch\n");
+        if !code.commit.is_empty() {
+            out.push('@');
+            out.push_str(&code.commit);
+        }
+        out.push_str("\n\nLeave alone\n");
+        out.push_str("Do not edit files that are not listed below.\n");
+        out.push_str("\nBranch\n");
         out.push_str(&work_branch(input.ticket_id, input.title));
         out.push_str("\n\nPaths\n");
         for path in &code.paths {
@@ -258,6 +358,23 @@ fn render(input: &WorkPromptInput<'_>, code: Option<&CodeDigest>) -> String {
         }
     }
     out
+}
+
+/// The work, not the title. A prompt whose goal is the title is not a prompt.
+fn goal_line(input: &WorkPromptInput<'_>) -> String {
+    let step = input.step.trim();
+    if !step.is_empty() && !step.eq_ignore_ascii_case(input.title.trim()) {
+        return step.to_string();
+    }
+    if let Some(line) = input.how.iter().find(|line| !line.trim().is_empty()) {
+        return line.trim().to_string();
+    }
+    input
+        .done_when
+        .iter()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .unwrap_or_default()
 }
 
 fn select_paths(files: &[RepoFile], max_paths: usize) -> Vec<String> {
@@ -319,6 +436,9 @@ mod tests {
             done_when: done,
             constraints: &[],
             kind: "writing",
+            how: &[],
+            waits_on: &[],
+            files: &[],
         }
     }
 

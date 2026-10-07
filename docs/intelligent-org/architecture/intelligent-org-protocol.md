@@ -331,13 +331,19 @@ their shape is fixed here:
   "suggested_holder": "<pubkey>|null",
   "unfilled": "one line — why nobody here fits|null",    // required when requires is non-empty and suggested_holder is null
   "covers": "the phrase in the parent brief this answers to",
-  "after": ["<sibling-uuid>"],                            // live or done siblings this piece follows; [] when it can start now
+  "after": ["<sibling-uuid>"],                            // live siblings this piece follows; [] until those siblings exist
+  "waits_on": ["<piece title>"],                          // steps this ticket waits on; names, not ids
+  "how": ["<imperative line>"],                           // two to four lines
+  "done_when": ["<check>"],
+  "kind": "code|research|writing|outreach|design|ops",
+  "files": ["<path>"],                                    // code tickets; paths from the digest
   "gate": false,                                          // true when its outcome decides what the later pieces are
   "coverage": [ { "piece": "", "covered_by": "<item-uuid>|null",
                   "order": 1, "after": ["<piece>"], "held": "after <piece>|null" } ] }
-// `coverage` is the whole ordered plan for the parent brief; a piece is `held` when a predecessor
-// is neither live nor done, and a held piece is never a draft in this batch. `after` on the draft
-// carries into the item's `after` on promotion (§4.2). `requires` names what the piece needs;
+// `coverage` is the whole ordered plan for the parent brief. Accepting a project
+// drafts every step, including a step whose `held` names a predecessor.
+// `waits_on` is those piece titles. `after` carries sibling ids into the item
+// when those siblings already exist (§4.2). `requires` names what the piece needs;
 // `matched` on the holder is the evidence it is met — `requires` without a matching `matched` skill
 // is a stretch and says so in `why`.
 

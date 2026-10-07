@@ -480,7 +480,7 @@ pub(super) async fn create(cmd: &Command<'_>) -> Result<IngestResult, IngestErro
         approved_at: None,
         objective_ref: None,
         created_from: cmd.receipt_hex(),
-        draft: None,
+        draft: super::drafts::draft_marker(cmd.event)?.map(hex::encode),
         done_receipt: None,
         closed_by: None,
         children: ChildrenCounts::default(),

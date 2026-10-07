@@ -389,7 +389,7 @@ pub struct ProjectDraft {
     /// From, to, and the checks that say the change happened.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change: Option<PlanChange>,
-    /// The step list. Gates come first. Held steps are not drafted yet.
+    /// The step list. Every step becomes a ticket when the project is held.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plan: Vec<PlanStep>,
 }
@@ -464,6 +464,12 @@ pub struct PlanStep {
     /// How to do the step. Two to four short lines.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub how: Vec<String>,
+    /// One sentence of what to do. Not the title, and not a how-line.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub brief: String,
+    /// Paths a `code` step changes. Each one is in the digest the plan was read from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// `t = dri` payload.
@@ -494,7 +500,7 @@ pub struct CoveragePiece {
     /// Pieces this one follows.
     #[serde(default)]
     pub after: Vec<String>,
-    /// `after <piece>` when a predecessor is neither live nor done; a held piece is never drafted.
+    /// `after <piece>` when this step waits on another. The ticket still exists.
     pub held: Option<String>,
 }
 
@@ -539,6 +545,12 @@ pub struct TicketDraft {
     /// How to do the ticket. One short line per step.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub how: Vec<String>,
+    /// Piece titles this ticket waits on. Names, not sibling ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits_on: Vec<String>,
+    /// Paths a `code` ticket changes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// `t = done` payload.

@@ -410,12 +410,19 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         )
     }
 
-    /// Draft the plan steps that can start. Held steps stay in coverage.
-    /// At most seven. A step already drafted or already a child is skipped.
-    /// A held project with no plan asks the model for two to seven steps first.
+    /// Draft every plan step, including steps that wait. At most seven.
+    /// A step already drafted or already a child is skipped.
+    /// A held project whose plan is missing or not offerable asks the model
+    /// for two to seven steps first. A plan already stored in memory is not
+    /// asked for again.
     async fn draft_ready_tickets(&mut self, item: &str) -> Result<usize, crate::error::AgentError> {
         if let Some(root_id) = root_id(&self.state, item) {
-            if plan_for_root(&self.state, &root_id).is_none() {
+            let recovered = plan_for_root(&self.state, &root_id);
+            let needs_steps = match &recovered {
+                None => true,
+                Some(plan) => !plan_ready(plan) && !self.state.plans.contains_key(&root_id),
+            };
+            if needs_steps {
                 if let Some(root) = self.state.items.get(&root_id).cloned() {
                     let output = self
                         .model
@@ -573,8 +580,27 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         let mut commit = None;
         let digest = if kind == "code" {
             match self.code_digest(&root) {
-                Some(code) => {
+                Some(mut code) => {
                     commit = Some(code.commit.clone());
+                    if let Some(step) = step.as_ref().filter(|step| !step.files.is_empty()) {
+                        let allowed = self
+                            .listings
+                            .get(&code.repo)
+                            .map(|listing| {
+                                listing
+                                    .files
+                                    .iter()
+                                    .map(|file| file.path.clone())
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        code.paths = step
+                            .files
+                            .iter()
+                            .filter(|file| allowed.iter().any(|path| path == *file))
+                            .cloned()
+                            .collect();
+                    }
                     Ok(Some(code))
                 }
                 None => return Ok(0),
@@ -582,6 +608,18 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         } else {
             Ok(None)
         };
+        let how = step
+            .as_ref()
+            .map(|step| step.how.clone())
+            .unwrap_or_default();
+        let waits_on = step
+            .as_ref()
+            .map(|step| step.after.clone())
+            .unwrap_or_default();
+        let files = step
+            .as_ref()
+            .map(|step| step.files.clone())
+            .unwrap_or_default();
         let input = WorkPromptInput {
             ticket_id: &item.id,
             title: &item.title,
@@ -592,6 +630,9 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             done_when: &done_when,
             constraints: &constraints,
             kind: &kind,
+            how: &how,
+            waits_on: &waits_on,
+            files: &files,
         };
         let Some(text) = prompt::prompt_text(&input, digest) else {
             return Ok(0);
@@ -698,9 +739,9 @@ fn root_id(state: &OrgState, item: &str) -> Option<String> {
     }
 }
 
-/// Ticket drafts for every held project whose next steps can start, and for
-/// a finished gate that unblocks the next step. A project with no step list
-/// drafts nothing until [`steps_ready`] has stored one.
+/// Ticket drafts for every step of a held project, including steps that
+/// wait on another step. A project whose plan is not offerable drafts
+/// nothing until [`steps_ready`] has stored one.
 pub(crate) fn take_due_tickets(
     state: &mut OrgState,
     keys: &nostr::Keys,
@@ -721,7 +762,9 @@ pub(crate) fn take_due_tickets(
     Ok(events)
 }
 
-/// Draft the plan steps that can start under `item`'s project.
+/// Draft every plan step under `item`'s project, including steps that wait.
+/// A waiting step names what it waits on. Each ticket is published with its
+/// work prompt. A plan that is not yet offerable publishes nothing.
 fn draft_ready(
     state: &mut OrgState,
     keys: &nostr::Keys,
@@ -733,6 +776,9 @@ fn draft_ready(
     let Some(plan) = plan_for_root(state, &root_id) else {
         return Ok(Vec::new());
     };
+    if !plan_ready(&plan) {
+        return Ok(Vec::new());
+    }
     let Some(root) = state.items.get(&root_id).cloned() else {
         return Ok(Vec::new());
     };
@@ -742,19 +788,41 @@ fn draft_ready(
     let Some(receipt) = state.item_generations.get(&root_id).cloned() else {
         return Ok(Vec::new());
     };
+    let (change_from, change_to) = change_ends(state, &root_id);
+    let objective = objective_text(state, &root);
+    let constraints = strategy_constraints(state);
+    let repo = root
+        .home
+        .as_ref()
+        .and_then(|home| home.repo.clone())
+        .unwrap_or_else(|| "the project repository".into());
     let mut events = Vec::new();
+    let mut tickets = 0usize;
     for step in &plan {
-        if events.len() >= MAX_STEPS {
+        if tickets >= MAX_STEPS {
             break;
         }
-        if same_title(&step.piece, &root.title) || !step_can_start(state, &root_id, step) {
+        if same_title(&step.piece, &root.title) || already_named(state, &root_id, &step.piece) {
             continue;
         }
         let after = sibling_ids(state, &root_id, step);
         let draft = ticket_from_step(&root, &dri, &plan, step, after);
-        events.push(stage_ticket_draft(
-            state, keys, &root_id, &dri, &receipt, &draft,
-        )?);
+        let ticket = stage_ticket_draft(state, keys, &root_id, &dri, &receipt, &draft)?;
+        let draft_id = ticket.id.to_hex();
+        events.push(ticket);
+        tickets += 1;
+        if let Some(prompt) = stage_prompt(
+            keys,
+            &draft_id,
+            &repo,
+            &objective,
+            &change_from,
+            &change_to,
+            &constraints,
+            step,
+        )? {
+            events.push(prompt);
+        }
     }
     Ok(events)
 }
@@ -789,10 +857,6 @@ fn stage_ticket_draft(
     Ok(event)
 }
 
-fn has_how(plan: &[PlanStep]) -> bool {
-    plan.iter().any(|step| !step.how.is_empty())
-}
-
 fn plan_for_root(state: &OrgState, root_id: &str) -> Option<Vec<PlanStep>> {
     let title = state
         .items
@@ -804,16 +868,60 @@ fn plan_for_root(state: &OrgState, root_id: &str) -> Option<Vec<PlanStep>> {
         .plans
         .get(root_id)
         .and_then(|plan| without_title_clone(&title, plan.clone()));
-    if memory.as_ref().is_some_and(|plan| has_how(plan)) {
-        return memory;
+    let drafts = plan_from_drafts(state, root_id, &title);
+    for candidate in [&memory, &proposal, &drafts] {
+        if candidate.as_ref().is_some_and(|plan| plan_ready(plan)) {
+            return candidate.clone();
+        }
     }
-    if proposal.as_ref().is_some_and(|plan| has_how(plan)) {
-        return proposal;
+    memory.or(proposal).or(drafts)
+}
+
+/// Two to seven steps, each with a brief, how-lines, and a done-when that
+/// is not the title. A code step names files.
+fn plan_ready(plan: &[PlanStep]) -> bool {
+    (2..=MAX_STEPS).contains(&plan.len()) && plan.iter().all(step_ready)
+}
+
+fn step_ready(step: &PlanStep) -> bool {
+    let brief = step.brief.trim();
+    if brief.is_empty() || same_title(brief, &step.piece) {
+        return false;
     }
-    if memory.is_some() {
-        return memory;
+    if !(2..=4).contains(&step.how.len()) {
+        return false;
     }
-    proposal.or_else(|| plan_from_drafts(state, root_id, &title))
+    if step.how.iter().any(|line| {
+        let line = line.trim();
+        line.len() < 12
+            || same_title(line, &step.piece)
+            || step
+                .produces
+                .iter()
+                .any(|produced| same_title(line, produced))
+    }) {
+        return false;
+    }
+    if !step
+        .produces
+        .iter()
+        .any(|line| done_when_ok(&step.piece, line))
+    {
+        return false;
+    }
+    if step.kind == "code" && step.files.is_empty() {
+        return false;
+    }
+    true
+}
+
+fn done_when_ok(title: &str, line: &str) -> bool {
+    let line = line.trim();
+    if line.is_empty() || same_title(line, title) {
+        return false;
+    }
+    let lower = line.to_ascii_lowercase();
+    lower != "the step is done" && lower != "done" && !lower.ends_with(" is done")
 }
 
 fn proposal_plan(state: &OrgState, root_id: &str) -> Option<Vec<PlanStep>> {
@@ -842,13 +950,15 @@ pub(crate) fn project_steps_prompt(title: &str, brief: &str, context: &str) -> S
          Title: {title}\n\
          Brief: {brief}\n\
          {context}\n\
-         Return JSON only, no markdown: {{\"steps\":[{{\"piece\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"],\"how\":[\"...\"]}}]}}\n\
-         Two to seven steps. piece is a short name, at most eight words, never the project title.\n\
+         Return JSON only, no markdown: {{\"steps\":[{{\"piece\":\"...\",\"brief\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"],\"how\":[\"...\",\"...\"],\"files\":[]}}]}}\n\
+         Two to seven steps. piece is a short specific title, at most eight words, never the project title.\n\
+         brief is one sentence of what to do. It is not the title and not a how-line.\n\
          kind is code, research, writing, outreach, design, or ops.\n\
-         The first steps can start now: after is empty. A later step names an earlier piece in after.\n\
-         produces is the check that the step is done, one short line.\n\
-         how is two to four short lines on how to do that step. Each line is one imperative sentence.\n\
-         Do not repeat the project as a step."
+         If a later step needs an answer, an earlier step is the one that gets that answer, and the later step names that piece in after.\n\
+         produces is the check that the step is done. It is not the title and not \"the step is done\".\n\
+         how is two to four imperative sentences. Do not copy produces into how.\n\
+         A code step's files are paths from the digest in the context. Do not invent a path.\n\
+         Do not repeat the project as a step. Do not mention money."
     )
 }
 
@@ -878,7 +988,7 @@ pub(crate) fn projects_needing_how(state: &OrgState) -> Vec<(String, String, Str
                 && item.state == WorkItemState::Accepted
                 && item.dri.is_some()
                 && !state.plans.contains_key(&item.id)
-                && plan_for_root(state, &item.id).is_some_and(|plan| !has_how(&plan))
+                && plan_for_root(state, &item.id).is_some_and(|plan| !plan_ready(&plan))
         })
         .map(|item| (item.id.clone(), item.title.clone(), item.brief.clone()))
         .collect()
@@ -916,15 +1026,15 @@ fn steps_model_request(title: &str, brief: &str) -> ModelRequest {
     }
 }
 
-/// Two to seven steps that are not the project title. `raw` is the model's
-/// JSON object, or the `plan` array on a project act.
+/// Two to seven offerable steps that are not the project title. `raw` is
+/// the model's JSON object, or the `plan` array on a project act.
 pub fn steps_ready(title: &str, raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
     let parsed = parse_step_array(raw)?;
     let steps = without_title_clone(title, parsed)?;
-    if steps.len() < 2 {
-        None
-    } else {
+    if plan_ready(&steps) {
         Some(steps)
+    } else {
+        None
     }
 }
 
@@ -967,7 +1077,7 @@ fn parse_step_array(raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
                     .collect()
             })
             .filter(|lines: &Vec<String>| !lines.is_empty())
-            .unwrap_or_else(|| vec![format!("{piece} is done")]);
+            .unwrap_or_default();
         let how = value
             .get("how")
             .and_then(|item| item.as_array())
@@ -979,6 +1089,28 @@ fn parse_step_array(raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
                     .filter(|line| !line.is_empty())
                     .map(|line| line.chars().take(240).collect::<String>())
                     .take(4)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let brief = value
+            .get("brief")
+            .and_then(|item| item.as_str())
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(280)
+            .collect::<String>();
+        let files = value
+            .get("files")
+            .and_then(|item| item.as_array())
+            .map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|path| path.as_str())
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty() && !path.contains(".."))
+                    .map(str::to_string)
+                    .take(12)
                     .collect()
             })
             .unwrap_or_default();
@@ -1014,6 +1146,8 @@ fn parse_step_array(raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
             size: None,
             produces,
             how,
+            brief,
+            files,
         });
     }
     if steps.is_empty() {
@@ -1132,30 +1266,18 @@ fn plan_from_drafts(state: &OrgState, root_id: &str, title: &str) -> Option<Vec<
                 produces: sibling
                     .map(|ticket| ticket.done_when.clone())
                     .filter(|lines| !lines.is_empty())
-                    .unwrap_or_else(|| vec![format!("{} is done", piece.piece)]),
+                    .unwrap_or_default(),
                 how: sibling.map(|ticket| ticket.how.clone()).unwrap_or_default(),
+                brief: sibling
+                    .map(|ticket| ticket.brief.clone())
+                    .unwrap_or_default(),
+                files: sibling
+                    .map(|ticket| ticket.files.clone())
+                    .unwrap_or_default(),
             }
         })
         .collect();
     without_title_clone(title, steps)
-}
-
-fn step_can_start(state: &OrgState, root_id: &str, step: &PlanStep) -> bool {
-    if already_named(state, root_id, &step.piece) {
-        return false;
-    }
-    let deps_done = step.after.iter().all(|previous| {
-        state.items.values().any(|item| {
-            item.parent.as_deref() == Some(root_id)
-                && item.title == *previous
-                && item.state == WorkItemState::Done
-        })
-    });
-    if step.held.is_some() {
-        deps_done && !step.after.is_empty()
-    } else {
-        deps_done
-    }
 }
 
 fn already_named(state: &OrgState, root_id: &str, piece: &str) -> bool {
@@ -1204,13 +1326,7 @@ fn ticket_from_step(
     TicketDraft {
         parent: root.id.clone(),
         title: step.piece.clone(),
-        brief: if !step.how.is_empty() {
-            step.how.join("\n")
-        } else if step.produces.is_empty() {
-            step.piece.clone()
-        } else {
-            step.produces.join("\n")
-        },
+        brief: step.brief.clone(),
         due_at: root.due_at,
         requires: step.requires.clone(),
         suggested_holder: Some(dri.to_string()),
@@ -1226,14 +1342,66 @@ fn ticket_from_step(
                 covered_by: None,
                 order: (index as u32) + 1,
                 after: piece.after.clone(),
-                held: piece.held.clone(),
+                held: if piece.after.is_empty() {
+                    None
+                } else {
+                    Some(format!("after {}", piece.after.join(", ")))
+                },
             })
             .collect(),
         matched: None,
         done_when: step.produces.clone(),
         kind: Some(step.kind.clone()),
         how: step.how.clone(),
+        waits_on: step.after.clone(),
+        files: step.files.clone(),
     }
+}
+
+fn stage_prompt(
+    keys: &nostr::Keys,
+    draft_id: &str,
+    repo: &str,
+    objective: &str,
+    change_from: &str,
+    change_to: &str,
+    constraints: &[String],
+    step: &PlanStep,
+) -> Result<Option<buzz_core::Event>, PublishError> {
+    let digest = if step.kind == "code" {
+        if step.files.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(CodeDigest {
+            repo: repo.to_string(),
+            commit: String::new(),
+            paths: step.files.clone(),
+        }))
+    } else {
+        Ok(None)
+    };
+    let input = WorkPromptInput {
+        ticket_id: draft_id,
+        title: &step.piece,
+        step: &step.brief,
+        objective,
+        change_from,
+        change_to,
+        done_when: &step.produces,
+        constraints,
+        kind: &step.kind,
+        how: &step.how,
+        waits_on: &step.after,
+        files: &step.files,
+    };
+    let Some(text) = prompt::prompt_text(&input, digest) else {
+        return Ok(None);
+    };
+    let tags = vec![
+        parsed_tag(&["i", draft_id])?,
+        parsed_tag(&["based_on", draft_id])?,
+    ];
+    Ok(Some(sign(keys, Permitted::WorkPrompt, &text, tags)?))
 }
 
 fn card_now() -> u64 {
@@ -1377,8 +1545,24 @@ mod tests {
     fn two_real_steps_are_a_project_plan() {
         let raw = serde_json::json!({
             "steps": [
-                { "piece": "Show the next task on My work", "kind": "code", "after": [], "produces": ["the next task is visible"] },
-                { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task on My work"], "produces": ["done work opens the next task"] }
+                {
+                    "piece": "Show the next task on My work",
+                    "brief": "Put the next offered task on the My work column.",
+                    "kind": "code",
+                    "after": [],
+                    "files": ["desktop/src/features/org/work/model.ts"],
+                    "produces": ["the next task is visible on My work"],
+                    "how": ["Open the My work column component.", "Render the next offered task under You hold."]
+                },
+                {
+                    "piece": "Offer the next task when one is done",
+                    "brief": "When a held task is marked done, offer the task that was waiting on it.",
+                    "kind": "code",
+                    "after": ["Show the next task on My work"],
+                    "files": ["crates/buzz-org-agent/src/plan.rs"],
+                    "produces": ["done work opens the next task"],
+                    "how": ["Read the done event for the held task.", "Publish the ticket whose after names that task."]
+                }
             ]
         });
         let steps = steps_ready("Continuous task flow", &raw).expect("steps");
@@ -1391,8 +1575,22 @@ mod tests {
     fn a_long_step_name_stays_short_and_keeps_its_order() {
         let raw = serde_json::json!({
             "steps": [
-                { "piece": "Define how the AI picks the next task from the direction and the work just finished", "kind": "writing", "produces": ["a spec"] },
-                { "piece": "Build the suggestion that appears when a task is done", "kind": "code", "after": ["Define how the AI picks the next task from the direction and the work just finished"], "produces": ["a suggestion"] }
+                {
+                    "piece": "Define how the AI picks the next task from the direction and the work just finished",
+                    "brief": "Write the rule that chooses the next task from direction and the work just finished.",
+                    "kind": "writing",
+                    "produces": ["the selection rule is written down"],
+                    "how": ["Read the direction texts.", "Write the rule in one paragraph."]
+                },
+                {
+                    "piece": "Build the suggestion that appears when a task is done",
+                    "brief": "Show that suggestion on the ticket that was just marked done.",
+                    "kind": "code",
+                    "files": ["desktop/src/features/org/ui/work/WorkItemView.tsx"],
+                    "after": ["Define how the AI picks the next task from the direction and the work just finished"],
+                    "produces": ["the suggestion is visible on the done ticket"],
+                    "how": ["Subscribe to the done event.", "Render the suggestion under the ticket."]
+                }
             ]
         });
         let steps = steps_ready("Continuous task flow", &raw).expect("steps");
@@ -1406,11 +1604,20 @@ mod tests {
             "steps": [
                 {
                     "piece": "Write the selection rule",
+                    "brief": "Write the rule that chooses which task is next.",
                     "kind": "writing",
                     "produces": ["the rule is written"],
                     "how": ["Write the rule in one paragraph.", "Name what the screen shows."]
                 },
-                { "piece": "Show the suggestion", "kind": "code", "after": ["Write the selection rule"], "produces": ["the suggestion is visible"] }
+                {
+                    "piece": "Show the suggestion",
+                    "brief": "Show the suggestion on My work when a task is done.",
+                    "kind": "code",
+                    "files": ["desktop/src/features/org/ui/work/WorkItemView.tsx"],
+                    "after": ["Write the selection rule"],
+                    "produces": ["the suggestion is visible"],
+                    "how": ["Read the selection rule.", "Render it under the done task."]
+                }
             ]
         });
         let steps = steps_ready("Continuous task flow", &raw).expect("steps");
@@ -1421,6 +1628,119 @@ mod tests {
                 "Name what the screen shows."
             ]
         );
-        assert!(steps[1].how.is_empty());
+        assert_eq!(steps[1].how.len(), 2);
+    }
+
+    fn offerable(piece: &str, kind: &str, after: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "piece": piece,
+            "brief": format!("Do the {piece} work for this project and record the result."),
+            "kind": kind,
+            "gate": after.is_empty(),
+            "after": after,
+            "produces": [format!("{piece} has a recorded result")],
+            "how": [
+                format!("Open the notes for {piece}."),
+                format!("Write down what {piece} found.")
+            ]
+        })
+    }
+
+    #[test]
+    fn accept_publishes_every_step_including_ones_that_wait() {
+        use buzz_core::intelligent_org::{
+            DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,
+        };
+
+        let gen = "ab".repeat(32);
+        let mut root = crate::test_support::root_held(&"aa".repeat(32));
+        root.title = "Weekday hall trial".into();
+        root.due_at = 1_785_488_400;
+        let mut state = OrgState::new();
+        state.item_generations.insert(root.id.clone(), gen.clone());
+        state.items.insert(root.id.clone(), root);
+        state.proposals.insert(
+            "prop-1".into(),
+            Proposal {
+                id: "prop-1".into(),
+                kind: ProposalKind::Project,
+                status: ProposalStatus::Passed,
+                opened_by: "aa".repeat(32),
+                opened_at: 1,
+                expires_at: 2,
+                draft: None,
+                payload: serde_json::json!({
+                    "title": "Weekday hall trial",
+                    "brief": "A four-week trial.",
+                    "due_at": 1785488400,
+                    "plan": [
+                        offerable("Evening licence application", "writing", &[]),
+                        offerable("Hygiene certificate", "ops", &[]),
+                        offerable("Book four Tuesdays", "ops", &["Evening licence application"])
+                    ]
+                }),
+                rule: DecisionRule::MAJORITY,
+                needed: 1,
+                eligible: vec![],
+                votes: vec![],
+                decided_at: Some(2),
+                executed: Some(Executed {
+                    kind: "work_item".into(),
+                    id: "root-1".into(),
+                }),
+                settlement: None,
+            },
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        let tickets: Vec<serde_json::Value> = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .map(|event| serde_json::from_str(&event.content).expect("json"))
+            .collect();
+        assert_eq!(tickets.len(), 3);
+        assert!(tickets
+            .iter()
+            .any(|ticket| ticket["title"] == "Book four Tuesdays"));
+        let waiting = tickets
+            .iter()
+            .find(|ticket| ticket["title"] == "Book four Tuesdays")
+            .expect("waiting");
+        assert_eq!(waiting["waits_on"][0], "Evening licence application");
+        assert!(waiting["how"]
+            .as_array()
+            .is_some_and(|lines| lines.len() >= 2));
+        assert_ne!(waiting["done_when"][0], waiting["title"]);
+        let prompts = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50104)
+            .count();
+        assert_eq!(prompts, 3);
+        state.plans.clear();
+        let proposal = state.proposals.get_mut("prop-1").expect("proposal");
+        proposal
+            .payload
+            .as_object_mut()
+            .expect("object")
+            .remove("plan");
+        let recovered = plan_for_root(&state, "root-1").expect("recovered from drafts");
+        assert!(plan_ready(&recovered));
+        assert!(recovered
+            .iter()
+            .any(|step| step.piece == "Book four Tuesdays"));
+        let waiting = recovered
+            .iter()
+            .find(|step| step.piece == "Book four Tuesdays")
+            .expect("waiting step");
+        assert!(waiting.how.len() >= 2);
+        assert_eq!(
+            waiting.after,
+            vec!["Evening licence application".to_string()]
+        );
+        let again = take_due_tickets(&mut state, &keys).expect("quiet");
+        assert!(
+            again.is_empty(),
+            "a second pass does not draft the same steps"
+        );
     }
 }

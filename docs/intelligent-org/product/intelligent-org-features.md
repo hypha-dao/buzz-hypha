@@ -257,12 +257,15 @@ and drafts the gap between them, unprompted. The chain is fixed:
    **AI is asking you** if it named you, or **AI is suggesting for (name)** if
    you are the one who confirms or offers. It picks from members' **skills and
    about** (feature 10) and their earlier work, and the card cites both.
-4. When a ticket is held, if it names pieces nobody covers, AI drafts those
-   **subtickets** onto **Needs your answer** — in the order they can be
-   done. If one piece has to be settled first (a permit, a pilot, a
-   supplier's yes), that one comes now and the rest wait; when it is done,
-   the next pieces arrive shaped by what it found. Each draft says what the
-   piece needs and who has it — or that nobody here does yet.
+4. When a project is accepted and has a holder, every step is already a
+   ticket under that project, including a step that waits on another step.
+   A waiting ticket names what it waits on. Each ticket is one person's
+   work: what to do, how, and done-when. A ticket a person or a coding
+   agent would otherwise have to interpret carries a work prompt at the
+   same moment. If one piece has to be settled first (a permit, a pilot, a
+   supplier's yes), that ticket exists with the rest, and the later tickets
+   say they wait on it. Each draft says what the piece needs and who has
+   it — or that nobody here does yet.
 
 The receipt is the objective or the project description, not a message. It
 looks at three moments only: right after a Shaper confirms a new direction

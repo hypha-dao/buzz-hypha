@@ -151,8 +151,8 @@ In *content*, though, they are inseparable:
 | Stage | What is drafted | Who commits it | What their commitment means |
 | --- | --- | --- | --- |
 | Change | The change (from → to, done when, objective, date, why) **plus the full first plan** as a preview | Shapers, by vote (`io_project_propose`) | "This change is worth making, by this date." Not "this exact plan". |
-| Path | The plan's first wave: pieces that can start now; gates first | The holder, piece by piece (`io_ticket_create`) | "These are the next steps." The holder owns and may reshape the plan. |
-| Next wave | Pieces held behind a gate, re-planned with what the gate learned | The holder | "Given what we now know, these next." |
+| Path | Every step of the plan, including steps that wait on another step | The holder, piece by piece (`io_ticket_create`) | "These are the steps." A waiting ticket names what it waits on. The holder owns and may reshape the plan. |
+| Next wave | Nothing new for a step that already exists. A gate's answer is what the waiting ticket reads | The holder | "The ticket that was waiting can proceed." |
 | Execution | A prompt per task ticket | Nobody needs to commit: it is a read | "Here is how to do this piece." |
 
 This keeps the governance model exactly as it is: Shapers approve the
