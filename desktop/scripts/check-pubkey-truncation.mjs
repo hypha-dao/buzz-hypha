@@ -33,9 +33,9 @@ const overrides = new Set([
   // Holder-prefix match in chat text. An 8-hex token the agent wrote is
   // replaced with a name when exactly one known profile owns that prefix.
   // It is never shown as an identity.
-  "src/features/org/chatDraft.ts:817",
-  "src/features/org/chatDraft.ts:824",
-  "src/features/org/chatDraft.ts:826",
+  "src/features/org/chatDraft.ts:944",
+  "src/features/org/chatDraft.ts:951",
+  "src/features/org/chatDraft.ts:953",
 ]);
 
 await runPubkeyTruncationCheck({

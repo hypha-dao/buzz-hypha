@@ -7,7 +7,6 @@ import {
   directionBodyLines,
   directionDraftText,
   chatHolderLabel,
-  commandForDraft,
   driDraftSentence,
   driRequest,
   nameHoldersInChat,
@@ -17,6 +16,7 @@ import {
   shortProposalAnnouncement,
   stripProposalOpenLink,
 } from "./chatDraft.ts";
+import { commandForDraft } from "./chatDraftPublish.ts";
 
 const ME = "e5ebc6cdb579be112e336cc319b5989b4bb6af11786ea90dbe52b5f08d741b34";
 const ADA = "0c9a6e2b4d8f1a3c5e7b9d0f2a4c6e8b1d3f5a7c9e0b2d4f6a8c0e1b3d5f7a92";

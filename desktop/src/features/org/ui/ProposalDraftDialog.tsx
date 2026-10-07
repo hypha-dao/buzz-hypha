@@ -32,11 +32,8 @@ import { Textarea } from "@/shared/ui/textarea";
 
 import {
   announcementLabel,
-  commandForDraft,
   directionChunks,
   directionDraftText,
-  dateInputToUnix,
-  dateInputValue,
   draftKindLabel,
   draftTitle,
   emptyRules,
@@ -46,6 +43,11 @@ import {
   type CodebaseItem,
   type RuleKind,
 } from "../chatDraft";
+import {
+  commandForDraft,
+  dateInputToUnix,
+  dateInputValue,
+} from "../chatDraftPublish";
 import { publishOrgCommand, type DirectionSlug } from "../commands";
 import {
   linesForDirectionPropose,
