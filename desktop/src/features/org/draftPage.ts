@@ -166,6 +166,24 @@ export function draftPageModel(
         facts: [],
       };
     }
+    case "codebases": {
+      const title = draftTitle(draft);
+      return {
+        eyebrow: "Codebases draft",
+        title,
+        briefHeading: "List",
+        brief: "",
+        lines: numbered(
+          draft.items.map((item) =>
+            item.url
+              ? [item.name, item.url, item.about].filter(Boolean).join(" — ")
+              : item.about || item.kind,
+          ),
+        ),
+        crumb: title,
+        facts: [],
+      };
+    }
     case "shapers-agent": {
       const title = draftTitle(draft);
       return {

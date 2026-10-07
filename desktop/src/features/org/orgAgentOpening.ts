@@ -1,46 +1,38 @@
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 /**
- * What the org agent is for, shown the moment its DM opens.
- * `crates/buzz-org-agent/src/dm_chat.rs` `WELCOME_LINES` is this same text.
+ * Shown under the org agent's name when its DM opens.
+ * The first chat line is `ORG_AGENT_FIRST_MESSAGE`, posted by
+ * `crates/buzz-org-agent/src/dm_chat.rs` `WELCOME_LINES`.
  */
 export const ORG_AGENT_OPENING = {
-  lead: "I draft for this organization — what it is for, the work, who decides, and your profile. You decide what becomes real. Nothing I write changes the org until the right person agrees.",
-  items: [
-    {
-      title: "Direction",
-      detail:
-        "Mission, vision, where you stand, objectives, and strategy. I draft each one and say what's weak.",
-    },
-    {
-      title: "Work",
-      detail:
-        "Projects, tickets, and who should hold them. Only the named person accepts.",
-    },
-    {
-      title: "Shapers",
-      detail:
-        "Who decides, and how many of them must agree before something passes.",
-    },
-    {
-      title: "Profile",
-      detail:
-        "What you do, the work you want, and your links, so offers go to the right person.",
-    },
-    {
-      title: "Questions",
-      detail: "Ask about anything the organization has already written down.",
-    },
-  ],
+  lead: "I'm super intelligence of your organization.",
+  items: [],
 } as const;
+
+/** Posted once into an empty agent DM. Same words as `WELCOME_LINES`. */
+export const ORG_AGENT_FIRST_MESSAGE = [
+  "Hey, I'm glad to connect! I'm a powerful AI agent, that can take your organization to the next level. View me as Elon Musk on steroids at your service.",
+  "",
+  "Do you have time to set up your organization now?",
+].join("\n");
 
 export type OrgAgentOpening = {
   lead: string;
   items: readonly { title: string; detail: string }[];
 };
 
-/** Older openings. Still not a reply to the person. */
+/** Older openings. Still not a reply to the person, and still hidden. */
 const LEGACY_ORG_AGENT_OPENINGS = [
+  [
+    "I draft for this organization — what it is for, the work, who decides, and your profile. You decide what becomes real. Nothing I write changes the org until the right person agrees.",
+    "",
+    "Direction — Mission, vision, where you stand, objectives, and strategy. I draft each one and say what's weak.",
+    "Work — Projects, tickets, and who should hold them. Only the named person accepts.",
+    "Shapers — Who decides, and how many of them must agree before something passes.",
+    "Profile — What you do, the work you want, and your links, so offers go to the right person.",
+    "Questions — Ask about anything the organization has already written down.",
+  ].join("\n"),
   "Hey. I'm Org. Agent.",
   "I draft, you decide. Are you shaping this alone, or with other people?",
   [
@@ -73,7 +65,7 @@ export function orgAgentWelcomeText(
   const items = opening.items
     .map((item) => `${item.title} — ${item.detail}`)
     .join("\n");
-  return `${opening.lead}\n\n${items}`;
+  return items ? `${opening.lead}\n\n${items}` : opening.lead;
 }
 
 function isOrgAgentAuthor(
@@ -86,7 +78,10 @@ function isOrgAgentAuthor(
   );
 }
 
-/** The canned opening the agent used to post. The DM intro says it now. */
+/**
+ * Older canned openings. The intro shows the description now, and the
+ * current first DM stays in the timeline.
+ */
 export function isCannedOrgAgentOpening(
   message: { body: string; pubkey?: string; signerPubkey?: string },
   orgAgentPubkey: string | null,
@@ -95,7 +90,5 @@ export function isCannedOrgAgentOpening(
     return false;
   }
   const body = message.body.trim();
-  return (
-    body === orgAgentWelcomeText() || LEGACY_ORG_AGENT_OPENINGS.includes(body)
-  );
+  return LEGACY_ORG_AGENT_OPENINGS.includes(body);
 }

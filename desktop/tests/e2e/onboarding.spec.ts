@@ -829,7 +829,9 @@ test("fresh existing-identity path leads with private-key recovery", async ({
   await expect(page.getByTestId("nostr-import-card")).toBeVisible();
 });
 
-test("first-launch key import continues to machine setup", async ({ page }) => {
+test("first-launch key import continues to community choice", async ({
+  page,
+}) => {
   await installMockBridge(page, undefined, {
     skipCommunitySeed: true,
     skipOnboardingSeed: true,
@@ -841,8 +843,13 @@ test("first-launch key import continues to machine setup", async ({ page }) => {
   await page.getByTestId("nostr-import-nsec-input").fill(importedNsec);
   await page.getByTestId("nostr-import-submit").click();
 
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
-  await expect(page.getByTestId("machine-onboarding-gate")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Set up your agent harnesses" }),
+  ).toHaveCount(0);
   await expect(page.getByTestId("app-loading-gate")).toHaveCount(0);
 });
 
@@ -868,15 +875,16 @@ test("key import locks host navigation and ignores rapid duplicate submits", asy
   await expect(submit).toBeDisabled();
   await expect(page.getByTestId("onboarding-back")).toBeDisabled();
   await expect.poll(() => commandCount(page, "import_identity")).toBe(1);
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
 });
 
-test("imported-key users can skip out of harness setup", async ({ page }) => {
+test("imported-key users leave machine onboarding", async ({ page }) => {
   // Regression: importing an existing key sets the onboarding state machine's
   // "continuing" marker, which pinned the stage to onboarding even after
-  // complete() ran — so Skip/Next silently did nothing. The fresh-key skip
-  // tests never exercised the import path, so this gap shipped. Prove an
-  // imported-key user actually leaves onboarding on Skip.
+  // complete() ran. Prove an imported-key user actually leaves machine
+  // onboarding and reaches community choice.
   await installMockBridge(page, undefined, {
     skipCommunitySeed: true,
     skipOnboardingSeed: true,
@@ -888,13 +896,11 @@ test("imported-key users can skip out of harness setup", async ({ page }) => {
   await page.getByTestId("nostr-import-nsec-input").fill(importedNsec);
   await page.getByTestId("nostr-import-submit").click();
 
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
-  await page.getByTestId("onboarding-setup-skip").click();
-
-  // Reaching community onboarding proves machine onboarding completed rather
-  // than staying pinned on the setup step.
   await expect(page.getByText("Join or create a community")).toBeVisible();
-  await expect(page.getByTestId("onboarding-page-2")).toHaveCount(0);
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Set up your agent harnesses" }),
+  ).toHaveCount(0);
 });
 
 test("first-launch encrypted backup import asks for a passphrase and continues", async ({
@@ -948,8 +954,10 @@ test("first-launch encrypted backup import asks for a passphrase and continues",
     .fill("mock horse battery staple lake orbit");
   await page.getByTestId("nostr-import-submit").click();
 
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
-  await expect(page.getByTestId("machine-onboarding-gate")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
 });
 
 test("first-launch import accepts an .ncryptsec backup file", async ({
@@ -1063,8 +1071,10 @@ test("first-launch import accepts an .ncryptsec backup file", async ({
     .fill("mock horse battery staple lake orbit");
   await backupDialog.getByTestId("nostr-import-submit").click();
 
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
-  await expect(page.getByTestId("machine-onboarding-gate")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
 });
 
 test("non-local runtime override keeps community selection without release flag", async ({
@@ -1886,16 +1896,11 @@ test("first-community shows the scenario cards for localhost", async ({
   ).toHaveAttribute("data-onboarding-direction", "backward");
 
   await page.getByTestId("welcome-setup-back").click();
-  await expect(page.getByTestId("onboarding-page-config")).toBeVisible();
+  await expect(page.getByTestId("onboarding-page-backup")).toBeVisible();
+  await expect(page.getByTestId("onboarding-page-config")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", {
-      name: "Configure your default model settings",
-    }),
-  ).toBeVisible();
-  await expect(page.getByTestId("global-agent-default-harness")).toHaveText(
-    "Claude Code",
-  );
-  await expect(page.getByTestId("onboarding-finish")).toBeEnabled();
+    page.getByRole("heading", { name: "Set up your agent harnesses" }),
+  ).toHaveCount(0);
 });
 
 test("first-community direct join reaches profile", async ({ page }) => {
@@ -2002,24 +2007,13 @@ test("community onboarding reuses an existing relay profile", async ({
     .toBeGreaterThan(0);
   await expect(
     page.getByRole("heading", { name: "Meet your starter team" }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByTestId("community-onboarding-flow")
-      .locator(".buzz-onboarding-transition-line"),
-  ).toHaveAttribute("data-onboarding-direction", "forward");
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Build your profile" }),
   ).toHaveCount(0);
-  await page.getByTestId("community-team-intro-back").click();
-  await expect(
-    page.getByRole("heading", { name: "Build your profile" }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByTestId("community-onboarding-flow")
-      .locator(".buzz-onboarding-transition-line"),
-  ).toHaveAttribute("data-onboarding-direction", "backward");
+  await expect(page.getByTestId("community-onboarding-flow")).toHaveCount(0, {
+    timeout: 10_000,
+  });
 });
 
 test("first-community direct join cancel returns to request access", async ({
@@ -2800,7 +2794,6 @@ test("a pending avatar never becomes durable if propagation fails after onboardi
     page.getByTestId("community-avatar-circle-upload-pending"),
   ).toBeVisible();
   await page.getByTestId("community-profile-next").click();
-  await page.getByTestId("community-team-intro-enter").click();
   await expect(page.getByTestId("community-onboarding-flow")).toHaveCount(0, {
     timeout: 10_000,
   });
@@ -2869,7 +2862,6 @@ test("a pending avatar becomes durable after onboarding unmounts once ready", as
   await page.getByTestId("community-profile-name-key").fill("Tyler");
   await uploadCommunityAvatar(page, "ready-after-unmount-community-avatar.png");
   await page.getByTestId("community-profile-next").click();
-  await page.getByTestId("community-team-intro-enter").click();
   await expect(page.getByTestId("community-onboarding-flow")).toHaveCount(0, {
     timeout: 10_000,
   });

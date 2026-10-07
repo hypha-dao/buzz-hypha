@@ -29,7 +29,7 @@ import { KIND_IO_PROPOSAL } from "@/shared/constants/kinds";
 const CHAT_PROPOSALS: RelaySubscriptionFilter[] = [
   {
     kinds: [KIND_IO_PROPOSAL],
-    "#t": ["project", "direction"],
+    "#t": ["project", "direction", "codebases"],
     "#s": ["open", "passed"],
     limit: 40,
   },
@@ -103,7 +103,12 @@ function PassedCard({ event }: { event: RelayEvent }) {
       dueAt: detail.dueAt,
     }),
     event,
-    kicker: detail.kind === "project" ? "Project" : "Direction",
+    kicker:
+      detail.kind === "project"
+        ? "Project"
+        : detail.kind === "codebases"
+          ? "Codebases"
+          : "Direction",
   };
   return (
     <OrgCardShell

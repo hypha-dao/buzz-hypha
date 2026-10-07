@@ -3883,7 +3883,7 @@ mod postgres_tests {
             );
         }
         // Neighbours outside the registered set are untouched.
-        for kind in [39099, 39106, 50000, 50024, 50099, 50105] {
+        for kind in [39099, 39107, 50000, 50025, 50099, 50105] {
             assert!(!is_global_only_kind(kind), "kind {kind} is not registered");
         }
     }

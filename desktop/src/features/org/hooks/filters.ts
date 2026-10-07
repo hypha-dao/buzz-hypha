@@ -8,6 +8,7 @@ import {
   KIND_IO_DIRECTION,
   KIND_IO_DRAFT,
   KIND_IO_HEALTH,
+  KIND_IO_KNOWLEDGE,
   KIND_IO_PROFILE,
   KIND_IO_PROGRESS,
   KIND_IO_PROPOSAL,
@@ -43,10 +44,11 @@ function history(
   return { ...filter, limit: ORG_HISTORY_LIMIT };
 }
 
-/** Overview: direction, shapers, project roots, and profiles for the context line. */
+/** Overview: direction, codebases, shapers, project roots, and profiles. */
 export function overviewFilters(): RelaySubscriptionFilter[] {
   return [
     history({ kinds: [KIND_IO_DIRECTION] }),
+    history({ kinds: [KIND_IO_KNOWLEDGE], "#d": ["codebases"] }),
     history({ kinds: [KIND_IO_SHAPERS], "#d": [SHAPERS_D_TAG] }),
     history({ kinds: [KIND_IO_WORK_ITEM], [`#${TAG_TYPE}`]: [TYPE_PROJECT] }),
     history({ kinds: [KIND_IO_PROFILE] }),
@@ -74,7 +76,9 @@ export function workFilters(
 
 /**
  * Item page: `{kinds:[39101], "#d":[id]}`, `{kinds:[39101], "#u":[id]}`,
- * `{kinds:[50001–50023], "#i":[id]}`, `{kinds:[50102], "#i":[id]}`.
+ * `{kinds:[50001–50023], "#i":[id]}`, `{kinds:[50102], "#i":[id]}`,
+ * ticket drafts under this item (`50100` `#u` `#t ticket`), and the
+ * draft itself when `id` is that event.
  */
 export function workItemFilters(itemId: string): RelaySubscriptionFilter[] {
   return [
@@ -91,6 +95,12 @@ export function workItemFilters(itemId: string): RelaySubscriptionFilter[] {
       kinds: [KIND_IO_PROGRESS],
       [`#${TAG_ITEM}`]: [itemId],
     }),
+    history({
+      kinds: [KIND_IO_DRAFT],
+      [`#${TAG_PARENT}`]: [itemId],
+      [`#${TAG_TYPE}`]: ["ticket"],
+    }),
+    history({ ids: [itemId], kinds: [KIND_IO_DRAFT] }),
   ];
 }
 

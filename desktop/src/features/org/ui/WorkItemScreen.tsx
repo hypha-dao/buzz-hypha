@@ -2,6 +2,8 @@ import * as React from "react";
 
 import { useLiveDoorEvents, useWorkItemEvents } from "@/features/org/hooks";
 import {
+  KIND_IO_DRAFT,
+  KIND_IO_DRAFT_OUTCOME,
   KIND_IO_HEALTH,
   KIND_IO_WORK_ITEM,
   KIND_IO_WORK_PROMPT,
@@ -16,6 +18,8 @@ import {
   latestHealth,
   latestWorkPrompt,
   linkedRepositories,
+  openTicketDrafts,
+  parseOfferedTicket,
   projectCoordinate,
 } from "../work/model";
 import { ORG_EMPTY_NOT_SET_YET, OrgDoorScreen } from "./OrgDoorScreen";
@@ -24,7 +28,12 @@ import { WorkItemView } from "./work/WorkItemView";
 /** Item page — brief, holder, dates, breadcrumb, health (D-3). */
 export function WorkItemScreen({ itemId }: { itemId: string }) {
   const { events, isLoading } = useWorkItemEvents(itemId);
-  const item = itemById(events, itemId);
+  const draft =
+    events.find(
+      (event) => event.id === itemId && event.kind === KIND_IO_DRAFT,
+    ) ?? null;
+  const item =
+    itemById(events, itemId) ?? (draft ? parseOfferedTicket(draft) : null);
   const parentId = item?.parent ?? "";
   const parentFilters = React.useMemo(
     () =>
@@ -78,12 +87,43 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
         : [],
     [item?.type, itemId],
   );
+  const draftIds = React.useMemo(
+    () =>
+      events
+        .filter((event) => event.kind === KIND_IO_DRAFT)
+        .map((event) => event.id)
+        .slice(0, 128),
+    [events],
+  );
+  const outcomeFilters = React.useMemo(
+    () =>
+      draftIds.length > 0
+        ? [
+            {
+              kinds: [KIND_IO_DRAFT_OUTCOME],
+              "#d": draftIds,
+              limit: ORG_HISTORY_LIMIT,
+            },
+          ]
+        : [],
+    [draftIds],
+  );
   const parentEvents = useLiveDoorEvents(parentFilters);
   const healthEvents = useLiveDoorEvents(healthFilters);
   const projectEvents = useLiveDoorEvents(projectFilters);
   const promptEvents = useLiveDoorEvents(promptFilters);
+  const outcomeEvents = useLiveDoorEvents(outcomeFilters);
   const parent = parentId ? itemById(parentEvents.events, parentId) : null;
-  const kids = childrenOf(events, itemId);
+  const liveKids = childrenOf(events, item?.id ?? itemId);
+  const kids = [
+    ...liveKids,
+    ...openTicketDrafts(
+      events,
+      outcomeEvents.events,
+      item?.id ?? itemId,
+      liveKids,
+    ),
+  ];
   const health = latestHealth(healthEvents.events, itemId);
   const repositories = linkedRepositories(projectEvents.events[0]?.tags ?? []);
 
@@ -103,6 +143,7 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
         {item ? (
           <WorkItemView
             childItems={kids}
+            draft={draft}
             health={health}
             item={item}
             parent={parent}

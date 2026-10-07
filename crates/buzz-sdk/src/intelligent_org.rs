@@ -1019,6 +1019,7 @@ mod tests {
             }),
             done_when: vec![],
             kind: None,
+            how: vec![],
         })
     }
 

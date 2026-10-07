@@ -55,6 +55,34 @@ test("a project message is a draft, not a signed agree", () => {
     false,
   );
   assert.equal(JSON.parse(command.content).suggested_dri, ADA);
+  const steps = [
+    {
+      piece: "Patch the roof",
+      kind: "ops",
+      gate: false,
+      produces: ["roof is dry"],
+    },
+  ];
+  const planned = chatDraftFromMessage(
+    message("1b", [
+      ["from", ME],
+      ["project", "Fix the hall", "The roof leaks when it rains."],
+      ["due", "1700000000"],
+      ["plan", JSON.stringify(steps)],
+    ]),
+    AGENT,
+  );
+  assert.equal(planned.kind, "project");
+  const plannedCommand = commandForDraft({
+    draft: planned,
+    title: "Fix the hall",
+    brief: "The roof leaks when it rains.",
+    body: "",
+    dueAt: 1700000000,
+    why: "",
+    directionBase: 0,
+  });
+  assert.deepEqual(JSON.parse(plannedCommand.content).plan, steps);
   const cleared = commandForDraft({
     draft,
     title: "Fix the hall",
@@ -313,6 +341,13 @@ test("objectives written as one paragraph show one line each", () => {
       "Hypha Buzz wins when the two compete.",
     ],
   );
+  assert.deepEqual(
+    directionBodyLines(
+      "strategy",
+      "No brand money. Type: refusal.\nBorrow before we buy. Type: bet.",
+    ),
+    ["No brand money", "Borrow before we buy"],
+  );
   const situation =
     "Running one season. The Saturday stall has never missed a week. Demand on a weekday night is only assumed.";
   assert.deepEqual(directionBodyLines("situation", situation), [situation]);
@@ -365,4 +400,57 @@ test("the shapers announcement names the proposal and the card opens it", () => 
     "Opened an objectives proposal.",
   );
   assert.equal(shortProposalAnnouncement("hello"), "hello");
+});
+
+test("a repository url is a codebases draft, not a strategy revision", () => {
+  const tagged = chatDraftFromMessage(
+    message("9", [
+      ["from", ME],
+      [
+        "codebases",
+        JSON.stringify([
+          {
+            kind: "repository",
+            name: "buzz-hypha",
+            url: "https://github.com/hypha-dao/buzz-hypha",
+            about: "The product",
+          },
+        ]),
+      ],
+    ]),
+    AGENT,
+  );
+  assert.equal(tagged?.kind, "codebases");
+  const misfiled = chatDraftFromMessage(
+    message("10", [
+      ["from", ME],
+      [
+        "direction",
+        "strategy",
+        "Try one Thursday. Type: bet\nNo brand money. Type: refusal\nCode lives at https://github.com/hypha-dao/buzz-hypha. Type: rule",
+      ],
+    ]),
+    AGENT,
+  );
+  assert.equal(misfiled?.kind, "codebases");
+  if (misfiled?.kind !== "codebases") return;
+  assert.equal(misfiled.items.length, 1);
+  assert.equal(
+    misfiled.items[0].url,
+    "https://github.com/hypha-dao/buzz-hypha",
+  );
+  const command = commandForDraft({
+    draft: misfiled,
+    title: "",
+    brief: "",
+    body: "",
+    dueAt: 0,
+    why: "",
+    directionBase: 0,
+  });
+  assert.equal(command.kind, 50024);
+  const content = JSON.parse(command.content);
+  assert.equal(content.slug, "codebases");
+  assert.equal(content.items[0].url, "https://github.com/hypha-dao/buzz-hypha");
+  assert.equal(content.slug === "strategy", false);
 });

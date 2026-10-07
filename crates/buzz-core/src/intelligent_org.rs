@@ -461,6 +461,9 @@ pub struct PlanStep {
     /// `done_when` lines this step produces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub produces: Vec<String>,
+    /// How to do the step. Two to four short lines.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub how: Vec<String>,
 }
 
 /// `t = dri` payload.
@@ -533,6 +536,9 @@ pub struct TicketDraft {
     /// `code`, `research`, `writing`, `outreach`, `design`, or `ops`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// How to do the ticket. One short line per step.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub how: Vec<String>,
 }
 
 /// `t = done` payload.
@@ -773,6 +779,9 @@ pub enum ProposalKind {
     Shapers,
     /// Take a project off the live board. Uses the `project` decision rule.
     Withdraw,
+    /// The org codebases list (repositories and the landing page). Uses the
+    /// `direction` decision rule. Passing writes `39106`; strategy is unchanged.
+    Codebases,
 }
 
 /// Proposal state machine (Protocol §5.3); the `s` tag of a `39102`.
@@ -840,7 +849,7 @@ pub struct Settlement {
     pub error: Option<String>,
 }
 
-/// How many eligible Shapers must agree: `majority`, `all`, or an integer.
+/// How many eligible Shapers must agree: `majority`, `all`, an integer, or a share.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum DecisionRule {
@@ -848,6 +857,17 @@ pub enum DecisionRule {
     Named(NamedRule),
     /// At least N of `eligible` (capped at `eligible.len()` when resolved).
     AtLeast(u32),
+    /// `need` of a planned group of `of`, scaled to whoever is seated now.
+    Share(ShareRule),
+}
+
+/// A decision share, written `"3/5"`: `need` must agree when `of` are seated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ShareRule {
+    /// How many must agree when the planned group is seated.
+    pub need: u32,
+    /// The planned group, including the founder.
+    pub of: u32,
 }
 
 /// The two named decision rules.
@@ -868,8 +888,9 @@ impl DecisionRule {
 
     /// Resolve the rule to `needed` against the eligible set at opening
     /// (Protocol §4.5): `majority` is more than half, `all` is every one, an
-    /// integer is capped at `eligible`. With one eligible Shaper every rule
-    /// resolves to 1; with none, to 0.
+    /// integer is capped at `eligible`, and a share `"3/5"` is that fraction
+    /// of whoever is seated now, rounded up. With one eligible Shaper every
+    /// rule resolves to 1; with none, to 0.
     pub fn needed_for(self, eligible: u32) -> u32 {
         if eligible == 0 {
             return 0;
@@ -878,7 +899,64 @@ impl DecisionRule {
             Self::Named(NamedRule::Majority) => eligible / 2 + 1,
             Self::Named(NamedRule::All) => eligible,
             Self::AtLeast(n) => n.clamp(1, eligible),
+            Self::Share(share) => share.needed_for(eligible),
         }
+    }
+}
+
+impl ShareRule {
+    /// `"3/5"`. `need` is at least 1 and no greater than `of`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (need, of) = text.trim().split_once('/')?;
+        let need = need.trim().parse::<u32>().ok()?;
+        let of = of.trim().parse::<u32>().ok()?;
+        if need < 1 || of < need {
+            return None;
+        }
+        Some(Self { need, of })
+    }
+
+    /// Ceiling of `need/of` of the Shapers seated now, at least 1.
+    pub fn needed_for(self, eligible: u32) -> u32 {
+        if eligible == 0 || self.of == 0 {
+            return 0;
+        }
+        let scaled = u64::from(self.need) * u64::from(eligible);
+        let needed = scaled.div_ceil(u64::from(self.of));
+        u32::try_from(needed).unwrap_or(u32::MAX).clamp(1, eligible)
+    }
+}
+
+impl Serialize for ShareRule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}/{}", self.need, self.of))
+    }
+}
+
+impl<'de> Deserialize<'de> for ShareRule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("decision share must be need/of"))
+    }
+}
+
+impl JsonSchema for ShareRule {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ShareRule".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+            "description": "How many must agree out of the planned group, such as 3/5."
+        })
     }
 }
 
@@ -1914,6 +1992,12 @@ mod tests {
             (DecisionRule::AtLeast(0), 5, 1),
             (DecisionRule::AtLeast(7), 1, 1),
             (DecisionRule::AtLeast(2), 0, 0),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 1, 1),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 2, 2),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 3, 2),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 4, 3),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 5, 3),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 0, 0),
         ] {
             assert_eq!(
                 rule.needed_for(eligible),
@@ -1929,7 +2013,17 @@ mod tests {
             serde_json::to_value(DecisionRule::AtLeast(3)).unwrap(),
             json!(3)
         );
+        assert_eq!(
+            serde_json::to_value(DecisionRule::Share(ShareRule { need: 3, of: 5 })).unwrap(),
+            json!("3/5")
+        );
+        assert_eq!(
+            serde_json::from_value::<DecisionRule>(json!("3/5")).unwrap(),
+            DecisionRule::Share(ShareRule { need: 3, of: 5 })
+        );
         assert!(serde_json::from_value::<DecisionRule>(json!("most")).is_err());
+        assert!(serde_json::from_value::<DecisionRule>(json!("0/5")).is_err());
+        assert!(serde_json::from_value::<DecisionRule>(json!("6/5")).is_err());
     }
 
     #[test]

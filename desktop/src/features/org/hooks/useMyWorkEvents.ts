@@ -2,11 +2,15 @@ import * as React from "react";
 
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { RelayEvent } from "@/shared/api/types";
-import { KIND_IO_SHAPERS } from "@/shared/constants/kinds";
+import {
+  KIND_IO_DRAFT,
+  KIND_IO_DRAFT_OUTCOME,
+  KIND_IO_SHAPERS,
+} from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import { SHAPERS_D_TAG } from "../tags";
-import { myWorkFilters } from "./filters";
+import { myWorkFilters, ORG_HISTORY_LIMIT } from "./filters";
 import { useLiveDoorEvents } from "./useLiveReq";
 
 export function viewerIsShaper(
@@ -45,11 +49,37 @@ export function useMyWorkEvents() {
     [includeShaperDrafts, pubkey],
   );
   const result = useLiveDoorEvents(filters);
+  const draftIds = React.useMemo(
+    () =>
+      result.events
+        .filter((event) => event.kind === KIND_IO_DRAFT)
+        .map((event) => event.id)
+        .slice(0, 128),
+    [result.events],
+  );
+  const outcomeFilters = React.useMemo(
+    () =>
+      draftIds.length > 0
+        ? [
+            {
+              kinds: [KIND_IO_DRAFT_OUTCOME],
+              "#d": draftIds,
+              limit: ORG_HISTORY_LIMIT,
+            },
+          ]
+        : [],
+    [draftIds],
+  );
+  const outcomes = useLiveDoorEvents(outcomeFilters);
+  const events = React.useMemo(
+    () => [...result.events, ...outcomes.events],
+    [outcomes.events, result.events],
+  );
 
   React.useEffect(() => {
     if (!pubkey || includeShaperDrafts) return;
     if (viewerIsShaper(result.events, pubkey)) setIncludeShaperDrafts(true);
   }, [includeShaperDrafts, pubkey, result.events]);
 
-  return result;
+  return { ...result, events };
 }

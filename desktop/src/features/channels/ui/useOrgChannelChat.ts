@@ -68,6 +68,18 @@ export function useOrgChannelChat({
     },
     [],
   );
+  const [setupFooters, setSetupFooters] = React.useState<{
+    signature: string;
+    footers: Record<string, React.ReactNode>;
+  }>({ signature: "", footers: {} });
+  const onSetupFooters = React.useCallback(
+    (signature: string, footers: Record<string, React.ReactNode>) => {
+      setSetupFooters((current) =>
+        current.signature === signature ? current : { signature, footers },
+      );
+    },
+    [],
+  );
   const [draftFooters, setDraftFooters] = React.useState<{
     signature: string;
     footers: Record<string, React.ReactNode>;
@@ -97,26 +109,35 @@ export function useOrgChannelChat({
       ? "dm"
       : "channel"
     : null;
+  const proposalChat = shapersRoom || orgAgentDm;
   const messageFooters = React.useMemo(() => {
-    const published = shapersRoom ? shapersProposalFooters.footers : {};
+    const published = proposalChat ? shapersProposalFooters.footers : {};
     const drafts = orgChatRoom ? draftFooters.footers : {};
-    const ids = new Set([...Object.keys(published), ...Object.keys(drafts)]);
+    const setup = orgAgentDm ? setupFooters.footers : {};
+    const ids = new Set([
+      ...Object.keys(published),
+      ...Object.keys(drafts),
+      ...Object.keys(setup),
+    ]);
     if (ids.size === 0) return undefined;
     const merged: Record<string, React.ReactNode> = {};
     for (const id of ids) {
       merged[id] = React.createElement(
         React.Fragment,
         null,
-        drafts[id],
+        published[id] ? null : drafts[id],
         published[id],
+        setup[id],
       );
     }
     return merged;
   }, [
     draftFooters.footers,
+    orgAgentDm,
     orgChatRoom,
+    proposalChat,
+    setupFooters.footers,
     shapersProposalFooters.footers,
-    shapersRoom,
   ]);
   const {
     noteSendFailed: noteOrgAgentSendFailed,
@@ -239,6 +260,7 @@ export function useOrgChannelChat({
     noteOrgAgentSendFailed,
     onDraftFooters,
     onDraftSentences,
+    onSetupFooters,
     onShapersProposalFooters,
     orgAgentPubkey,
     orgAgentTypingProfiles,

@@ -14,12 +14,13 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { useOverviewEvents } from "@/features/org/hooks";
 import { useOrgCommandE2eBridge } from "@/features/org/useOrgCommands";
 
+import { CodebasesCard } from "./overview/CodebasesCard";
 import { DirectionCards } from "./overview/DirectionCards";
 import {
   collectOverviewPubkeys,
   DIRECTION_SLUGS,
-  contextRows,
   directionSlots,
+  parseCodebases,
   parseShapersState,
   projectHolds,
 } from "./overview/parseOverview";
@@ -34,7 +35,7 @@ export function OverviewScreen() {
   const navigation = useAppNavigation();
 
   const slots = React.useMemo(() => directionSlots(events), [events]);
-  const context = React.useMemo(() => contextRows(events), [events]);
+  const codebases = React.useMemo(() => parseCodebases(events), [events]);
   const shapers = React.useMemo(() => parseShapersState(events), [events]);
   const holds = React.useMemo(() => projectHolds(events), [events]);
   const pubkeys = React.useMemo(
@@ -59,29 +60,6 @@ export function OverviewScreen() {
           <OverviewLoading />
         ) : (
           <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 md:grid-cols-2">
-            <section
-              aria-labelledby="org-context-heading"
-              className="md:col-span-2"
-              data-testid="org-context"
-            >
-              <h2
-                className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                id="org-context-heading"
-              >
-                Context
-              </h2>
-              <ul className="mt-3 flex flex-wrap gap-2">
-                {context.map((row) => (
-                  <li
-                    className="text-sm text-foreground"
-                    data-testid={`org-context-${row.id}`}
-                    key={row.id}
-                  >
-                    {row.label} {row.ready ? "ready" : "missing"}
-                  </li>
-                ))}
-              </ul>
-            </section>
             <DirectionCards
               className="md:col-span-2"
               onOpenDirection={(slug) => {
@@ -89,8 +67,9 @@ export function OverviewScreen() {
               }}
               slots={slots}
             />
+            <CodebasesCard enterIndex={slots.length} items={codebases} />
             <ShapersCard
-              enterIndex={slots.length}
+              enterIndex={slots.length + 1}
               onOpenProfile={(member) => {
                 if (
                   pubkey &&
@@ -105,7 +84,7 @@ export function OverviewScreen() {
               shapers={shapers}
             />
             <WhoHoldsWhat
-              enterIndex={slots.length + 1}
+              enterIndex={slots.length + 2}
               holds={holds}
               onOpenItem={(itemId) => {
                 void navigation.goOrgWorkItem(itemId);

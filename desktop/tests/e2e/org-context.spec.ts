@@ -5,8 +5,8 @@ import { createContextGapEvents } from "../../src/testing/orgOverviewFixture";
 import { installMockBridge } from "../helpers/bridge";
 
 /**
- * G-3 — Overview shows done-when on an objective and a missing situation
- * on the Context line. The seed has no situation head.
+ * G-3 — Overview shows done-when on an objective. The seed has no
+ * situation head, so that card stays empty.
  */
 
 async function openOverview(page: Page) {
@@ -32,9 +32,7 @@ test.describe("Org context readiness (G-3)", () => {
     await expect(page.getByTestId("org-direction-type-s_no")).toHaveText(
       "refusal",
     );
-    await expect(page.getByTestId("org-context-situation")).toHaveText(
-      "Situation missing",
-    );
+    await expect(page.getByTestId("org-context")).toHaveCount(0);
     await expect(page.getByTestId("org-direction-empty-situation")).toHaveText(
       "Not set yet.",
     );

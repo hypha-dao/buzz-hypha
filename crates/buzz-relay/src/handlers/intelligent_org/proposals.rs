@@ -206,7 +206,8 @@ pub(super) fn markers(proposal: &Proposal) -> (Option<String>, Option<String>) {
         | ProposalKind::Project
         | ProposalKind::Money
         | ProposalKind::Join
-        | ProposalKind::Withdraw => (None, None),
+        | ProposalKind::Withdraw
+        | ProposalKind::Codebases => (None, None),
     }
 }
 
@@ -787,11 +788,30 @@ async fn execute(
             super::work::execute_project(cmd, tx, proposal, opening_receipt).await
         }
         ProposalKind::Withdraw => super::work::execute_withdraw_proposal(cmd, tx, proposal).await,
+        ProposalKind::Codebases => execute_codebases(cmd, tx, proposal).await,
         ProposalKind::Money => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
         ProposalKind::Join => Err(IngestError::Rejected("restricted: join not enabled".into())),
     }
+}
+
+/// A passed codebases proposal replaces `39106`. Strategy is not touched.
+async fn execute_codebases(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let written = super::knowledge::write_passed(cmd, tx, &proposal.payload).await?;
+    Ok(Execution {
+        executed: Executed {
+            kind: object::KNOWLEDGE.to_owned(),
+            id: "codebases".to_owned(),
+        },
+        projections: vec![written.projection],
+        rows: vec![written.row],
+        room_created: None,
+    })
 }
 
 fn executed_direction(slug: DirectionSlug) -> Executed {

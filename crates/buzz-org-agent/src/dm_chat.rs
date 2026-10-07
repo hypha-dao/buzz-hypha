@@ -23,14 +23,22 @@ use serde_json::{json, Value};
 
 use crate::chat_act::{self, Board, RawAct, ResolvedAct};
 use crate::config::Config;
-use crate::relay::publish::{sign, Permitted, PublishError};
+use crate::relay::publish::{sign, sign_at, Permitted, PublishError};
+use crate::state::{OrgState, Transition};
 
 /// Sidebar / kind:0 name. Protocol §6.8.
 pub const ORG_AGENT_NAME: &str = "Org. Agent";
 
-/// Posted once into an empty agent DM. Same words as the desktop opening
-/// (`orgAgentWelcomeText` in `desktop/src/features/org/orgAgentOpening.ts`).
+/// Posted once into an empty agent DM. Same words as
+/// `ORG_AGENT_FIRST_MESSAGE` in `desktop/src/features/org/orgAgentOpening.ts`.
 pub const WELCOME_LINES: &[&str] = &[
+    r#"Hey, I'm glad to connect! I'm a powerful AI agent, that can take your organization to the next level. View me as Elon Musk on steroids at your service.
+
+Do you have time to set up your organization now?"#,
+];
+
+/// Openings this process used to post. They are not an answer.
+const LEGACY_WELCOME_LINES: &[&str] = &[
     r#"I draft for this organization — what it is for, the work, who decides, and your profile. You decide what becomes real. Nothing I write changes the org until the right person agrees.
 
 Direction — Mission, vision, where you stand, objectives, and strategy. I draft each one and say what's weak.
@@ -38,10 +46,6 @@ Work — Projects, tickets, and who should hold them. Only the named person acce
 Shapers — Who decides, and how many of them must agree before something passes.
 Profile — What you do, the work you want, and your links, so offers go to the right person.
 Questions — Ask about anything the organization has already written down."#,
-];
-
-/// Openings this process used to post. They are not an answer.
-const LEGACY_WELCOME_LINES: &[&str] = &[
     "Hey. I'm Org. Agent.",
     "I draft, you decide. Are you shaping this alone, or with other people?",
     r#"I draft. You decide. Nothing is real until the right person agrees.
@@ -66,6 +70,24 @@ Are you shaping this alone, or with other people?"#,
 
 fn is_welcome_line(content: &str) -> bool {
     WELCOME_LINES.contains(&content) || LEGACY_WELCOME_LINES.contains(&content)
+}
+
+/// The current opener still needs posting. A legacy canned opening does not
+/// count, and a DM that already has a person or a real agent reply is left
+/// alone.
+fn owes_welcome(room: &Room, me: &str) -> bool {
+    if room.messages.iter().any(|line| {
+        line.author.eq_ignore_ascii_case(me) && WELCOME_LINES.contains(&line.content.as_str())
+    }) {
+        return false;
+    }
+    !room.messages.iter().any(|line| {
+        if line.author.eq_ignore_ascii_case(me) {
+            !is_welcome_line(&line.content)
+        } else {
+            true
+        }
+    })
 }
 
 /// Enough turns for one walk through direction, mission to strategy, with
@@ -155,6 +177,12 @@ struct HeldAct {
 
 struct Room {
     messages: Vec<Line>,
+    /// A kind 40003 that arrived before the kind 9 it edits. The visible
+    /// sentence is what the interview reads.
+    pending_edits: HashMap<String, (u64, String)>,
+    /// Newest edit applied to each message, so an older replay does not
+    /// put the previous sentence back.
+    edit_at: HashMap<String, u64>,
     welcomed: bool,
     /// Shown in chat, not signed, until the member says yes.
     pending: Option<HeldAct>,
@@ -226,6 +254,12 @@ impl Room {
         if !id.is_empty() && self.messages.iter().any(|line| line.id == id) {
             return;
         }
+        let content = if let Some((at, edited)) = self.pending_edits.remove(&id) {
+            self.edit_at.insert(id.clone(), at);
+            edited
+        } else {
+            content
+        };
         let hollow = !acted && hollow_claim(&content);
         self.messages.push(Line {
             id,
@@ -244,6 +278,32 @@ impl Room {
             let drop_n = self.messages.len() - MAX_HISTORY;
             self.messages.drain(0..drop_n);
         }
+    }
+
+    /// Replace the sentence a member sees. A later edit wins.
+    fn apply_edit(&mut self, target: &str, at: u64, content: String) {
+        if self
+            .edit_at
+            .get(target)
+            .is_some_and(|previous| *previous > at)
+        {
+            return;
+        }
+        if let Some(line) = self.messages.iter_mut().find(|line| line.id == target) {
+            line.content = content;
+            line.hollow = !line.acted && hollow_claim(&line.content);
+            self.edit_at.insert(target.to_string(), at);
+            return;
+        }
+        if self
+            .pending_edits
+            .get(target)
+            .is_some_and(|(previous, _)| *previous > at)
+        {
+            return;
+        }
+        self.pending_edits.insert(target.to_string(), (at, content));
+        self.edit_at.insert(target.to_string(), at);
     }
 
     fn note_direction(&mut self, id: &str, slug: &str, body: Option<&str>) {
@@ -384,6 +444,8 @@ fn pending_for<'a>(room: &'a Room, thread_root: Option<&str>) -> Option<&'a Reso
 fn fresh_room(welcomed: bool) -> Room {
     Room {
         messages: Vec::new(),
+        pending_edits: HashMap::new(),
+        edit_at: HashMap::new(),
         welcomed,
         pending: None,
         quiet_until: 0,
@@ -700,6 +762,7 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
     let mut asked_names: HashSet<String> = HashSet::new();
     let mut seen_heads: HashSet<String> = HashSet::new();
     let mut board = Board::default();
+    let mut org = OrgState::new();
     let welcomed = load_welcomed(&cfg.state_dir);
     let started = std::time::Instant::now();
     let mut last_meta = std::time::Instant::now();
@@ -753,6 +816,12 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
                     continue;
                 }
                 let confirmed = newly_confirmed(&event, &mut seen_heads, saw_org);
+                let transitions = remember_org(&mut org, &event);
+                if org.live && due_tickets(&transitions) {
+                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org).await {
+                        eprintln!("org agent: tickets: {error}");
+                    }
+                }
                 if observe_board(&event, &mut board) {
                     if kind_of(&event) == 39103 {
                         watch_shapers(&mut conn, &board, &mut watched).await?;
@@ -768,10 +837,26 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
                             })
                             .cloned()
                             .collect();
-                        continue_after_confirm(
-                            &mut conn, keys, me, &board, &mut rooms, &listening, &confirmed,
-                        )
-                        .await?;
+                        match confirmed {
+                            ConfirmedAdvance::Direction(confirmed) => {
+                                continue_after_confirm(
+                                    &mut conn, keys, me, &board, &mut rooms, &listening, &confirmed,
+                                )
+                                .await?;
+                            }
+                            ConfirmedAdvance::Profile => {
+                                continue_after_profile(
+                                    &mut conn, keys, me, &board, &mut rooms, &listening,
+                                )
+                                .await?;
+                            }
+                            ConfirmedAdvance::Codebases => {
+                                continue_after_codebases(
+                                    &mut conn, keys, me, &board, &mut rooms, &listening,
+                                )
+                                .await?;
+                            }
+                        }
                     }
                     continue;
                 }
@@ -828,6 +913,10 @@ async fn session(url: &str, keys: &Keys, me: &str, cfg: &Config) -> Result<(), S
                     }
                 } else if subscription_id == "org" {
                     saw_org = true;
+                    org.mark_live();
+                    if let Err(error) = publish_due_tickets(&mut conn, keys, &mut org).await {
+                        eprintln!("org agent: tickets: {error}");
+                    }
                     reply_open(&mut conn, keys, me, &board, &mut rooms, &ready, &agent_dms).await?;
                 }
             }
@@ -879,6 +968,54 @@ async fn reply_open(
     Ok(())
 }
 
+fn org_event(event: &Event) -> bool {
+    matches!(
+        kind_of(event),
+        39100 | 39101 | 39102 | 39103 | 39105 | 39106 | 50005 | 50006 | 50100
+    )
+}
+
+fn remember_org(org: &mut OrgState, event: &Event) -> Vec<Transition> {
+    if !org_event(event) {
+        return Vec::new();
+    }
+    match org.apply(event) {
+        Ok(transitions) => transitions,
+        Err(error) => {
+            eprintln!("org agent: {error}");
+            Vec::new()
+        }
+    }
+}
+
+fn due_tickets(transitions: &[Transition]) -> bool {
+    transitions.iter().any(|transition| {
+        matches!(
+            transition,
+            Transition::HolderSet { .. } | Transition::ItemDone { .. }
+        )
+    })
+}
+
+async fn publish_due_tickets(
+    conn: &mut NostrWsConnection,
+    keys: &Keys,
+    org: &mut OrgState,
+) -> Result<(), String> {
+    ensure_held_plans(org).await;
+    let events = crate::plan::take_due_tickets(org, keys).map_err(|error| error.to_string())?;
+    for event in events {
+        let ok = conn
+            .send_event(event)
+            .await
+            .map_err(|error| format!("ticket draft: {error}"))?;
+        if !ok.accepted {
+            eprintln!("org agent: ticket draft rejected: {}", ok.message);
+        }
+    }
+    Ok(())
+}
+
 fn observe_board(event: &Event, board: &mut Board) -> bool {
     let kind = kind_of(event);
     if matches!(kind, 50005 | 50006) {
@@ -891,7 +1028,7 @@ fn observe_board(event: &Event, board: &mut Board) -> bool {
         );
         return true;
     }
-    if !matches!(kind, 0 | 39100 | 39101 | 39102 | 39103 | 39105) {
+    if !matches!(kind, 0 | 39100 | 39101 | 39102 | 39103 | 39105 | 39106) {
         return false;
     }
     let d = tag_values(event, "d").into_iter().next();
@@ -936,7 +1073,7 @@ async fn send_org(conn: &mut NostrWsConnection) -> Result<(), String> {
     conn.send_raw(&json!([
         "REQ",
         "org",
-        { "kinds": [39100, 39101, 39102, 39103, 39105, 50005, 50006], "limit": 200 }
+        { "kinds": [39100, 39101, 39102, 39103, 39105, 39106, 50005, 50006, 50100], "limit": 200 }
     ]))
     .await
     .map_err(|error| format!("subscribe org: {error}"))?;
@@ -986,7 +1123,7 @@ async fn watch_channel(
     conn.send_raw(&json!([
         "REQ",
         talk_sub_id(channel),
-        { "kinds": [9], "#h": [channel], "limit": 50 }
+        { "kinds": [9, 40003], "#h": [channel], "limit": 80 }
     ]))
     .await
     .map_err(|error| format!("subscribe {channel}: {error}"))
@@ -1048,6 +1185,15 @@ fn note_event(
             }
             Some(channel)
         }
+        40003 => {
+            let channel = tag_values(event, "h").into_iter().next()?;
+            let target = tag_values(event, "e").into_iter().next()?;
+            let room = rooms
+                .entry(channel.clone())
+                .or_insert_with(|| fresh_room(welcomed.contains(&channel)));
+            room.apply_edit(&target, event.created_at.as_secs(), event.content.clone());
+            Some(channel)
+        }
         _ => None,
     }
 }
@@ -1060,11 +1206,11 @@ async fn greet_channel(
     rooms: &mut HashMap<String, Room>,
     channel: &str,
 ) -> Result<(), String> {
-    let already = rooms
+    let should = rooms
         .get(channel)
-        .map(|room| room.welcomed)
-        .unwrap_or(false);
-    if already {
+        .map(|room| owes_welcome(room, me))
+        .unwrap_or(true);
+    if !should {
         return Ok(());
     }
     for line in WELCOME_LINES {
@@ -1418,13 +1564,20 @@ async fn reply_one(
     };
     let recovered = if model_resolved.is_none() {
         latest_human.and_then(|user| {
-            chat_act::recover_project(user, &reply.say)
+            let speaker_key = speaker.as_deref()?;
+            if let Some(act) = chat_act::recover_project(user, &reply.say)
                 .or_else(|| chat_act::recover_dri(user, &reply.say))
                 .or_else(|| chat_act::recover_ticket(user, &reply.say))
-                .and_then(|act| {
-                    let speaker = speaker.as_deref()?;
-                    chat_act::resolve_act(&act, board, speaker, now_secs())
-                })
+            {
+                return chat_act::resolve_act(&act, board, speaker_key, now_secs());
+            }
+            chat_act::project_draft_for_reply(
+                reply.act.as_ref(),
+                &reply.say,
+                board,
+                speaker_key,
+                now_secs(),
+            )
         })
     } else {
         None
@@ -1447,6 +1600,7 @@ async fn reply_one(
     let said = latest_human.unwrap_or("");
     let speaker_key = speaker.clone().unwrap_or_default();
     let resolved = resolved.map(|act| chat_act::offer_named_self(act, &speaker_key, said));
+    let resolved = ensure_project_steps(resolved, &board.overview()).await;
     let pending = pending.map(|act| chat_act::offer_named_self(act, &speaker_key, said));
     let Turn { sign, draft, hold } = choose_turn(
         just_agreed,
@@ -1485,6 +1639,7 @@ async fn reply_one(
         }
     }
     let mut profile_act = None;
+    let mut codebase_tag: Option<String> = None;
     if reply.direction.is_some() || (sign.is_none() && draft.is_none() && hold.is_none()) {
         let shaped = chat_act::apply_interview(
             board,
@@ -1496,6 +1651,11 @@ async fn reply_one(
         reply.say = shaped.say;
         reply.direction = shaped.direction;
         reply.body = shaped.body;
+        if let Some(items) = shaped.codebases {
+            if let Ok(json) = serde_json::to_string(&items) {
+                codebase_tag = Some(json);
+            }
+        }
         if sign.is_none() && draft.is_none() && hold.is_none() {
             if let Some(raw) = shaped.profile {
                 if let Some(who) = speaker.as_deref() {
@@ -1505,14 +1665,38 @@ async fn reply_one(
         }
     }
     reply.say = reply_sentence(&reply.say, draft.as_ref().or(hold.as_ref()), sign.as_ref());
+    let invite_setup = reply
+        .setup
+        .as_ref()
+        .is_some_and(|tag| tag.get(1).map(String::as_str) == Some("invite"));
+    if invite_setup {
+        reply.say = chat_act::invite_transition_say(&reply.say);
+    }
     if let Some(act) = draft.as_ref().or(hold.as_ref()).or(sign.as_ref()) {
         reply.say = chat_act::annotate_act_say(&reply.say, act, board);
+    }
+    let saved_profile = matches!(
+        sign.as_ref().or(profile_act.as_ref()),
+        Some(chat_act::ResolvedAct::Profile { .. })
+    );
+    if saved_profile {
+        if let Some(question) = board.question_after_people() {
+            reply.say = chat_act::acceptance_transition("profile", "", Some(question));
+        }
+    } else if let Some(question) = chat_act::next_interview_question(board) {
+        if chat_act::pitches_project(&reply.say) {
+            reply.say = chat_act::acceptance_transition("strategy", "", Some(question));
+        }
     }
     let act_tags = sign
         .as_ref()
         .or(draft.as_ref())
         .or(profile_act.as_ref())
         .and_then(|act| speaker.as_deref().map(|who| chat_act::act_tags(act, who)));
+    if reply.direction.is_none() && act_tags.is_none() && chat_act::claims_project_draft(&reply.say)
+    {
+        reply.say = chat_act::without_false_project_draft(&reply.say);
+    }
     if act_tags.is_none() && hollow_claim(&reply.say) {
         reply.say = if reply.say.to_ascii_lowercase().contains("dri") {
             "I didn't open that draft. Name the project and who should hold it.".to_string()
@@ -1521,13 +1705,28 @@ async fn reply_one(
         };
     }
     if reply.say.is_empty() {
-        if reply.direction.is_none() && act_tags.is_none() {
+        if reply.direction.is_none() && act_tags.is_none() && reply.setup.is_none() {
             if let Some(room) = rooms.get_mut(channel) {
                 mark_quiet(room, me);
             }
             return Ok(());
         }
         reply.say = "Got it.".to_string();
+    }
+    let mut extra = act_tags.clone().unwrap_or_default();
+    if let Some(json) = codebase_tag.clone() {
+        if !extra
+            .iter()
+            .any(|row| row.first().map(String::as_str) == Some("from"))
+        {
+            if let Some(who) = speaker.as_deref() {
+                extra.push(vec!["from".to_string(), who.to_string()]);
+            }
+        }
+        extra.push(vec!["codebases".to_string(), json]);
+    }
+    if let Some(row) = reply.setup.clone() {
+        extra.push(row);
     }
     let id = publish_chat(
         conn,
@@ -1538,7 +1737,7 @@ async fn reply_one(
             direction: reply.direction.as_deref(),
             body: reply.body.as_deref(),
             from: speaker.as_deref(),
-            extra: act_tags.as_deref().unwrap_or(&[]),
+            extra: &extra,
             thread: thread
                 .as_ref()
                 .map(|target| (target.root.as_str(), target.parent.as_str())),
@@ -1555,7 +1754,7 @@ async fn reply_one(
                 thread_root: thread.as_ref().map(|target| target.root.clone()),
             });
         }
-        let acted = act_tags.is_some() || reply.direction.is_some();
+        let acted = act_tags.is_some() || reply.direction.is_some() || codebase_tag.is_some();
         room.push_acted(
             id.clone(),
             me.to_string(),
@@ -1567,6 +1766,41 @@ async fn reply_one(
         );
         if let Some(slug) = reply.direction.as_deref() {
             room.note_direction(&id, slug, reply.body.as_deref());
+        }
+    }
+    if invite_setup {
+        let follow = chat_act::MISSION_HANDOFF;
+        // One second later. Equal timestamps sort by event id, which can put
+        // this question above the invite explanation.
+        let follow_at = now_secs().saturating_add(1);
+        let follow_id = publish_chat_at(
+            conn,
+            keys,
+            channel,
+            OutgoingChat {
+                content: follow,
+                direction: None,
+                body: None,
+                from: None,
+                extra: &[],
+                thread: thread
+                    .as_ref()
+                    .map(|target| (target.root.as_str(), target.parent.as_str())),
+                reply_to: thread.as_ref().and(speaker.as_deref()),
+            },
+            Some(follow_at),
+        )
+        .await?;
+        if let Some(room) = rooms.get_mut(channel) {
+            room.push_acted(
+                follow_id,
+                me.to_string(),
+                follow.to_string(),
+                follow_at,
+                false,
+                thread.as_ref().map(|target| target.root.clone()),
+                false,
+            );
         }
     }
     Ok(())
@@ -1627,15 +1861,38 @@ async fn continue_after_confirm(
             reply.direction.clone(),
             reply.body.clone(),
         );
-        let say = match (shaped.direction.as_deref(), shaped.body.as_deref()) {
+        // A confirm with no new draft keeps the model's own words. The
+        // interview would otherwise replace a human lead-in with the bare
+        // question for the next row.
+        let drafted = match (shaped.direction.as_deref(), shaped.body.as_deref()) {
             (Some(slug), Some(body)) => chat_act::drop_restated_lines(
                 &chat_act::direction_reply_say(&shaped.say, slug),
                 slug,
                 body,
             ),
             (Some(slug), None) => chat_act::direction_reply_say(&shaped.say, slug),
-            (None, _) => shaped.say.clone(),
+            (None, _) => reply.say.clone(),
         };
+        let mut say = chat_act::acceptance_transition(
+            &confirmed.slug,
+            &drafted,
+            chat_act::next_interview_question(board),
+        );
+        let project = if shaped.direction.is_none()
+            && chat_act::next_interview_question(board).is_none()
+        {
+            speaker.as_deref().and_then(|who| {
+                chat_act::project_draft_for_reply(reply.act.as_ref(), &say, board, who, now_secs())
+            })
+        } else {
+            None
+        };
+        if project.is_none() && chat_act::claims_project_draft(&say) {
+            say = chat_act::without_false_project_draft(&say);
+        }
+        let project_tags = project
+            .as_ref()
+            .and_then(|act| speaker.as_deref().map(|who| chat_act::act_tags(act, who)));
         let id = publish_chat(
             conn,
             keys,
@@ -1645,7 +1902,7 @@ async fn continue_after_confirm(
                 direction: shaped.direction.as_deref(),
                 body: shaped.body.as_deref(),
                 from: speaker.as_deref(),
-                extra: &[],
+                extra: project_tags.as_deref().unwrap_or(&[]),
                 thread: thread_root.as_deref().map(|root| (root, draft_id.as_str())),
                 reply_to: None,
             },
@@ -1659,7 +1916,7 @@ async fn continue_after_confirm(
                 now_secs(),
                 false,
                 thread_root,
-                shaped.direction.is_some(),
+                shaped.direction.is_some() || project_tags.is_some(),
             );
             if let Some(slug) = shaped.direction.as_deref() {
                 room.note_direction(&id, slug, shaped.body.as_deref());
@@ -1675,15 +1932,36 @@ struct ConfirmedDirection {
     version: u64,
 }
 
-/// Remembers every `39100` head id. The backlog and each periodic org
-/// re-read deliver the same heads again; only an id never seen is a confirm.
+/// A direction confirm continues the interview. A profile confirm asks the
+/// repository question. A codebases confirm asks the landing page, or says
+/// the org is ready, when that row was still open.
+enum ConfirmedAdvance {
+    Direction(ConfirmedDirection),
+    Profile,
+    Codebases,
+}
+
+/// Remembers every direction and profile head id. The backlog and each
+/// periodic org re-read deliver the same heads again; only an id never seen
+/// is a confirm.
 fn newly_confirmed(
     event: &Event,
     seen: &mut HashSet<String>,
     after_backlog: bool,
-) -> Option<ConfirmedDirection> {
-    if kind_of(event) != 39100 || !seen.insert(event.id.to_hex()) || !after_backlog {
+) -> Option<ConfirmedAdvance> {
+    let kind = kind_of(event);
+    if !matches!(kind, 39100 | 39105 | 39106) || !seen.insert(event.id.to_hex()) || !after_backlog {
         return None;
+    }
+    if kind == 39105 {
+        return Some(ConfirmedAdvance::Profile);
+    }
+    if kind == 39106 {
+        let slug = tag_values(event, "d").into_iter().next()?;
+        if slug != "codebases" {
+            return None;
+        }
+        return Some(ConfirmedAdvance::Codebases);
     }
     let slug = tag_values(event, "d").into_iter().next()?;
     let version = tag_values(event, "version")
@@ -1691,7 +1969,197 @@ fn newly_confirmed(
         .next()
         .and_then(|value| value.parse().ok())
         .unwrap_or(1);
-    Some(ConfirmedDirection { slug, version })
+    Some(ConfirmedAdvance::Direction(ConfirmedDirection {
+        slug,
+        version,
+    }))
+}
+
+/// After a profile is published, ask the next open row. A later edit of the
+/// same profile does not ask again.
+async fn continue_after_profile(
+    conn: &mut NostrWsConnection,
+    keys: &Keys,
+    me: &str,
+    board: &Board,
+    rooms: &mut HashMap<String, Room>,
+    listening: &[String],
+) -> Result<(), String> {
+    let Some(question) = chat_act::next_interview_question(board) else {
+        return Ok(());
+    };
+    if !question.contains("code live") && !question.contains("landing page") {
+        return Ok(());
+    }
+    for channel in listening {
+        let branch = rooms.get(channel).and_then(|room| {
+            if !room_asked_profile(room, me) || room_already_asked(room, me, question) {
+                None
+            } else {
+                Some(profile_draft_branch(room, me))
+            }
+        });
+        let Some(branch) = branch else {
+            continue;
+        };
+        let say = chat_act::acceptance_transition("profile", "", Some(question));
+        let id = publish_chat(
+            conn,
+            keys,
+            channel,
+            OutgoingChat {
+                content: &say,
+                direction: None,
+                body: None,
+                from: None,
+                extra: &[],
+                thread: branch
+                    .as_ref()
+                    .map(|(root, draft)| (root.as_str(), draft.as_str())),
+                reply_to: None,
+            },
+        )
+        .await?;
+        if let Some(room) = rooms.get_mut(channel) {
+            room.push_acted(
+                id,
+                me.to_string(),
+                say,
+                now_secs(),
+                false,
+                branch.map(|(root, _)| root),
+                false,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// After the codebases list is published, ask the landing page, or say the
+/// org is ready, once. A later edit of the same list does not ask again.
+async fn continue_after_codebases(
+    conn: &mut NostrWsConnection,
+    keys: &Keys,
+    me: &str,
+    board: &Board,
+    rooms: &mut HashMap<String, Room>,
+    listening: &[String],
+) -> Result<(), String> {
+    let question = chat_act::next_interview_question(board);
+    let say = match question {
+        Some(question) if question.contains("landing page") => {
+            chat_act::acceptance_transition("codebases", "", Some(question))
+        }
+        None => board.interview_line(),
+        Some(_) => return Ok(()),
+    };
+    for channel in listening {
+        let branch = rooms.get(channel).and_then(|room| {
+            if !room_asked_code(room, me) || room_already_said(room, me, &say) {
+                None
+            } else {
+                Some(())
+            }
+        });
+        if branch.is_none() {
+            continue;
+        }
+        let id = publish_chat(
+            conn,
+            keys,
+            channel,
+            OutgoingChat {
+                content: &say,
+                direction: None,
+                body: None,
+                from: None,
+                extra: &[],
+                thread: None,
+                reply_to: None,
+            },
+        )
+        .await?;
+        if let Some(room) = rooms.get_mut(channel) {
+            room.push_acted(
+                id,
+                me.to_string(),
+                say.clone(),
+                now_secs(),
+                false,
+                None,
+                false,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn room_asked_code(room: &Room, me: &str) -> bool {
+    room.messages.iter().any(|line| {
+        line.author.eq_ignore_ascii_case(me)
+            && (line
+                .content
+                .to_ascii_lowercase()
+                .contains("draft of the codebases")
+                || line.content.to_ascii_lowercase().contains("where the code"))
+    })
+}
+
+fn room_already_said(room: &Room, me: &str, say: &str) -> bool {
+    let needle = if say.to_ascii_lowercase().contains("landing page") {
+        "landing page"
+    } else if say.to_ascii_lowercase().contains("org is ready") {
+        "org is ready"
+    } else {
+        return false;
+    };
+    room.messages.iter().any(|line| {
+        line.author.eq_ignore_ascii_case(me) && line.content.to_ascii_lowercase().contains(needle)
+    })
+}
+
+fn room_asked_profile(room: &Room, me: &str) -> bool {
+    room.messages.iter().any(|line| {
+        line.author.eq_ignore_ascii_case(me)
+            && (line
+                .content
+                .to_ascii_lowercase()
+                .contains("draft of your profile")
+                || line
+                    .content
+                    .to_ascii_lowercase()
+                    .contains("who does the work")
+                || line
+                    .content
+                    .to_ascii_lowercase()
+                    .contains("skills you actually have"))
+    })
+}
+
+fn room_already_asked(room: &Room, me: &str, question: &str) -> bool {
+    let needle = if question.contains("landing page") {
+        "landing page"
+    } else if question.contains("code live") {
+        "code live"
+    } else {
+        return false;
+    };
+    room.messages.iter().any(|line| {
+        line.author.eq_ignore_ascii_case(me) && line.content.to_ascii_lowercase().contains(needle)
+    })
+}
+
+fn profile_draft_branch(room: &Room, me: &str) -> Option<(String, String)> {
+    let draft = room.messages.iter().rev().find(|line| {
+        line.author.eq_ignore_ascii_case(me)
+            && line
+                .content
+                .to_ascii_lowercase()
+                .contains("draft of your profile")
+            && !line.id.is_empty()
+    })?;
+    let root = draft.thread_root.clone()?;
+    Some((root, draft.id.clone()))
 }
 
 async fn publish_profile(conn: &mut NostrWsConnection, keys: &Keys) -> Result<(), String> {
@@ -1870,8 +2338,19 @@ async fn publish_chat(
     channel: &str,
     chat: OutgoingChat<'_>,
 ) -> Result<String, String> {
+    publish_chat_at(conn, keys, channel, chat, None).await
+}
+
+async fn publish_chat_at(
+    conn: &mut NostrWsConnection,
+    keys: &Keys,
+    channel: &str,
+    chat: OutgoingChat<'_>,
+    created_at: Option<u64>,
+) -> Result<String, String> {
     let tags = chat_tags(channel, &chat)?;
-    let event = sign(keys, Permitted::Chat, chat.content, tags).map_err(publish_err)?;
+    let event =
+        sign_at(keys, Permitted::Chat, chat.content, tags, created_at).map_err(publish_err)?;
     let id = event.id.to_hex();
     let ok = conn
         .send_event(event)
@@ -1897,6 +2376,8 @@ pub struct ModelReply {
     pub body: Option<String>,
     /// A project, ticket, done, or DRI the speaker asked to publish.
     pub act: Option<RawAct>,
+    /// `io-setup` row for the desktop. The model's `say` is still the reply.
+    pub setup: Option<Vec<String>>,
 }
 
 /// Read the model's JSON. Plain text stays a sentence with no direction.
@@ -1907,7 +2388,140 @@ pub fn parse_model_reply(raw: &str) -> ModelReply {
         direction,
         body,
         act,
+        setup: chat_act::setup_tag(raw),
     }
+}
+
+/// A project draft with fewer than two real steps asks for those steps
+/// before the card is published. A failed plan drops the draft.
+async fn ensure_project_steps(act: Option<ResolvedAct>, overview: &str) -> Option<ResolvedAct> {
+    let act = act?;
+    let Some((title, brief)) = chat_act::project_to_plan(&act) else {
+        return Some(act);
+    };
+    match think_project_steps(title, brief, overview).await {
+        Ok(steps) => match serde_json::to_value(&steps) {
+            Ok(value) => Some(chat_act::project_with_steps(act, value)),
+            Err(error) => {
+                eprintln!("org agent: no project draft without steps: {error}");
+                None
+            }
+        },
+        Err(error) => {
+            eprintln!("org agent: no project draft without steps: {error}");
+            None
+        }
+    }
+}
+
+async fn ensure_held_plans(org: &mut OrgState) {
+    let mut missing = crate::plan::projects_without_steps(org);
+    for row in crate::plan::projects_needing_how(org) {
+        if !missing.iter().any(|(id, _, _)| id == &row.0) {
+            missing.push(row);
+        }
+    }
+    let context = crate::plan::direction_excerpt(org);
+    for (id, title, brief) in missing.into_iter().take(4) {
+        match think_project_steps(&title, &brief, &context).await {
+            Ok(steps) => {
+                org.plans.insert(id, steps);
+            }
+            Err(error) => eprintln!("org agent: no steps for {title}: {error}"),
+        }
+    }
+}
+
+async fn think_project_steps(
+    title: &str,
+    brief: &str,
+    context: &str,
+) -> Result<Vec<buzz_core::intelligent_org::PlanStep>, String> {
+    let prompt = crate::plan::project_steps_prompt(title, brief, context);
+    let mut last = String::from("plan was not two to seven steps");
+    for _ in 0..2 {
+        let text = match steps_completion(&prompt).await {
+            Ok(text) => text,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        let value = match json_object(&text) {
+            Ok(value) => value,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        if let Some(steps) = crate::plan::steps_ready(title, &value) {
+            return Ok(steps);
+        }
+        last = "plan was not two to seven steps".into();
+    }
+    Err(last)
+}
+
+async fn steps_completion(prompt: &str) -> Result<String, String> {
+    let key = std::env::var("OPENAI_COMPAT_API_KEY")
+        .or_else(|_| std::env::var("VENICE_API_KEY"))
+        .map_err(|_| "OPENAI_COMPAT_API_KEY is not set".to_string())?;
+    let base = std::env::var("OPENAI_COMPAT_BASE_URL")
+        .unwrap_or_else(|_| "https://api.openai.com/v1".into());
+    let model = std::env::var("OPENAI_COMPAT_MODEL")
+        .or_else(|_| std::env::var("IO_MODEL_FAST"))
+        .or_else(|_| std::env::var("IO_MODEL_DRAFT"))
+        .map_err(|_| "OPENAI_COMPAT_MODEL is not set".to_string())?;
+    let url = format!("{}/chat/completions", base.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|error| format!("http: {error}"))?;
+    let response = client
+        .post(url)
+        .bearer_auth(key)
+        .json(&json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": prompt }],
+            "temperature": 0.2
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("model request: {error}"))?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|error| format!("model body: {error}"))?;
+    if !status.is_success() {
+        let detail = body
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("model request failed");
+        return Err(format!("{status}: {detail}"));
+    }
+    body.pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| "model returned no steps".to_string())
+}
+
+fn json_object(text: &str) -> Result<Value, String> {
+    let trimmed = text.trim();
+    let start = trimmed
+        .find('{')
+        .or_else(|| trimmed.find('['))
+        .ok_or_else(|| "model returned no JSON".to_string())?;
+    let end = trimmed
+        .rfind('}')
+        .or_else(|| trimmed.rfind(']'))
+        .ok_or_else(|| "model returned no JSON".to_string())?;
+    if end < start {
+        return Err("model returned no JSON".into());
+    }
+    serde_json::from_str(&trimmed[start..=end]).map_err(|error| format!("steps json: {error}"))
 }
 
 async fn complete_reply_retry(
@@ -2211,13 +2825,18 @@ mod tests {
     fn welcome_says_what_the_agent_can_do() {
         assert_eq!(WELCOME_LINES.len(), 1);
         let line = WELCOME_LINES[0];
-        assert!(line.contains(
-            "I draft for this organization — what it is for, the work, who decides, and your profile."
+        assert!(line.starts_with(
+            "Hey, I'm glad to connect! I'm a powerful AI agent, that can take your organization to the next level."
         ));
-        assert!(line.contains("Nothing I write changes the org until the right person agrees."));
-        assert!(line.contains(
-            "Direction — Mission, vision, where you stand, objectives, and strategy. I draft each one and say what's weak."
-        ));
+        assert!(line.contains("View me as Elon Musk on steroids at your service."));
+        assert!(line.ends_with("Do you have time to set up your organization now?"));
+        assert!(LEGACY_WELCOME_LINES.iter().any(|old| {
+            old.contains(
+                "I draft for this organization — what it is for, the work, who decides, and your profile.",
+            ) && old.contains(
+                "Questions — Ask about anything the organization has already written down.",
+            )
+        }));
         assert!(LEGACY_WELCOME_LINES.iter().any(|old| {
             old.contains("Direction — Mission, vision, objectives, and strategy.")
                 && old.ends_with("Are you shaping this alone, or with other people?")
@@ -2225,20 +2844,62 @@ mod tests {
         assert!(LEGACY_WELCOME_LINES.iter().any(|old| old.contains(
             "Direction — Mission, vision, where you stand, objectives, and strategy, with an honest read on each."
         )));
-        assert!(line.contains(
-            "Work — Projects, tickets, and who should hold them. Only the named person accepts."
-        ));
-        assert!(line.contains(
-            "Shapers — Who decides, and how many of them must agree before something passes."
-        ));
-        assert!(line.contains(
-            "Profile — What you do, the work you want, and your links, so offers go to the right person."
-        ));
-        assert!(line
-            .contains("Questions — Ask about anything the organization has already written down."));
         assert!(!line.contains("Are you shaping this alone"));
         assert!(!line.contains("Congratulations"));
         assert!(!line.contains("Hey. I'm Org. Agent."));
+    }
+
+    #[test]
+    fn a_model_invite_keeps_its_words_and_the_setup_tag() {
+        let raw = r#"{"say":"Four more people. How many of them should agree before a decision passes?","direction":null,"body":null,"act":null,"setup":null}"#;
+        let reply = parse_model_reply(raw);
+        assert_eq!(
+            reply.say,
+            "Four more people. How many of them should agree before a decision passes?"
+        );
+        assert!(reply.setup.is_none());
+        let tagged = r#"{"say":"The link is under this message. Send it to the four people.","setup":{"mode":"invite","invitees":4,"quorum":3}}"#;
+        let tagged = parse_model_reply(tagged);
+        assert!(tagged.say.contains("four people"));
+        assert_eq!(
+            tagged.setup,
+            Some(vec![
+                "io-setup".to_string(),
+                "invite".to_string(),
+                "4".to_string(),
+                "3".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_legacy_opening_still_gets_the_current_first_message() {
+        let me = "aa".repeat(32);
+        let mut room = fresh_room(true);
+        assert!(owes_welcome(&room, &me));
+        room.push(
+            "",
+            me.clone(),
+            LEGACY_WELCOME_LINES[0].into(),
+            10,
+            false,
+            None,
+        );
+        assert!(owes_welcome(&room, &me));
+        room.push("", me.clone(), WELCOME_LINES[0].into(), 11, false, None);
+        assert!(!owes_welcome(&room, &me));
+
+        let mut talking = fresh_room(true);
+        talking.push("", "bb".repeat(32), "Hi".into(), 10, false, None);
+        talking.push(
+            "",
+            me.clone(),
+            LEGACY_WELCOME_LINES[0].into(),
+            11,
+            false,
+            None,
+        );
+        assert!(!owes_welcome(&talking, &me));
     }
 
     #[test]
@@ -2365,6 +3026,51 @@ mod tests {
             .custom_created_at(nostr::Timestamp::from(at))
             .sign_with_keys(keys)
             .unwrap()
+    }
+
+    fn edit_event(keys: &Keys, channel: &str, target: &str, content: &str, at: u64) -> Event {
+        nostr::EventBuilder::new(nostr::Kind::Custom(40003), content)
+            .tags(vec![
+                Tag::parse(["h", channel]).unwrap(),
+                Tag::parse(["e", target]).unwrap(),
+            ])
+            .custom_created_at(nostr::Timestamp::from(at))
+            .sign_with_keys(keys)
+            .unwrap()
+    }
+
+    #[test]
+    fn an_edited_draft_sentence_is_what_the_interview_reads() {
+        let agent = Keys::generate();
+        let me = agent.public_key().to_hex();
+        let channel = "dm-1";
+        let original = chat_event(
+            &agent,
+            channel,
+            "A draft of the strategy. Open it, then publish.",
+            &[],
+            10,
+        );
+        let edit = edit_event(
+            &agent,
+            channel,
+            &original.id.to_hex(),
+            "A draft of the codebases. Open it, then publish.",
+            11,
+        );
+        let mut rooms = HashMap::new();
+        let mut dms = HashSet::new();
+        let welcomed = HashSet::new();
+        note_event(&original, &me, &mut rooms, &mut dms, &welcomed);
+        let room = rooms.get(channel).expect("room");
+        assert!(!room_asked_code(room, &me));
+        note_event(&edit, &me, &mut rooms, &mut dms, &welcomed);
+        let room = rooms.get(channel).expect("room");
+        assert!(room_asked_code(room, &me));
+        assert_eq!(
+            room.messages[0].content,
+            "A draft of the codebases. Open it, then publish."
+        );
     }
 
     #[test]
@@ -2516,6 +3222,9 @@ mod tests {
         assert!(newly_confirmed(&mission, &mut seen, false).is_none());
         assert!(newly_confirmed(&mission, &mut seen, true).is_none());
         let confirmed = newly_confirmed(&vision, &mut seen, true).expect("live confirm");
+        let ConfirmedAdvance::Direction(confirmed) = confirmed else {
+            panic!("expected a direction confirm");
+        };
         assert_eq!((confirmed.slug.as_str(), confirmed.version), ("vision", 2));
         assert!(newly_confirmed(&vision, &mut seen, true).is_none());
     }
@@ -2816,6 +3525,7 @@ mod tests {
             brief: "Test the Hypha desktop app.".into(),
             due_at: 10,
             suggested: None,
+            plan: None,
         }
     }
 

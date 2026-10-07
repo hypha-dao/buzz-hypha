@@ -28,6 +28,10 @@ mod drafts;
 mod drafts_postgres_tests;
 mod home;
 mod home_repo;
+mod knowledge;
+#[cfg(test)]
+#[path = "knowledge_postgres_tests.rs"]
+mod knowledge_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
 mod profiles;
@@ -51,8 +55,8 @@ use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE,
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
     KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROFILE_SET,
-    KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_KNOWLEDGE_SET, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
+    KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
     KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
     KIND_IO_WORK_PROMPT,
@@ -104,6 +108,7 @@ pub async fn handle_command(
         KIND_IO_DRAFT_DECIDE => drafts::decide(&cmd).await,
         KIND_IO_HEALTH_RATE => drafts::health_rate(&cmd).await,
         KIND_IO_PROFILE_SET => profiles::set(&cmd).await,
+        KIND_IO_KNOWLEDGE_SET => knowledge::set(&cmd).await,
         KIND_IO_WITHDRAW => work::withdraw(&cmd).await,
         KIND_IO_WITHDRAW_PROPOSE => proposals::withdraw_propose(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
@@ -237,6 +242,8 @@ pub(crate) mod object {
     pub const DRAFT: &str = "draft";
     /// A member's org profile; `object_id` is their pubkey.
     pub const PROFILE: &str = "profile";
+    /// An org knowledge section; `object_id` is the slug (`codebases`).
+    pub const KNOWLEDGE: &str = "knowledge";
 }
 
 pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {

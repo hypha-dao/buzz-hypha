@@ -25,24 +25,26 @@ export function DirectMessageIntroBlock({
       </p>
       {opening ? (
         <>
-          <p className="mt-1 max-w-md text-sm leading-5 text-foreground">
-            {opening.lead}
-          </p>
-          <dl
-            className="mt-4 flex max-w-md flex-col gap-3"
+          <p
+            className="mt-1 max-w-md text-sm leading-5 text-foreground"
             data-testid="org-agent-opening"
           >
-            {opening.items.map((item) => (
-              <div key={item.title}>
-                <dt className="text-sm font-medium leading-5 text-foreground">
-                  {item.title}
-                </dt>
-                <dd className="text-sm leading-5 text-muted-foreground">
-                  {item.detail}
-                </dd>
-              </div>
-            ))}
-          </dl>
+            {opening.lead}
+          </p>
+          {opening.items.length > 0 ? (
+            <dl className="mt-4 flex max-w-md flex-col gap-3">
+              {opening.items.map((item) => (
+                <div key={item.title}>
+                  <dt className="text-sm font-medium leading-5 text-foreground">
+                    {item.title}
+                  </dt>
+                  <dd className="text-sm leading-5 text-muted-foreground">
+                    {item.detail}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
         </>
       ) : (
         <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">

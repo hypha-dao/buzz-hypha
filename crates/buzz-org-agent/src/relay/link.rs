@@ -71,7 +71,7 @@ impl StreamReq {
         let mut reqs = vec![
             StreamReq {
                 id: "state".into(),
-                kinds: vec![39100, 39101, 39102, 39103, 39104, 39105],
+                kinds: vec![39100, 39101, 39102, 39103, 39104, 39105, 39106],
                 since: since(Stream::State),
             },
             StreamReq {

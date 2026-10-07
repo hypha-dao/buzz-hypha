@@ -88,9 +88,25 @@ pub fn sign(
     content: &str,
     tags: Vec<Tag>,
 ) -> Result<Event, PublishError> {
-    EventBuilder::new(Kind::Custom(kind.kind() as u16), content)
+    sign_at(keys, kind, content, tags, None)
+}
+
+/// `sign` at a chosen second. The mission handoff uses the next second so a
+/// client that orders equal timestamps by event id cannot show it first.
+pub fn sign_at(
+    keys: &Keys,
+    kind: Permitted,
+    content: &str,
+    tags: Vec<Tag>,
+    created_at: Option<u64>,
+) -> Result<Event, PublishError> {
+    let mut builder = EventBuilder::new(Kind::Custom(kind.kind() as u16), content)
         .tags(tags)
-        .allow_self_tagging()
+        .allow_self_tagging();
+    if let Some(secs) = created_at {
+        builder = builder.custom_created_at(nostr::Timestamp::from(secs));
+    }
+    builder
         .sign_with_keys(keys)
         .map_err(|e| PublishError::Sign(e.to_string()))
 }
@@ -123,5 +139,12 @@ mod tests {
         let keys = Keys::generate();
         let event = sign(&keys, Permitted::AgentNote, "{}", vec![]).expect("sign");
         assert_eq!(u32::from(event.kind.as_u16()), KIND_IO_AGENT_NOTE);
+    }
+
+    #[test]
+    fn sign_at_stamps_the_given_second() {
+        let keys = Keys::generate();
+        let event = sign_at(&keys, Permitted::Chat, "hi", vec![], Some(50)).expect("sign");
+        assert_eq!(event.created_at.as_secs(), 50);
     }
 }

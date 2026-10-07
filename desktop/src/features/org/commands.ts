@@ -21,6 +21,7 @@ import {
   KIND_IO_DRI_PROPOSE,
   KIND_IO_HEALTH_RATE,
   KIND_IO_JOIN_PROPOSE,
+  KIND_IO_KNOWLEDGE_SET,
   KIND_IO_MONEY_PROPOSE,
   KIND_IO_MONEY_RELEASED,
   KIND_IO_OFFER,
@@ -483,6 +484,21 @@ export function buildIoHealthRate(input: {
       [TAG_BAND, input.band],
     ],
     content: "{}",
+  };
+}
+
+export function buildIoKnowledgeSet(input: {
+  items: {
+    kind: "repository" | "site";
+    name: string;
+    url: string;
+    about: string;
+  }[];
+}): UnsignedOrgCommand {
+  return {
+    kind: KIND_IO_KNOWLEDGE_SET,
+    tags: [],
+    content: JSON.stringify({ slug: "codebases", items: input.items }),
   };
 }
 

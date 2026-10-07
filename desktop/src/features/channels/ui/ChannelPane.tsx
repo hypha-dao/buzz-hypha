@@ -52,6 +52,7 @@ import {
 import { useWelcomeComposerBanner } from "@/features/channels/ui/useWelcomeComposerBanner";
 import { OrgActsFromChat } from "@/features/org/useActFromChat";
 import { ChatProposalDrafts } from "@/features/org/ui/ChatProposalDrafts";
+import { OrgAgentSetupCard } from "@/features/org/ui/OrgAgentSetupCard";
 import { ShapersChatProposals } from "@/features/org/ui/ShapersChatProposals";
 import { useOrgChannelChat } from "@/features/channels/ui/useOrgChannelChat";
 import {
@@ -247,6 +248,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     noteOrgAgentSendFailed,
     onDraftFooters,
     onDraftSentences,
+    onSetupFooters,
     onShapersProposalFooters,
     orgAgentPubkey,
     orgAgentTypingProfiles,
@@ -718,9 +720,18 @@ export const ChannelPane = React.memo(function ChannelPane({
                 orgAgentPubkey={orgAgentPubkey}
               />
             ) : null}
-            {shapersRoom ? (
+            {orgChatRoom === "dm" ? (
+              <OrgAgentSetupCard
+                messages={displayMessages}
+                onFooters={onSetupFooters}
+                orgAgentPubkey={orgAgentPubkey}
+              />
+            ) : null}
+            {shapersRoom || orgChatRoom === "dm" ? (
               <ShapersChatProposals
-                messages={shapersAnchorMessages}
+                messages={
+                  shapersRoom ? shapersAnchorMessages : orgDraftMessages
+                }
                 onFooters={onShapersProposalFooters}
               />
             ) : null}

@@ -6,6 +6,7 @@
  */
 
 import { announcementMentions, directionBodyLines } from "./chatDraft";
+import { linesForDirectionPropose } from "./directionLines";
 
 const SLUGS = new Set([
   "mission",
@@ -40,6 +41,7 @@ const PROPOSAL_KIND_LABEL: Record<string, string> = {
   join: "Join proposal",
   shapers: "Shapers proposal",
   withdraw: "Withdraw proposal",
+  codebases: "Codebases proposal",
 };
 
 export type DirectionSlugName =
@@ -51,11 +53,20 @@ export type DirectionSlugName =
 
 export type ProposalDetail = {
   proposalId: string;
-  kind: "direction" | "project";
+  kind: "direction" | "project" | "codebases";
   title: string;
   body: string;
   slug: DirectionSlugName | null;
   dueAt: number | null;
+};
+
+export type ProposalLine = {
+  id: string;
+  text: string;
+  doneWhen?: string;
+  /** Unix seconds for an objective's date. */
+  date?: number;
+  lineType?: "bet" | "rule" | "refusal";
 };
 
 /** What the proposal page shows. A direction proposal is not a work item. */
@@ -63,7 +74,7 @@ export type ProposalPageModel = {
   eyebrow: string;
   title: string;
   brief: string;
-  lines: { id: string; text: string }[];
+  lines: ProposalLine[];
   doorTitle: string;
   parentLabel: string;
   parentTo: "/org/my-work" | "/org/work";
@@ -89,7 +100,7 @@ export type AnchorMessage = {
 
 export type ChatProposalPreview = {
   messageId: string;
-  kind: "direction" | "project";
+  kind: "direction" | "project" | "codebases";
   title: string;
   body: string;
   proposalId: string | null;
@@ -136,7 +147,9 @@ export function proposalDetail(
   const content = objectOf(event.content);
   if (!content) return null;
   const kind = content.kind;
-  if (kind !== "direction" && kind !== "project") return null;
+  if (kind !== "direction" && kind !== "project" && kind !== "codebases") {
+    return null;
+  }
   const proposalId =
     event.tags.find((tag) => tag[0] === "d")?.[1]?.trim() ?? "";
   if (!proposalId) return null;
@@ -150,6 +163,16 @@ export function proposalDetail(
       title: body || slug || "Direction",
       body,
       slug: directionSlug(slug),
+      dueAt: null,
+    };
+  }
+  if (kind === "codebases") {
+    return {
+      proposalId,
+      kind,
+      title: text(payload?.title) || "Codebases",
+      body: text(payload?.brief),
+      slug: null,
       dueAt: null,
     };
   }
@@ -194,33 +217,104 @@ function directionTitle(slug: string): string {
   return DIRECTION_NAME[slug] ?? "Direction";
 }
 
-/** The body often stores the lines again as one paragraph. */
+/**
+ * The body often stores the lines again, including each line's done-when
+ * and date. That paragraph is the list, so the page shows the list once.
+ */
 function briefRepeatsLines(
   brief: string,
-  lines: readonly { text: string }[],
+  lines: readonly ProposalLine[],
 ): boolean {
   if (lines.length === 0 || brief.trim().length === 0) return false;
-  const plain = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  return plain(brief) === plain(lines.map((line) => line.text).join(" "));
+  const joined = plain(lines.map((line) => line.text).join(" "));
+  if (plain(brief) === joined) return true;
+  if (plain(withoutLineAnnotations(brief)) !== joined) return false;
+  const mentionsDoneWhen = /\bdone when:/i.test(brief);
+  const mentionsDate = /\bby:\s*\d{4}-\d{2}-\d{2}/i.test(brief);
+  const mentionsType = /\btype:\s*(?:bet|rule|refusal)\b/i.test(brief);
+  if (mentionsDoneWhen && lines.some((line) => !line.doneWhen)) return false;
+  if (mentionsDate && lines.some((line) => line.date === undefined)) {
+    return false;
+  }
+  if (mentionsType && lines.some((line) => !line.lineType)) return false;
+  return true;
 }
 
-function lineTexts(value: unknown): { id: string; text: string }[] {
+/** Drop done-when, by-date, and strategy type clauses. One objective per line. */
+function withoutLineAnnotations(brief: string): string {
+  return brief
+    .replace(
+      /\bdone when:[^\n]*?(?=(?:\bby:\s*\d{4}-\d{2}-\d{2})|(?:\btype:\s*(?:bet|rule|refusal)\b)|$)/gi,
+      " ",
+    )
+    .replace(/\bby:\s*\d{4}-\d{2}-\d{2}\.?/gi, " ")
+    .replace(/\btype:\s*(?:bet|rule|refusal)\b/gi, " ");
+}
+
+function plain(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lineTexts(value: unknown): ProposalLine[] {
   if (!Array.isArray(value)) return [];
-  const lines: { id: string; text: string }[] = [];
+  const lines: ProposalLine[] = [];
   for (const line of value) {
     if (!line || typeof line !== "object" || Array.isArray(line)) continue;
     const row = line as Record<string, unknown>;
     const body = text(row.text);
     if (!body) continue;
     const id = text(row.id) || `line-${lines.length + 1}`;
-    lines.push({ id: `${id}-${lines.length + 1}`, text: body });
+    const doneWhen = text(row.done_when);
+    const date = row.date;
+    const lineType = text(row.type);
+    const parsed: ProposalLine = {
+      id: `${id}-${lines.length + 1}`,
+      text: body,
+    };
+    if (doneWhen) parsed.doneWhen = doneWhen;
+    if (typeof date === "number" && Number.isFinite(date)) parsed.date = date;
+    if (lineType === "bet" || lineType === "rule" || lineType === "refusal") {
+      parsed.lineType = lineType;
+    }
+    lines.push(parsed);
   }
   return lines;
+}
+
+/** Lines published without their check still carry it in the body text. */
+function withBodyAnnotations(
+  slug: string,
+  body: string,
+  lines: ProposalLine[],
+): ProposalLine[] {
+  if (slug !== "objectives" && slug !== "strategy") return lines;
+  const complete =
+    slug === "objectives"
+      ? lines.every((line) => line.doneWhen && line.date !== undefined)
+      : lines.every((line) => line.lineType);
+  if (complete) return lines;
+  const parsed = linesForDirectionPropose(slug, body);
+  if (!("lines" in parsed)) return lines;
+  return lines.map((line) => {
+    const match = parsed.lines.find(
+      (row) => plain(row.text) === plain(line.text),
+    );
+    if (!match) return line;
+    return {
+      ...line,
+      ...(line.doneWhen || !match.done_when
+        ? {}
+        : { doneWhen: match.done_when }),
+      ...(line.date !== undefined || typeof match.date !== "number"
+        ? {}
+        : { date: match.date }),
+      ...(line.lineType || !match.type ? {} : { lineType: match.type }),
+    };
+  });
 }
 
 function statusOf(
@@ -276,7 +370,7 @@ export function proposalPage(
     const slug = text(payload?.slug);
     const name = directionTitle(slug);
     const body = text(payload?.body);
-    const lines = lineTexts(payload?.lines);
+    const lines = withBodyAnnotations(slug, body, lineTexts(payload?.lines));
     return {
       eyebrow: directionSlug(slug) ? `${name} proposal` : "Direction proposal",
       title: lines.length > 0 ? name : body || name,
@@ -339,11 +433,20 @@ export function proposalMessageId(
     if (!best || message.createdAt >= best.createdAt) best = message;
   }
   if (best) return best.id;
+  // A publish can edit the draft, so the proposal body no longer matches the
+  // tag. Hang it on the latest same-slug line that already existed. A later
+  // draft of that slug is a new version and is not a home for the old one.
+  const edited = editedDirectionHome(messages, detail, at);
+  if (edited) return edited;
   if (at === undefined || messages.length === 0) return null;
-  let nearest = messages[0];
+  // A chat that started after this proposal is not its home. Otherwise a
+  // passed mission from a cleared thread lands on the new greeting.
+  const earlier = messages.filter((message) => message.createdAt <= at);
+  if (earlier.length === 0) return null;
+  let nearest = earlier[0];
   if (!nearest) return null;
   let distance = Math.abs(nearest.createdAt - at);
-  for (const message of messages) {
+  for (const message of earlier) {
     const next = Math.abs(message.createdAt - at);
     if (next < distance) {
       nearest = message;
@@ -407,6 +510,24 @@ function messageMentions(
 }
 
 /** A newer draft of the same artifact. It is not a home for an older version. */
+function editedDirectionHome(
+  messages: readonly AnchorMessage[],
+  detail: ProposalDetail,
+  at: number | undefined,
+): string | null {
+  if (detail.kind !== "direction" || !detail.slug || at === undefined) {
+    return null;
+  }
+  let home: AnchorMessage | null = null;
+  for (const message of messages) {
+    const direction = tagRow(message.tags, "direction");
+    if (!direction || !same(text(direction[1]), detail.slug)) continue;
+    if (message.createdAt > at) continue;
+    if (!home || message.createdAt >= home.createdAt) home = message;
+  }
+  return home?.id ?? null;
+}
+
 function differentDirectionVersion(
   message: AnchorMessage,
   detail: ProposalDetail,

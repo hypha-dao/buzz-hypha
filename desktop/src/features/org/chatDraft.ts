@@ -9,12 +9,14 @@
 import {
   buildIoDirectionPropose,
   buildIoDriPropose,
+  buildIoKnowledgeSet,
   buildIoProjectPropose,
   buildIoShapersPropose,
   buildIoWithdrawPropose,
   type DirectionSlug,
   type UnsignedOrgCommand,
 } from "./commands";
+import { strategyDisplayText } from "./directionLines";
 
 const SLUGS = new Set<DirectionSlug>([
   "mission",
@@ -36,6 +38,13 @@ export type ChatDraftMessage = {
   pending?: boolean;
 };
 
+export type CodebaseItem = {
+  kind: "repository" | "site";
+  name: string;
+  url: string;
+  about: string;
+};
+
 export type ChatDraft =
   | {
       kind: "project";
@@ -46,6 +55,8 @@ export type ChatDraft =
       brief: string;
       dueAt: number;
       suggestedDri: string | null;
+      /** Step list from the agent's `plan` tag. Absent when the reply had none. */
+      plan?: unknown[];
     }
   | {
       kind: "direction";
@@ -54,6 +65,13 @@ export type ChatDraft =
       from: string;
       slug: DirectionSlug;
       body: string;
+    }
+  | {
+      kind: "codebases";
+      messageId: string;
+      createdAt: number;
+      from: string;
+      items: CodebaseItem[];
     }
   | {
       kind: "dri";
@@ -147,6 +165,83 @@ function tagRow(
   return tags?.find((tag) => tag[0] === name);
 }
 
+const CODE_LIVES = /code lives at (https?:\/\/\S+)/i;
+const SITE_LIVES = /landing page lives at (https?:\/\/\S+)/i;
+
+function trimUrl(url: string): string {
+  return url.replace(/[.,;)]+$/, "");
+}
+
+function nameFromUrl(url: string): string {
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, "");
+    const segment = path.split("/").filter(Boolean).pop() ?? "";
+    const name = segment.replace(/\.git$/, "");
+    return name || "repository";
+  } catch {
+    return "repository";
+  }
+}
+
+function codebaseItemsFromTag(raw: string | undefined): CodebaseItem[] | null {
+  if (!raw?.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  const items: CodebaseItem[] = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== "object") return null;
+    const record = row as Record<string, unknown>;
+    const kind = record.kind;
+    if (kind !== "repository" && kind !== "site") return null;
+    items.push({
+      kind,
+      name: typeof record.name === "string" ? record.name : "",
+      url: typeof record.url === "string" ? record.url : "",
+      about: typeof record.about === "string" ? record.about : "",
+    });
+  }
+  return items;
+}
+
+/** A strategy draft that appended repository URLs. Those lines are the list. */
+function misfiledCodebases(body: string): CodebaseItem[] | null {
+  const items: CodebaseItem[] = [];
+  for (const raw of body.split(/\n+/)) {
+    const code = raw.match(CODE_LIVES);
+    if (code?.[1]) {
+      const url = trimUrl(code[1]);
+      items.push({
+        kind: "repository",
+        name: nameFromUrl(url),
+        url,
+        about: "",
+      });
+      continue;
+    }
+    const site = raw.match(SITE_LIVES);
+    if (site?.[1]) {
+      const url = trimUrl(site[1]);
+      items.push({ kind: "site", name: nameFromUrl(url), url, about: "" });
+    }
+  }
+  return items.length > 0 ? items : null;
+}
+
+export function codebaseTitle(items: readonly CodebaseItem[]): string {
+  const named = items.find((item) => item.url.trim().length > 0);
+  if (!named) {
+    return items.some((item) => item.kind === "site")
+      ? "No landing page yet"
+      : "No repository yet";
+  }
+  return named.name.trim() || named.url;
+}
+
 function hex(value: string | undefined): string | null {
   const text = value?.trim().toLowerCase() ?? "";
   return HEX_64.test(text) ? text : null;
@@ -233,11 +328,34 @@ export function chatDraftFromMessage(
       brief,
       dueAt,
       suggestedDri,
+      plan: planSteps(tagRow(tags, "plan")?.[1]),
+    };
+  }
+  const codebases = codebaseItemsFromTag(tagRow(tags, "codebases")?.[1]);
+  if (codebases) {
+    return {
+      kind: "codebases",
+      messageId: message.id,
+      createdAt: message.createdAt,
+      from,
+      items: codebases,
     };
   }
   const direction = tagRow(tags, "direction");
   const slug = direction?.[1]?.trim() ?? "";
   const body = direction?.[2]?.trim() ?? "";
+  if (slug === "strategy") {
+    const misfiled = misfiledCodebases(body);
+    if (misfiled) {
+      return {
+        kind: "codebases",
+        messageId: message.id,
+        createdAt: message.createdAt,
+        from,
+        items: misfiled,
+      };
+    }
+  }
   if (SLUGS.has(slug as DirectionSlug) && body.length >= 12) {
     return {
       kind: "direction",
@@ -570,6 +688,8 @@ export function draftSeries(draft: ChatDraft): string {
       return "project";
     case "direction":
       return `direction:${draft.slug}`;
+    case "codebases":
+      return "codebases";
     case "dri":
       return `dri:${draft.itemId}`;
     case "revise-direction":
@@ -596,6 +716,8 @@ export function draftKindLabel(draft: ChatDraft): string {
     case "direction":
     case "revise-direction":
       return draft.slug.charAt(0).toUpperCase() + draft.slug.slice(1);
+    case "codebases":
+      return "Codebases";
     case "dri":
       return "DRI";
     case "remove-project":
@@ -620,9 +742,9 @@ const LIST_MARKER = /^\d+[.)]\s+/;
  * string as a paragraph. The card and the publish form show each outcome on
  * its own line, and publishing sends those lines. A body that already has
  * line breaks keeps each line whole, since one strategy bet can take two
- * sentences.
+ * sentences. A strategy `Type:` marker is not part of that line.
  */
-export function directionBodyLines(slug: string, body: string): string[] {
+export function directionChunks(slug: string, body: string): string[] {
   const parts = body
     .split(/\n+/)
     .map((part) => part.trim())
@@ -631,16 +753,28 @@ export function directionBodyLines(slug: string, body: string): string[] {
     const whole = parts.join("\n");
     return whole.length > 0 ? [whole] : [];
   }
-  const lines: string[] = [];
+  const chunks: string[] = [];
   for (const part of parts) {
     const sentences =
       parts.length > 1 ? [part] : part.split(/(?<=[.!?])\s+(?=[A-Z])/);
     for (const sentence of sentences) {
       const text = sentence.replace(LIST_MARKER, "").trim();
-      if (text.length >= 12 && !lines.includes(text)) lines.push(text);
+      if (text.length > 0) chunks.push(text);
     }
   }
-  return lines.length > 0 ? lines : parts;
+  return chunks.length > 0 ? chunks : parts;
+}
+
+export function directionBodyLines(slug: string, body: string): string[] {
+  const lines: string[] = [];
+  for (const chunk of directionChunks(slug, body)) {
+    const shown = slug === "strategy" ? strategyDisplayText(chunk) : chunk;
+    if (shown.length >= 12 && !lines.includes(shown)) lines.push(shown);
+  }
+  if (lines.length > 0) return lines;
+  return directionChunks(slug, body)
+    .map((chunk) => (slug === "strategy" ? strategyDisplayText(chunk) : chunk))
+    .filter((chunk) => chunk.length > 0);
 }
 
 /** The publish-form text: confirmed lines, then each new outcome. */
@@ -668,6 +802,8 @@ export function draftTitle(
     case "direction":
     case "revise-direction":
       return draft.body;
+    case "codebases":
+      return codebaseTitle(draft.items);
     case "dri":
       return itemTitle?.trim() || "Name a holder";
     case "remove-project":
@@ -872,6 +1008,8 @@ export function announcementLabel(draft: ChatDraft): string {
     case "direction":
     case "revise-direction":
       return draft.slug;
+    case "codebases":
+      return "codebases";
     case "dri":
       return "DRI";
     case "remove-project":
@@ -905,6 +1043,9 @@ export function announcementMentions(
       body.includes(detail.title)
     );
   }
+  if (detail.kind === "codebases") {
+    return body.includes(`Opened a codebases proposal: ${detail.title}.`);
+  }
   return false;
 }
 
@@ -924,9 +1065,22 @@ export type DraftPublishInput = {
   agentPubkey?: string | null;
   /** Project holder. `null` publishes with nobody. Omitted keeps the chat tag. */
   suggestedDri?: string | null;
+  /** Edited codebases list. Omitted publishes the chat tag. */
+  codebases?: CodebaseItem[];
   /** DRI holder chosen in the draft. Omitted keeps the chat tag. */
   holder?: string;
 };
+
+/** Steps the agent put on the project draft. Anything else is ignored. */
+function planSteps(raw: string | undefined): unknown[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function publishedHolder(
   chosen: string | null | undefined,
@@ -947,6 +1101,7 @@ export function commandForDraft(input: DraftPublishInput): UnsignedOrgCommand {
         brief: input.brief,
         dueAt: input.dueAt,
         suggestedDri: publishedHolder(input.suggestedDri, draft.suggestedDri),
+        plan: draft.plan,
         voteAgree: false,
       });
     case "revise-project":
@@ -1020,6 +1175,10 @@ export function commandForDraft(input: DraftPublishInput): UnsignedOrgCommand {
         false,
       );
     }
+    case "codebases":
+      return buildIoKnowledgeSet({
+        items: input.codebases ?? draft.items,
+      });
     case "shapers-agent": {
       const pubkey = (input.agentPubkey ?? draft.pubkey)?.trim();
       return buildIoShapersPropose(

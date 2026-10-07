@@ -4,27 +4,26 @@ import test from "node:test";
 
 import {
   isCannedOrgAgentOpening,
+  ORG_AGENT_FIRST_MESSAGE,
   ORG_AGENT_OPENING,
   orgAgentWelcomeText,
 } from "./orgAgentOpening.ts";
 
 const AGENT = "aa".repeat(32);
 
-test("the opening says what the org agent is for", () => {
+test("the opening says what the org agent is", () => {
   assert.equal(
     ORG_AGENT_OPENING.lead,
-    "I draft for this organization — what it is for, the work, who decides, and your profile. You decide what becomes real. Nothing I write changes the org until the right person agrees.",
+    "I'm super intelligence of your organization.",
   );
-  assert.deepEqual(
-    ORG_AGENT_OPENING.items.map((item) => item.title),
-    ["Direction", "Work", "Shapers", "Profile", "Questions"],
+  assert.deepEqual(ORG_AGENT_OPENING.items, []);
+  assert.equal(
+    orgAgentWelcomeText(),
+    "I'm super intelligence of your organization.",
   );
-  for (const item of ORG_AGENT_OPENING.items) {
-    assert.ok(item.detail.length > 0, item.title);
-  }
 });
 
-test("the posted welcome is the same opening the DM shows", () => {
+test("the posted first message matches the org agent welcome", () => {
   const rust = readFileSync(
     new URL(
       "../../../../crates/buzz-org-agent/src/dm_chat.rs",
@@ -32,23 +31,40 @@ test("the posted welcome is the same opening the DM shows", () => {
     ),
     "utf8",
   );
-  const welcome = orgAgentWelcomeText();
   assert.ok(
-    rust.includes(welcome),
-    "WELCOME_LINES must match orgAgentWelcomeText()",
+    rust.includes(ORG_AGENT_FIRST_MESSAGE),
+    "WELCOME_LINES must match ORG_AGENT_FIRST_MESSAGE",
   );
-  assert.match(welcome, /^I draft for this organization/);
+  assert.match(ORG_AGENT_FIRST_MESSAGE, /^Hey, I'm glad to connect!/);
   assert.match(
-    welcome,
-    /Nothing I write changes the org until the right person agrees\./,
+    ORG_AGENT_FIRST_MESSAGE,
+    /Do you have time to set up your organization now\?$/,
   );
-  assert.doesNotMatch(welcome, /Are you shaping this alone/);
+  assert.doesNotMatch(ORG_AGENT_FIRST_MESSAGE, /Are you shaping this alone/);
 });
 
 test("a canned opening from the org agent is hidden; a person's line is not", () => {
   assert.equal(
     isCannedOrgAgentOpening(
-      { body: orgAgentWelcomeText(), signerPubkey: AGENT },
+      { body: ORG_AGENT_FIRST_MESSAGE, signerPubkey: AGENT },
+      AGENT,
+    ),
+    false,
+  );
+  assert.equal(
+    isCannedOrgAgentOpening(
+      {
+        body: [
+          "I draft for this organization — what it is for, the work, who decides, and your profile. You decide what becomes real. Nothing I write changes the org until the right person agrees.",
+          "",
+          "Direction — Mission, vision, where you stand, objectives, and strategy. I draft each one and say what's weak.",
+          "Work — Projects, tickets, and who should hold them. Only the named person accepts.",
+          "Shapers — Who decides, and how many of them must agree before something passes.",
+          "Profile — What you do, the work you want, and your links, so offers go to the right person.",
+          "Questions — Ask about anything the organization has already written down.",
+        ].join("\n"),
+        signerPubkey: AGENT,
+      },
       AGENT,
     ),
     true,
@@ -128,6 +144,7 @@ test("a canned opening from the org agent is hidden; a person's line is not", ()
     "utf8",
   );
   assert.match(intro, /data-testid="org-agent-opening"/);
-  assert.match(intro, /opening\.items\.map/);
+  assert.match(intro, /opening\.lead/);
+  assert.match(intro, /opening\.items\.length/);
   assert.doesNotMatch(intro, /opening\.prompt/);
 });

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { linesForDirectionPropose } from "./directionLines.ts";
+import {
+  linesForDirectionPropose,
+  presentStrategyDraft,
+  strategyLinesForPublish,
+} from "./directionLines.ts";
 
 test("a vague objective is not a proposal line", () => {
   const parsed = linesForDirectionPropose("objectives", "be more visible");
@@ -32,4 +36,52 @@ test("a strategy line keeps its type", () => {
   assert.deepEqual(parsed, {
     lines: [{ text: "No brand money", type: "refusal" }],
   });
+});
+
+test("a period after the type still counts, and the box leaves it out", () => {
+  const parsed = linesForDirectionPropose(
+    "strategy",
+    "No brand money. Type: refusal.",
+  );
+  assert.deepEqual(parsed, {
+    lines: [{ text: "No brand money", type: "refusal" }],
+  });
+  const presented = presentStrategyDraft(
+    [
+      "We bet the next task is what makes the app daily. Type: bet.",
+      "No brand money. Type: refusal.",
+    ],
+    [],
+  );
+  assert.deepEqual(presented, [
+    {
+      text: "We bet the next task is what makes the app daily",
+      type: "bet",
+    },
+    { text: "No brand money", type: "refusal" },
+  ]);
+  assert.deepEqual(
+    strategyLinesForPublish(
+      presented.map((line) => line.text).join("\n"),
+      presented.map((line) => line.type),
+    ),
+    { lines: presented },
+  );
+});
+
+test("a strategy line with no written type is a bet", () => {
+  const parsed = linesForDirectionPropose(
+    "strategy",
+    "Borrow a hall before we buy one.",
+  );
+  assert.deepEqual(parsed, {
+    lines: [{ text: "Borrow a hall before we buy one.", type: "bet" }],
+  });
+});
+
+test("a type marker on its own stays with the line before it", () => {
+  assert.deepEqual(
+    presentStrategyDraft(["No brand money.", "Type: refusal."], []),
+    [{ text: "No brand money.", type: "refusal" }],
+  );
 });

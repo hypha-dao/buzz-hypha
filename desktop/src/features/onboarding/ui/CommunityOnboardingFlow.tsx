@@ -23,9 +23,7 @@ import {
 } from "@/features/profile/ui/ProfileAvatarEditor";
 import { getProfile, updateProfile } from "@/shared/api/tauriProfiles";
 import { getIdentity, importIdentity } from "@/shared/api/tauriIdentity";
-import { listPersonas } from "@/shared/api/tauriPersonas";
 import { relayClient } from "@/shared/api/relayClient";
-import type { AgentPersona } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
@@ -52,12 +50,6 @@ function isRelayMembershipDeniedError(error: unknown): boolean {
     error.message.includes("invalid: you are not a relay member")
   );
 }
-
-const STARTER_PERSONA_ANIMATIONS: Record<string, string> = {
-  Fizz: "/onboarding/starter-team/fizz.png",
-  Honey: "/onboarding/starter-team/honey.png",
-  Pollen: "/onboarding/starter-team/pollen.png",
-};
 
 /** Fade duration for the "entering" curtain over the mounting app. */
 const ENTERING_CURTAIN_FADE_MS = 500;
@@ -125,12 +117,38 @@ function AvatarCircle({
   );
 }
 
+type WorkspaceEntryResult = {
+  focusChannelId?: string;
+  pubkey: string;
+};
+
+/**
+ * One in-flight workspace handoff per community transaction. StrictMode remounts
+ * the flow in development; both mounts await this promise so channel setup runs
+ * once and only the live mount applies the result.
+ */
+const workspaceRuns = new Map<string, Promise<WorkspaceEntryResult>>();
+
+function startWorkspaceRun(
+  transactionId: string,
+  run: () => Promise<WorkspaceEntryResult>,
+): Promise<WorkspaceEntryResult> {
+  const existing = workspaceRuns.get(transactionId);
+  if (existing) return existing;
+  const promise = run().catch((error: unknown) => {
+    workspaceRuns.delete(transactionId);
+    throw error;
+  });
+  workspaceRuns.set(transactionId, promise);
+  return promise;
+}
+
 function LoadingDots({ label }: { label: string }) {
   return (
     <span
       aria-label={label}
       className="inline-flex items-center justify-center gap-1"
-      data-testid="community-team-intro-loading-dots"
+      data-testid="community-workspace-loading"
       role="status"
     >
       {[0, 1, 2].map((index) => (
@@ -173,9 +191,6 @@ export function CommunityOnboardingFlow({
   const [animatedPreviewCaption, setAnimatedPreviewCaption] = React.useState<
     string | null
   >(null);
-  const [starterPersonas, setStarterPersonas] = React.useState<AgentPersona[]>(
-    [],
-  );
   const [isPending, setIsPending] = React.useState(false);
   const checkedProfileTransactionRef = React.useRef<string | null>(null);
   const [starterChannelFailureCount, setStarterChannelFailureCount] =
@@ -193,28 +208,6 @@ export function CommunityOnboardingFlow({
   const animateEmojiAvatarChange = React.useCallback(() => {
     setAvatarSquishKey((key) => key + 1);
   }, []);
-
-  // Also fetch on "entering": the curtain is a fresh mount of this component,
-  // so the team-intro fetch from the pre-curtain instance isn't in this state.
-  const isTeamIntroVisible =
-    transaction?.stage === "team-intro" ||
-    transaction?.stage === "finalizing" ||
-    transaction?.stage === "entering";
-  React.useEffect(() => {
-    if (!isTeamIntroVisible) return;
-    void listPersonas()
-      .then((personas) =>
-        setStarterPersonas(
-          ["Fizz", "Honey", "Pollen"].flatMap((name) => {
-            const persona = personas.find(
-              (candidate) => candidate.displayName === name,
-            );
-            return persona ? [persona] : [];
-          }),
-        ),
-      )
-      .catch(() => setStarterPersonas([]));
-  }, [isTeamIntroVisible]);
 
   useClaimInvite();
 
@@ -262,49 +255,89 @@ export function CommunityOnboardingFlow({
     markCommunityOnboardingComplete(identity.pubkey, relayUrl);
     clear();
   }, [clear, relayUrl]);
-  const finalize = React.useCallback(async () => {
-    if (isPending || !relayUrl) return;
-    setIsPending(true);
-    update({ stage: "finalizing", error: undefined });
-    try {
-      const identity = await getIdentity();
-      const result = await initializeStarterChannels(queryClient, {
-        focus: true,
-        pubkey: identity.pubkey,
-        communityScope: relayUrl,
-      });
-      if (!result.ok) throw new Error(result.reason);
-      if (result.focusChannelId) {
-        // Direct entry: point the router at the Personal Assistant DM (or
-        // #welcome-everyone if PA failed) *before* the app mounts, so it never
-        // lands on Home first. Consume the pending entry — it exists for the
-        // Home-route fallback, and leaving it would yank a later Home visit.
-        takePendingWelcomeChannelForDirectEntry();
-        window.location.hash = `/channels/${result.focusChannelId}`;
-        markCommunityOnboardingComplete(identity.pubkey, relayUrl);
-        // Keep this screen mounted as a curtain over the loading app; the
-        // "entering" stage fades it out once the focus channel reports ready.
-        update({ stage: "entering", error: undefined });
-        return;
-      }
-      await finish();
-    } catch (error) {
-      setStarterChannelFailureCount((count) => count + 1);
-      update({
-        error: error instanceof Error ? error.message : String(error),
-      });
-      setIsPending(false);
+
+  const isProfileStage = transaction?.stage === "profile";
+  const isHandoffStage =
+    transaction?.stage === "team-intro" ||
+    transaction?.stage === "finalizing" ||
+    transaction?.stage === "entering";
+
+  // Profile save, an existing relay profile, and a persisted team-intro
+  // transaction all land here. The sample-agent screen is gone; this opens
+  // the workspace directly and keeps the onboarding shell as a curtain.
+  React.useEffect(() => {
+    if (!transaction || !relayUrl) return;
+    if (
+      transaction.stage !== "team-intro" &&
+      transaction.stage !== "finalizing"
+    ) {
+      return;
     }
-  }, [finish, isPending, queryClient, relayUrl, update]);
+    if (transaction.error) return;
+
+    let active = true;
+    const transactionId = transaction.id;
+    void (async () => {
+      try {
+        const identity = await getIdentity();
+        const result = await startWorkspaceRun(transactionId, async () => {
+          const channelResult = await initializeStarterChannels(queryClient, {
+            focus: true,
+            pubkey: identity.pubkey,
+            communityScope: relayUrl,
+          });
+          if (!channelResult.ok) throw new Error(channelResult.reason);
+          return {
+            focusChannelId: channelResult.focusChannelId,
+            pubkey: identity.pubkey,
+          };
+        });
+        if (!active) return;
+        if (result.focusChannelId) {
+          // Point the router at the focus channel before the app mounts, so
+          // it never lands on Home first. Consume the pending entry — it
+          // exists for the Home-route fallback, and leaving it would yank a
+          // later Home visit.
+          takePendingWelcomeChannelForDirectEntry();
+          window.location.hash = `/channels/${result.focusChannelId}`;
+          markCommunityOnboardingComplete(result.pubkey, relayUrl);
+          update({ stage: "entering", error: undefined }, transactionId);
+          return;
+        }
+        markCommunityOnboardingComplete(result.pubkey, relayUrl);
+        clear();
+      } catch (error) {
+        if (!active) return;
+        setStarterChannelFailureCount((count) => count + 1);
+        update(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          transactionId,
+        );
+        setIsPending(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [clear, queryClient, relayUrl, transaction, update]);
+
+  const retryWorkspace = React.useCallback(() => {
+    if (!transaction || isPending) return;
+    setIsPending(true);
+    update({ stage: "finalizing", error: undefined }, transaction.id);
+  }, [isPending, transaction, update]);
 
   const backToProfile = React.useCallback(() => {
-    if (isPending) return;
+    if (isPending || !transaction) return;
+    workspaceRuns.delete(transaction.id);
     setStarterChannelFailureCount(0);
     setTransitionDirection("backward");
     update({ stage: "profile", error: undefined });
-  }, [isPending, update]);
+  }, [isPending, transaction, update]);
 
-  const isProfileStage = transaction?.stage === "profile";
   React.useEffect(() => {
     if (!isProfileStage || !transaction) return;
     if (checkedProfileTransactionRef.current === transaction.id) return;
@@ -314,7 +347,7 @@ export function CommunityOnboardingFlow({
       .then((profile) => {
         if (profile.hasProfileEvent) {
           setTransitionDirection("forward");
-          update({ stage: "team-intro", error: undefined }, transaction.id);
+          update({ stage: "finalizing", error: undefined }, transaction.id);
         }
       })
       .catch(() => {
@@ -322,10 +355,6 @@ export function CommunityOnboardingFlow({
         // existing path when the relay cannot answer the lookup.
       });
   }, [isProfileStage, transaction, update]);
-  const isTeamStage =
-    transaction?.stage === "team-intro" ||
-    transaction?.stage === "finalizing" ||
-    transaction?.stage === "entering";
 
   // Seed display name and avatar from the relay profile when the profile step
   // is shown. This covers the case where the skip raced or was bypassed (e.g.,
@@ -450,7 +479,7 @@ export function CommunityOnboardingFlow({
         throw error;
       }
       setTransitionDirection("forward");
-      update({ stage: "team-intro", error: undefined });
+      update({ stage: "finalizing", error: undefined });
     } catch (error) {
       if (isRelayMembershipDeniedError(error)) {
         try {
@@ -472,7 +501,7 @@ export function CommunityOnboardingFlow({
     <div
       className={cn(
         "buzz-onboarding-neutral-theme buzz-startup-shell flex h-dvh justify-center overflow-y-auto px-4 text-foreground",
-        isProfileStage || isTeamStage
+        isProfileStage || isHandoffStage
           ? "items-start pb-36 pt-[106px]"
           : "items-stretch",
         isCurtainFading &&
@@ -487,8 +516,8 @@ export function CommunityOnboardingFlow({
       }
     >
       <StartupWindowDragRegion />
-      {isProfileStage || isTeamStage ? (
-        <OnboardingChrome current={isTeamStage ? 7 : 6} />
+      {isProfileStage || isHandoffStage ? (
+        <OnboardingChrome current={4} />
       ) : null}
       <OnboardingFooterProvider
         backAction={
@@ -498,27 +527,25 @@ export function CommunityOnboardingFlow({
                 onClick: onCancel,
                 testId: "community-profile-back",
               }
-            : isTeamStage
+            : isHandoffStage && transaction.error
               ? {
-                  disabled: isPending || transaction.stage === "entering",
+                  disabled: isPending,
                   onClick: backToProfile,
-                  testId: "community-team-intro-back",
+                  testId: "community-workspace-back",
                 }
               : undefined
         }
       >
         <OnboardingSlideTransition
           direction={transitionDirection}
-          transitionKey={`community-${isProfileStage ? "profile" : isTeamStage ? "team" : transaction.stage}-${transitionDirection}`}
+          transitionKey={`community-${isProfileStage ? "profile" : isHandoffStage ? "handoff" : transaction.stage}-${transitionDirection}`}
         >
           <div
             className={cn(
               "relative mx-auto w-full text-center",
-              isProfileStage
+              isProfileStage || isHandoffStage
                 ? "buzz-onboarding-step-frame flex max-w-[500px] flex-col items-center"
-                : isTeamStage
-                  ? "buzz-onboarding-step-frame flex max-w-[760px] flex-col items-center"
-                  : "flex min-h-dvh max-w-[560px] flex-col justify-center py-8",
+                : "flex min-h-dvh max-w-[560px] flex-col justify-center py-8",
             )}
             data-testid="community-onboarding-body"
           >
@@ -748,77 +775,43 @@ export function CommunityOnboardingFlow({
             ) : (
               <>
                 <h1 className="text-title font-normal">
-                  Meet your starter team
+                  {transaction.error
+                    ? "Couldn’t finish setup"
+                    : "Taking you to Hypha"}
                 </h1>
-                <p className="mx-auto mt-3 max-w-[400px] text-sm leading-6 text-foreground/80">
-                  Hypha lets you bring multiple agents into the same workspace.
-                  Your team will help you get started using Hypha.
-                </p>
-                <div className="flex w-full flex-1 items-center justify-center py-10">
-                  {starterPersonas.length > 0 ? (
-                    <div className="flex flex-wrap justify-center gap-8">
-                      {starterPersonas.map((persona) => {
-                        const animationUrl =
-                          STARTER_PERSONA_ANIMATIONS[persona.displayName];
-                        return (
-                          <div
-                            className="flex w-40 flex-col items-center gap-3"
-                            key={persona.id}
-                          >
-                            {animationUrl ? (
-                              <img
-                                alt={`${persona.displayName} animated character`}
-                                className="h-40 w-40 object-contain"
-                                data-testid={`starter-persona-${persona.displayName.toLowerCase()}`}
-                                src={animationUrl}
-                              />
-                            ) : (
-                              <ProfileAvatar
-                                avatarUrl={persona.avatarUrl}
-                                className="h-28 w-28 text-3xl"
-                                label={persona.displayName}
-                              />
-                            )}
-                            <span className="font-mono text-xs font-medium uppercase tracking-[0.15em]">
-                              {persona.displayName}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </div>
                 {transaction.error ? (
-                  <p className="text-sm text-destructive">
+                  <p className="mx-auto mt-3 max-w-[400px] text-sm leading-6 text-destructive">
                     {transaction.error}
                     {starterChannelFailureCount === 1 ? " Try again." : null}
                   </p>
-                ) : null}
-                <OnboardingFooter>
-                  <Button
-                    className={ONBOARDING_PRIMARY_CTA_CLASS}
-                    data-testid="community-team-intro-enter"
-                    disabled={isPending || transaction.stage === "entering"}
-                    onClick={() => void finalize()}
-                  >
-                    {isPending || transaction.stage === "entering" ? (
-                      <LoadingDots label="Preparing Welcome" />
-                    ) : (
-                      "Take me to Hypha"
-                    )}
-                  </Button>
-                  {starterChannelFailureCount >= 2 ? (
+                ) : (
+                  <div className="mt-8">
+                    <LoadingDots label="Preparing Hypha" />
+                  </div>
+                )}
+                {transaction.error ? (
+                  <OnboardingFooter>
                     <Button
-                      className="h-9 rounded-full px-5 hover:bg-foreground/10"
-                      data-testid="community-team-intro-skip"
-                      disabled={isPending || transaction.stage === "entering"}
-                      onClick={() => void finish()}
-                      variant="ghost"
+                      className={ONBOARDING_PRIMARY_CTA_CLASS}
+                      data-testid="community-workspace-retry"
+                      disabled={isPending}
+                      onClick={retryWorkspace}
                     >
-                      Skip for now
+                      Try again
                     </Button>
-                  ) : null}
-                </OnboardingFooter>
+                    {starterChannelFailureCount >= 2 ? (
+                      <Button
+                        className="h-9 rounded-full px-5 hover:bg-foreground/10"
+                        data-testid="community-workspace-skip"
+                        disabled={isPending}
+                        onClick={() => void finish()}
+                        variant="ghost"
+                      >
+                        Skip for now
+                      </Button>
+                    ) : null}
+                  </OnboardingFooter>
+                ) : null}
               </>
             )}
           </div>

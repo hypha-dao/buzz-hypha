@@ -178,8 +178,8 @@ export function useMachineOnboardingState({
       );
       // Clear the "continuing" marker so completion actually settles the flow.
       // Imported/recovered identities set continuingPubkeyRef to pin the stage
-      // to "onboarding" until setup finishes; leaving it set after complete()
-      // keeps the stage pinned forever, so Skip/Next appear to do nothing.
+      // to "onboarding" until complete() runs; leaving it set keeps the stage
+      // pinned forever.
       continuingPubkeyRef.current = null;
       setCompletedPubkey(pubkey);
     },
@@ -227,7 +227,7 @@ export function useMachineOnboardingState({
       identityQuery.fetchStatus === "fetching",
     ) ||
     !currentPubkey ||
-    // Imported identities are published before the flow can advance to setup.
+    // Imported identities are published before the flow can finish.
     // Keep that explicitly requested identity switch in onboarding; only the
     // startup identity needs the one-render evaluation gate above.
     (!hasCompletedCurrentPubkey &&

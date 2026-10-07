@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classifyEvent, classifyMyWork, kickerFor } from "./classify.ts";
+import {
+  cardOpenItemId,
+  classifyEvent,
+  classifyMyWork,
+  kickerFor,
+} from "./classify.ts";
 import { claimOf, proposalVoteMarks, receiptsOf } from "./parse.ts";
 
 const ORG_AGENT_PUBKEY =
@@ -69,6 +74,69 @@ test("kickers: asking / suggesting / drafted", () => {
   ]);
   assert.equal(kickerFor(drafted, ctx, null).text, "Drafted by the agent");
   assert.equal(kickerFor(drafted, ctx, null).kind, "drafted");
+});
+
+test("a ticket draft opens its own page, not the project", () => {
+  const draftId = "ab".repeat(32);
+  const draft = classifyEvent(
+    event(
+      50100,
+      {
+        parent: ITEM,
+        title: "Define how the AI picks the next task",
+        brief: "Write the rule.",
+      },
+      [
+        ["n", ME],
+        ["t", "ticket"],
+        ["u", ITEM],
+      ],
+      draftId,
+    ),
+    ctx,
+  );
+  assert.equal(draft?.draftKind, "ticket");
+  assert.equal(draft?.parentId, ITEM);
+  assert.equal(cardOpenItemId(draft), draftId);
+});
+
+test("a settled ticket draft leaves Needs your answer", () => {
+  const draftId = "ab".repeat(32);
+  const draft = event(
+    50100,
+    { parent: ITEM, title: "Define how the AI picks the next task" },
+    [
+      ["n", ME],
+      ["t", "ticket"],
+      ["u", ITEM],
+    ],
+    draftId,
+  );
+  const open = event(
+    39104,
+    { status: "open" },
+    [
+      ["d", draftId],
+      ["s", "open"],
+    ],
+    "11".repeat(32),
+  );
+  open.created_at = 10;
+  const amended = event(
+    39104,
+    { status: "amended" },
+    [
+      ["d", draftId],
+      ["s", "amended"],
+    ],
+    "22".repeat(32),
+  );
+  amended.created_at = 20;
+  assert.equal(classifyMyWork([draft, open], ctx).needs_answer.length, 1);
+  assert.equal(
+    classifyMyWork([draft, open, amended], ctx).needs_answer.length,
+    0,
+  );
 });
 
 test("each card type from 50100 / 39101 / 39102", () => {

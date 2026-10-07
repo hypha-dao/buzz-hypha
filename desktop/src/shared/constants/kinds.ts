@@ -95,6 +95,7 @@ export const KIND_IO_PROPOSAL = 39102;
 export const KIND_IO_SHAPERS = 39103;
 export const KIND_IO_DRAFT_OUTCOME = 39104;
 export const KIND_IO_PROFILE = 39105;
+export const KIND_IO_KNOWLEDGE = 39106;
 // Commands (person-signed, executed transactionally by the relay).
 export const KIND_IO_SHAPERS_PROPOSE = 50001;
 export const KIND_IO_DIRECTION_PROPOSE = 50002;
@@ -119,6 +120,7 @@ export const KIND_IO_SHAPER_STEP_DOWN = 50020;
 export const KIND_IO_PROFILE_SET = 50021;
 export const KIND_IO_WITHDRAW = 50022;
 export const KIND_IO_WITHDRAW_PROPOSE = 50023;
+export const KIND_IO_KNOWLEDGE_SET = 50024;
 // Drafts and reads (agent- or person-signed; never change state).
 export const KIND_IO_DRAFT = 50100;
 export const KIND_IO_HEALTH = 50101;

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use buzz_core::intelligent_org::{
     DirectionArtifact, DirectionSlug, DraftKind, DraftOutcome, DraftPayload, HealthRead,
-    OrgProfile, ProgressNote, Proposal, Shapers, WorkItem, WorkItemState,
+    OrgProfile, PlanStep, ProgressNote, Proposal, Shapers, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_DRAFT, KIND_IO_HEALTH, KIND_IO_PROGRESS, KIND_IO_VOTE,
@@ -146,6 +146,9 @@ pub struct OrgState {
     pub seen: BTreeSet<String>,
     /// When false, [`apply`] updates the mirror and emits nothing.
     pub live: bool,
+    /// Step lists written for a held project whose proposal had none.
+    /// Not an event. A later restart reads the same list off ticket coverage.
+    pub plans: BTreeMap<String, Vec<PlanStep>>,
 }
 
 impl OrgState {

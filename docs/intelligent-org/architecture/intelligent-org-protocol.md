@@ -93,6 +93,7 @@ Rules that follow from the shape:
 | `39103`   | `shapers`                                      | The **Shaper set** and decision rules     |
 | `39104`   | draft event id                                 | The **outcome** of one draft (L4)         |
 | `39105`   | member pubkey                                  | One member's **org profile** — about, skills, limit |
+| `39106`   | `codebases`                                    | The org **codebases** list — repositories and the landing page |
 
 All are `is_relay_only_kind`: a client `EVENT` of these kinds is rejected.
 All are `is_global_only_kind`. Tags on each state event are chosen so that
@@ -126,6 +127,7 @@ without a new HTTP endpoint (see §6).
 | `50021` | `io_profile_set`      | any member, for themselves only                      | replace their own org profile — about, skills, limit; emit 39105 |
 | `50022` | `io_withdraw`         | the only seated Shaper, for a project; a ticket's creator or the person who offered it | item and its descendants → `withdrawn`; the project's home room is archived; events stay |
 | `50023` | `io_withdraw_propose` | a Shaper, and only when more than one Shaper is seated | open a `withdraw` proposal for a project (39102); uses the `project` decision rule |
+| `50024` | `io_knowledge_set`    | a seated Shaper                                      | open a `codebases` proposal (`39102`). The direction rule decides it. Passing replaces the codebases list (`39106`, `d` = `codebases`). It does not version strategy |
 
 `50013`/`50014` and `50016` are **not implemented in the first version**:
 the relay rejects them with `restricted: money not enabled` /
@@ -427,11 +429,13 @@ Tags: `["d", "shapers"]`, one `["p", <pubkey>]` per Shaper.
 ```
 
 `rules` values: `majority` (more than half of `eligible`), `all` (every
-eligible Shaper), or an integer `N ≥ 1` (at least N of `eligible`; capped at
-`eligible.len()` when resolved). `majority` is the default for every kind.
-The relay resolves the rule to `needed` when the proposal opens and stores
-it; a Shaper change afterwards does not move the bar. With one eligible
-Shaper every rule resolves to 1.
+eligible Shaper), an integer `N ≥ 1` (at least N of `eligible`; capped at
+`eligible.len()` when resolved), or a share `"3/5"` (that fraction of whoever
+is seated when a proposal opens, rounded up). `majority` is the default for
+every kind. The relay resolves the rule to `needed` when the proposal opens
+and stores it; a Shaper change afterwards does not move the bar on that open
+proposal. The next proposal resolves the same share against the new count.
+With one eligible Shaper every rule resolves to 1.
 
 A change to `rules`, `decision_window_secs`, or `offer_window_secs` is a
 `shapers` proposal with `op=rules`, and it **always** passes under `all`,

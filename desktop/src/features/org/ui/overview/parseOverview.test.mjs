@@ -3,9 +3,9 @@ import test from "node:test";
 
 import {
   collectOverviewPubkeys,
-  contextRows,
   directionHistory,
   directionSlots,
+  parseCodebases,
   parseShapersState,
   parseTallyNote,
   projectHolds,
@@ -375,6 +375,74 @@ test("an objectives line keeps done when and a missing situation stays missing",
   const slots = directionSlots(events);
   const line = slots.find((slot) => slot.slug === "objectives")?.head?.lines[0];
   assert.equal(line?.doneWhen, "the hall has hosted a weekday night");
-  const situation = contextRows(events).find((row) => row.id === "situation");
-  assert.equal(situation?.ready, false);
+  const situation = slots.find((slot) => slot.slug === "situation");
+  assert.equal(situation?.head, null);
+});
+
+test("codebases is its own list and the newest head wins", () => {
+  assert.equal(parseCodebases([]), null);
+  const items = parseCodebases([
+    event(
+      39106,
+      {
+        slug: "codebases",
+        version: 1,
+        items: [
+          {
+            id: "old",
+            kind: "repository",
+            name: "old",
+            url: "https://github.com/hypha-dao/old",
+            about: "retired",
+          },
+        ],
+      },
+      [["d", "codebases"]],
+      10,
+    ),
+    event(
+      39106,
+      {
+        slug: "codebases",
+        version: 2,
+        items: [
+          {
+            id: "buzz-hypha",
+            kind: "repository",
+            name: "buzz-hypha",
+            url: "https://github.com/hypha-dao/buzz-hypha",
+            about: "The product",
+          },
+          {
+            id: "site",
+            kind: "site",
+            name: "",
+            url: "",
+            about: "no landing page yet",
+          },
+        ],
+      },
+      [["d", "codebases"]],
+      20,
+    ),
+    event(39100, { slug: "strategy", version: 1, body: "How." }, [
+      ["d", "strategy"],
+    ]),
+  ]);
+  assert.deepEqual(items, [
+    {
+      id: "buzz-hypha",
+      kind: "repository",
+      name: "buzz-hypha",
+      url: "https://github.com/hypha-dao/buzz-hypha",
+      about: "The product",
+    },
+    {
+      id: "site",
+      kind: "site",
+      name: "",
+      url: "",
+      about: "no landing page yet",
+    },
+  ]);
 });

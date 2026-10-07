@@ -117,12 +117,14 @@ test("key view reveals explicitly; options copy explicitly", async ({
   expect(await invokedCommands(page)).toContain("get_nsec");
 
   // Return restores the yellow key-created view; its Next skips backup and
-  // continues directly to setup.
+  // continues to community choice.
   await page.getByTestId("backup-return-to-onboarding").click();
   await expect(page.getByTestId("onboarding-page-backup")).toBeVisible();
   await expect(page.getByTestId("onboarding-next")).toBeEnabled();
   await page.getByTestId("onboarding-next").click();
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -265,7 +267,9 @@ test("download happy path: generated password, encrypt, native save, Next", asyn
   await expect(page.getByTestId("onboarding-page-backup")).toBeVisible();
   await expect(page.getByTestId("onboarding-next")).toBeEnabled();
   await page.getByTestId("onboarding-next").click();
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
 });
 
 test("security view returns to the yellow onboarding view", async ({
@@ -366,10 +370,12 @@ test("reveal shows inline error when get_nsec fails and Next still advances", as
 
   await expect(page.getByTestId("backup-copy-error")).toBeVisible();
   // Keychain failure does not trap the user: Next still skips backup and
-  // advances directly to setup.
+  // advances to community choice.
   await expect(page.getByTestId("onboarding-next")).toBeEnabled();
   await page.getByTestId("onboarding-next").click();
-  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Join or create a community" }),
+  ).toBeVisible();
 });
 
 test("reveal retry succeeds after initial failure", async ({ page }) => {

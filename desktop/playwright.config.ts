@@ -154,7 +154,6 @@ export default defineConfig({
         "**/doctor-states.spec.ts",
         "**/onboarding-avatar-skip.spec.ts",
         "**/onboarding-backup.spec.ts",
-        "**/onboarding-agent-defaults.spec.ts",
         "**/nostr-bind.spec.ts",
         "**/mobile-pairing-qr.spec.ts",
         "**/profile-nsec-reveal.spec.ts",

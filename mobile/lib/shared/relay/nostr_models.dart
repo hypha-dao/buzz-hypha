@@ -59,6 +59,7 @@ abstract final class EventKind {
   static const ioShapers = 39103;
   static const ioDraftOutcome = 39104;
   static const ioProfile = 39105;
+  static const ioKnowledge = 39106;
   // Commands (person-signed, executed transactionally by the relay).
   static const ioShapersPropose = 50001;
   static const ioDirectionPropose = 50002;
@@ -83,6 +84,7 @@ abstract final class EventKind {
   static const ioProfileSet = 50021;
   static const ioWithdraw = 50022;
   static const ioWithdrawPropose = 50023;
+  static const ioKnowledgeSet = 50024;
   // Drafts and reads (agent- or person-signed; never change state).
   static const ioDraft = 50100;
   static const ioHealth = 50101;

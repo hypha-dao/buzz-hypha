@@ -33,6 +33,7 @@ import { Textarea } from "@/shared/ui/textarea";
 import {
   announcementLabel,
   commandForDraft,
+  directionChunks,
   directionDraftText,
   dateInputToUnix,
   dateInputValue,
@@ -42,10 +43,17 @@ import {
   proposalAnnouncement,
   RULE_KINDS,
   type ChatDraft,
+  type CodebaseItem,
   type RuleKind,
 } from "../chatDraft";
 import { publishOrgCommand, type DirectionSlug } from "../commands";
-import { linesForDirectionPropose } from "../directionLines";
+import {
+  linesForDirectionPropose,
+  presentStrategyDraft,
+  readStrategyLine,
+  strategyLinesForPublish,
+  type StrategyLineType,
+} from "../directionLines";
 
 import { useOverviewEvents } from "../hooks/useOverviewEvents";
 import { useOrgAgentPubkey } from "../useOrgAgent";
@@ -112,12 +120,18 @@ export function ProposalDraftDialog({
   const [title, setTitle] = React.useState("");
   const [brief, setBrief] = React.useState("");
   const [body, setBody] = React.useState("");
+  const [strategyTypes, setStrategyTypes] = React.useState<StrategyLineType[]>(
+    [],
+  );
   const [dueValue, setDueValue] = React.useState("");
   const [rules, setRules] = React.useState(emptyRules);
   const [decisionDays, setDecisionDays] = React.useState("");
   const [offerDays, setOfferDays] = React.useState("");
   const [agentPubkey, setAgentPubkey] = React.useState("");
   const [holder, setHolder] = React.useState("");
+  const [codebaseItems, setCodebaseItems] = React.useState<
+    (CodebaseItem & { key: string })[]
+  >([]);
   const [dirty, setDirty] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -173,13 +187,40 @@ export function ProposalDraftDialog({
       const head = directionSlots(overview.events).find(
         (slot) => slot.slug === draft.slug,
       )?.head;
-      const existing =
-        draft.kind === "direction" && lined(draft.slug) && head
-          ? head.lines.map((line) => line.text).filter(Boolean)
-          : [];
-      setBody(directionDraftText(draft.slug, draft.body, existing));
+      if (draft.slug === "strategy") {
+        const existing =
+          draft.kind === "direction" && head
+            ? head.lines.filter((line) => line.text)
+            : [];
+        const presented = presentStrategyDraft(
+          directionChunks("strategy", draft.body),
+          existing,
+        );
+        const seeded =
+          presented.length > 0
+            ? presented
+            : [{ text: "", type: "bet" as const }];
+        setBody(seeded.map((line) => line.text).join("\n"));
+        setStrategyTypes(seeded.map((line) => line.type));
+      } else {
+        const existing =
+          draft.kind === "direction" && lined(draft.slug) && head
+            ? head.lines.map((line) => line.text).filter(Boolean)
+            : [];
+        setBody(directionDraftText(draft.slug, draft.body, existing));
+        setStrategyTypes([]);
+      }
       setTitle("");
       setBrief("");
+      return;
+    }
+    if (draft.kind === "codebases") {
+      setCodebaseItems(
+        draft.items.map((item) => ({ ...item, key: crypto.randomUUID() })),
+      );
+      setTitle("");
+      setBrief("");
+      setBody("");
       return;
     }
     if (draft.kind === "shapers-rules") {
@@ -255,9 +296,12 @@ export function ProposalDraftDialog({
     try {
       const linedSlug =
         slug === "objectives" || slug === "strategy" ? slug : null;
-      const parsed = linedSlug
-        ? linesForDirectionPropose(linedSlug, body)
-        : null;
+      const parsed =
+        linedSlug === "strategy"
+          ? strategyLinesForPublish(body, strategyTypes)
+          : linedSlug
+            ? linesForDirectionPropose(linedSlug, body)
+            : null;
       if (parsed && "error" in parsed) {
         setError(parsed.error);
         setBusy(false);
@@ -282,6 +326,15 @@ export function ProposalDraftDialog({
             suggestedDri:
               draft.kind === "project" ? holder.trim() || null : undefined,
             holder: draft.kind === "dri" ? holder.trim() : undefined,
+            codebases:
+              draft.kind === "codebases"
+                ? codebaseItems.map(({ kind, name, url, about }) => ({
+                    kind,
+                    name,
+                    url,
+                    about,
+                  }))
+                : undefined,
           }),
         );
         publishedCommand.current = command.id;
@@ -333,7 +386,9 @@ export function ProposalDraftDialog({
           <DialogDescription>
             {draft.kind === "dri"
               ? "Choose who holds this project. Publish asks the Shapers to name them."
-              : "Change the fields here, or tell the agent in the chat. Publish when it is right. It then shows on My work for every Shaper, and in the Shapers chat."}
+              : draft.kind === "codebases"
+                ? "Each repository is a name, a link, and one line on what it is. The landing page is one link on this list. Publish opens a proposal. Strategy stays as it is."
+                : "Change the fields here, or tell the agent in the chat. Publish when it is right. It then shows on My work for every Shaper, and in the Shapers chat."}
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-3" onSubmit={(event) => void onPublish(event)}>
@@ -392,10 +447,21 @@ export function ProposalDraftDialog({
             lined(draft.slug) ? (
               <LinedDraftFields
                 body={body}
+                lineTypes={
+                  draft.slug === "strategy" ? strategyTypes : undefined
+                }
                 onChange={(next) => {
                   setDirty(true);
                   setBody(next);
                 }}
+                onLineTypes={
+                  draft.slug === "strategy"
+                    ? (next) => {
+                        setDirty(true);
+                        setStrategyTypes(next);
+                      }
+                    : undefined
+                }
                 readOnly={!canPublish}
                 slug={draft.slug}
               />
@@ -507,6 +573,66 @@ export function ProposalDraftDialog({
               </Field>
             </>
           ) : null}
+          {draft.kind === "codebases"
+            ? codebaseItems.map((item, index) => (
+                <div className="space-y-2" key={item.key}>
+                  <Field
+                    id={`org-draft-codebase-name-${index}`}
+                    label={item.kind === "site" ? "Landing page" : "Repository"}
+                  >
+                    <Input
+                      id={`org-draft-codebase-name-${index}`}
+                      onChange={(event) => {
+                        const name = event.target.value;
+                        setDirty(true);
+                        setCodebaseItems((current) =>
+                          current.map((row, rowIndex) =>
+                            rowIndex === index ? { ...row, name } : row,
+                          ),
+                        );
+                      }}
+                      readOnly={!canPublish}
+                      value={item.name}
+                    />
+                  </Field>
+                  <Field id={`org-draft-codebase-url-${index}`} label="Link">
+                    <Input
+                      id={`org-draft-codebase-url-${index}`}
+                      onChange={(event) => {
+                        const url = event.target.value;
+                        setDirty(true);
+                        setCodebaseItems((current) =>
+                          current.map((row, rowIndex) =>
+                            rowIndex === index ? { ...row, url } : row,
+                          ),
+                        );
+                      }}
+                      readOnly={!canPublish}
+                      value={item.url}
+                    />
+                  </Field>
+                  <Field
+                    id={`org-draft-codebase-about-${index}`}
+                    label="What it is"
+                  >
+                    <Input
+                      id={`org-draft-codebase-about-${index}`}
+                      onChange={(event) => {
+                        const about = event.target.value;
+                        setDirty(true);
+                        setCodebaseItems((current) =>
+                          current.map((row, rowIndex) =>
+                            rowIndex === index ? { ...row, about } : row,
+                          ),
+                        );
+                      }}
+                      readOnly={!canPublish}
+                      value={item.about}
+                    />
+                  </Field>
+                </div>
+              ))
+            : null}
           {dirty && seeded.current !== draft.messageId ? (
             <p className="text-sm text-muted-foreground">
               The agent updated this draft. Your edits are still here.
@@ -789,12 +915,16 @@ function draftLines(body: string): string[] {
 
 function LinedDraftFields({
   body,
+  lineTypes,
   onChange,
+  onLineTypes,
   readOnly,
   slug,
 }: {
   body: string;
+  lineTypes?: readonly StrategyLineType[];
   onChange: (body: string) => void;
+  onLineTypes?: (types: StrategyLineType[]) => void;
   readOnly: boolean;
   slug: DirectionSlug;
 }) {
@@ -803,12 +933,28 @@ function LinedDraftFields({
   const lines = draftLines(body);
   const setLine = (index: number, value: string) => {
     const next = [...lines];
+    if (slug === "strategy") {
+      const read = readStrategyLine(value);
+      next[index] = read.type ? read.text : value;
+      onChange(next.join("\n"));
+      if (read.type && onLineTypes) {
+        const nextTypes = [...(lineTypes ?? [])];
+        while (nextTypes.length < next.length) nextTypes.push("bet");
+        nextTypes[index] = read.type;
+        onLineTypes(nextTypes.slice(0, next.length));
+      }
+      return;
+    }
     next[index] = value;
     onChange(next.join("\n"));
   };
   const removeLine = (index: number) => {
     const next = lines.filter((_, at) => at !== index);
-    onChange((next.length > 0 ? next : [""]).join("\n"));
+    const kept = next.length > 0 ? next : [""];
+    onChange(kept.join("\n"));
+    if (!onLineTypes) return;
+    const nextTypes = (lineTypes ?? []).filter((_, at) => at !== index);
+    onLineTypes(nextTypes.length > 0 ? nextTypes : ["bet"]);
   };
 
   return (
@@ -843,7 +989,10 @@ function LinedDraftFields({
       {readOnly ? null : (
         <Button
           data-testid="org-draft-line-add"
-          onClick={() => onChange([...lines, ""].join("\n"))}
+          onClick={() => {
+            onChange([...lines, ""].join("\n"));
+            onLineTypes?.([...(lineTypes ?? []), "bet"]);
+          }}
           type="button"
           variant="outline"
         >

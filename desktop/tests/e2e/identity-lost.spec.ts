@@ -263,7 +263,7 @@ test("canceling recovery uses the standard pairing cancellation state", async ({
     .toBeGreaterThan(0);
 });
 
-test("phone recovery continues to harness setup without creating or restarting", async ({
+test("phone recovery continues without creating or restarting", async ({
   page,
 }) => {
   await installMockBridge(
@@ -282,7 +282,7 @@ test("phone recovery continues to harness setup without creating or restarting",
   });
 
   await expect(
-    page.getByRole("heading", { name: "Set up your agent harnesses" }),
+    page.getByRole("heading", { name: "Join or create a community" }),
   ).toBeVisible();
   await expect(page.getByTestId("relaunch-required")).toHaveCount(0);
   await expect(

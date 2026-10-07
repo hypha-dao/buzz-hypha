@@ -3,9 +3,12 @@ import { Link } from "@tanstack/react-router";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import type { RelayEvent } from "@/shared/api/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 
+import { ActionButton, DeclineChips } from "../../cards/CardActions";
+import type { DeclineReason } from "../../cards/types";
 import { useOrgCommands } from "../../useOrgCommands";
 import { OrgMotionFrame, motionDelay } from "../OrgMotionFrame";
 import {
@@ -17,6 +20,7 @@ import {
   canChangeTicketDue,
   canMarkDone,
   contextPaths,
+  countsForList,
   formatChildrenCounts,
   formatWorkDate,
   homeChannel,
@@ -39,6 +43,8 @@ type WorkItemViewProps = {
   prompt: WorkPrompt | null;
   repositories: readonly LinkedRepository[];
   repoCommit?: string | null;
+  /** The `50100` when this page is an offered ticket that is not a work item yet. */
+  draft?: RelayEvent | null;
 };
 
 export function WorkItemView({
@@ -49,6 +55,7 @@ export function WorkItemView({
   prompt,
   repositories,
   repoCommit = null,
+  draft = null,
 }: WorkItemViewProps) {
   const viewer = useIdentityQuery().data?.pubkey ?? null;
   const commands = useOrgCommands();
@@ -65,6 +72,10 @@ export function WorkItemView({
   const holder = item.state === "offered" ? item.offeredTo : item.dri;
   const dateLabel = item.type === "project" ? "Review" : "Due";
   const canEditDue = canChangeTicketDue(item, viewer);
+  const howBody =
+    item.how ?? (item.type === "ticket" && item.brief ? item.brief : null);
+  const showBrief = Boolean(item.brief) && item.brief !== howBody;
+  const doneLines = item.doneWhen.filter((line) => line !== howBody);
 
   const run = React.useCallback(
     async (name: string, action: () => Promise<unknown>) => {
@@ -169,7 +180,56 @@ export function WorkItemView({
         </section>
       ) : null}
 
-      {item.brief ? (
+      {howBody ? (
+        <section
+          aria-labelledby="org-item-how-heading"
+          className="org-overview-settle space-y-3"
+          style={motionDelay(overviewCardDelayMs(1))}
+        >
+          <h2
+            className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
+            id="org-item-how-heading"
+          >
+            How
+          </h2>
+          <span
+            aria-hidden="true"
+            className="org-dir-rule block h-px w-10 bg-foreground/45"
+            style={motionDelay(overviewRuleDelayMs(1))}
+          />
+          <div
+            className="org-dir-line whitespace-pre-wrap text-sm leading-relaxed"
+            data-testid="org-item-how"
+            style={motionDelay(overviewLineDelayMs(1, 0))}
+          >
+            {howBody}
+          </div>
+        </section>
+      ) : null}
+
+      {doneLines.length > 0 ? (
+        <section
+          aria-labelledby="org-item-done-when-heading"
+          className="org-overview-settle space-y-3"
+        >
+          <h2
+            className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
+            id="org-item-done-when-heading"
+          >
+            Done when
+          </h2>
+          <ul
+            className="list-disc space-y-1 pl-5 text-sm"
+            data-testid="org-item-done-when"
+          >
+            {doneLines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {showBrief && item.brief ? (
         <section
           aria-labelledby="org-item-brief-heading"
           className="org-overview-settle space-y-3"
@@ -366,6 +426,9 @@ export function WorkItemView({
             Open channel
           </Button>
         ) : null}
+        {draft ? (
+          <TicketDraftActions draft={draft} onError={setError} run={run} />
+        ) : null}
         {canMarkDone(item, viewer) ? (
           <Button
             data-testid="org-mark-done"
@@ -401,54 +464,137 @@ export function WorkItemView({
         </div>
       ) : null}
 
-      <section
-        aria-labelledby="org-item-children-heading"
-        className="org-overview-settle space-y-4"
-        style={motionDelay(overviewCardDelayMs(5))}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h2
-            className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
-            id="org-item-children-heading"
-          >
-            Under this {item.type === "project" ? "project" : "ticket"}
-          </h2>
-          <p
-            className="text-2xs text-muted-foreground"
-            data-testid="org-item-children-counts"
-          >
-            {formatChildrenCounts(item.children)}
-          </p>
-        </div>
-        {childItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No tickets created yet
-          </p>
-        ) : (
-          <ul
-            className="divide-y divide-border rounded-xl border border-border"
-            data-testid="org-item-children"
-          >
-            {childItems.map((child, index) => (
-              <li key={child.id}>
-                <Link
-                  className="org-dir-line flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-muted/60 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                  data-testid={`org-item-child-${child.id}`}
-                  params={{ itemId: child.id }}
-                  style={motionDelay(overviewLineDelayMs(5, index))}
-                  to="/org/work/$itemId"
-                >
-                  <span className="min-w-0 truncate text-sm">
-                    {child.title}
-                  </span>
-                  <StateChip item={child} who={undefined} />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {item.type === "project" || childItems.length > 0 ? (
+        <section
+          aria-labelledby="org-item-children-heading"
+          className="org-overview-settle space-y-4"
+          style={motionDelay(overviewCardDelayMs(5))}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              className="text-2xs font-medium uppercase tracking-wider text-muted-foreground"
+              id="org-item-children-heading"
+            >
+              Under this {item.type === "project" ? "project" : "ticket"}
+            </h2>
+            <p
+              className="text-2xs text-muted-foreground"
+              data-testid="org-item-children-counts"
+            >
+              {formatChildrenCounts(countsForList(item.children, childItems))}
+            </p>
+          </div>
+          {childItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No tickets created yet
+            </p>
+          ) : (
+            <ul
+              className="divide-y divide-border rounded-xl border border-border"
+              data-testid="org-item-children"
+            >
+              {childItems.map((child, index) => (
+                <li key={child.id}>
+                  <Link
+                    className="org-dir-line flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-muted/60 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                    data-testid={`org-item-child-${child.id}`}
+                    params={{ itemId: child.id }}
+                    style={motionDelay(overviewLineDelayMs(5, index))}
+                    to="/org/work/$itemId"
+                  >
+                    <span className="min-w-0 truncate text-sm">
+                      {child.title}
+                    </span>
+                    <StateChip item={child} who={undefined} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </article>
+  );
+}
+
+function TicketDraftActions({
+  draft,
+  onError,
+  run,
+}: {
+  draft: RelayEvent;
+  onError: (message: string | null) => void;
+  run: (name: string, action: () => Promise<unknown>) => Promise<void>;
+}) {
+  const commands = useOrgCommands();
+  const [reason, setReason] = React.useState<DeclineReason | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  let content: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(draft.content || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      content = parsed as Record<string, unknown>;
+    }
+  } catch {
+    content = {};
+  }
+  const parent = typeof content.parent === "string" ? content.parent : "";
+  const title = typeof content.title === "string" ? content.title : "";
+  const brief = typeof content.brief === "string" ? content.brief : "";
+  const how = Array.isArray(content.how)
+    ? content.how.filter((line): line is string => typeof line === "string")
+    : [];
+  const dueAt = typeof content.due_at === "number" ? content.due_at : 0;
+  const offerTo =
+    typeof content.suggested_holder === "string"
+      ? content.suggested_holder
+      : undefined;
+  const ticketBrief = how.length > 0 ? how.join("\n") : brief;
+
+  return (
+    <>
+      <ActionButton
+        disabled={busy || parent.length === 0 || title.length === 0}
+        label="Agree"
+        onClick={() => {
+          setBusy(true);
+          onError(null);
+          void run("agree", () =>
+            commands.publish(
+              commands.buildIoTicketCreate({
+                parent,
+                title,
+                brief: ticketBrief,
+                dueAt,
+                offerTo,
+                draftId: draft.id,
+              }),
+            ),
+          ).finally(() => setBusy(false));
+        }}
+        testId="org-ticket-agree"
+      />
+      <DeclineChips disabled={busy} onSelect={setReason} selected={reason} />
+      <ActionButton
+        disabled={busy || reason === null}
+        label="Decline"
+        onClick={() => {
+          setBusy(true);
+          onError(null);
+          void run("decline", () =>
+            commands.publish(
+              commands.buildIoDraftDecide({
+                draftId: draft.id,
+                outcome: "decline",
+                reason: reason ?? undefined,
+              }),
+            ),
+          ).finally(() => setBusy(false));
+        }}
+        testId="org-ticket-decline"
+        variant="secondary"
+      />
+    </>
   );
 }
 

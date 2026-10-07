@@ -151,6 +151,92 @@ test("each direction proposal names itself and opens as a proposal", () => {
   assert.equal(repeated.brief, "");
   assert.equal(repeated.lines.length, 2);
 
+  const stated = [
+    "Vlad runs Hypha Buzz's daily work in the desktop app. Done when: Vlad takes his next task from the AI each workday. By: 2026-10-15.",
+    "A separate Hypha org exists in the app. Done when: the org's direction is set in the app. By: 2026-10-31.",
+  ].join("\n");
+  const withChecks = proposalPage(
+    proposal({
+      kind: "direction",
+      payload: {
+        slug: "objectives",
+        body: stated,
+        lines: [
+          { text: "Vlad runs Hypha Buzz's daily work in the desktop app" },
+          { text: "A separate Hypha org exists in the app" },
+        ],
+      },
+    }),
+  );
+  assert.equal(withChecks.brief, "");
+  const storedChecks = proposalPage(
+    proposal({
+      kind: "direction",
+      payload: {
+        slug: "objectives",
+        body: stated,
+        lines: [
+          {
+            text: "Vlad runs Hypha Buzz's daily work in the desktop app",
+            done_when: "Vlad takes his next task from the AI each workday",
+            date: Date.parse("2026-10-15T00:00:00Z") / 1000,
+          },
+          {
+            text: "A separate Hypha org exists in the app",
+            done_when: "the org's direction is set in the app",
+            date: Date.parse("2026-10-31T00:00:00Z") / 1000,
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(storedChecks.brief, "");
+  assert.equal(
+    storedChecks.lines[0]?.doneWhen,
+    "Vlad takes his next task from the AI each workday",
+  );
+  assert.deepEqual(
+    withChecks.lines.map((line) => ({
+      text: line.text,
+      doneWhen: line.doneWhen,
+      date: line.date,
+    })),
+    [
+      {
+        text: "Vlad runs Hypha Buzz's daily work in the desktop app",
+        doneWhen: "Vlad takes his next task from the AI each workday",
+        date: Date.parse("2026-10-15T00:00:00Z") / 1000,
+      },
+      {
+        text: "A separate Hypha org exists in the app",
+        doneWhen: "the org's direction is set in the app",
+        date: Date.parse("2026-10-31T00:00:00Z") / 1000,
+      },
+    ],
+  );
+  const aside = proposalPage(
+    proposal({
+      kind: "direction",
+      payload: {
+        slug: "objectives",
+        body: `Vote on these before Friday.\n${stated}`,
+        lines: [
+          {
+            text: "Vlad runs Hypha Buzz's daily work in the desktop app",
+            done_when: "Vlad takes his next task from the AI each workday",
+            date: Date.parse("2026-10-15T00:00:00Z") / 1000,
+          },
+          {
+            text: "A separate Hypha org exists in the app",
+            done_when: "the org's direction is set in the app",
+            date: Date.parse("2026-10-31T00:00:00Z") / 1000,
+          },
+        ],
+      },
+    }),
+  );
+  assert.match(aside.brief, /Vote on these before Friday/);
+
   const project = proposal({
     kind: "project",
     payload: { title: "Weekday hall", brief: "Book it." },
@@ -243,6 +329,54 @@ test("a revise sits on the message that names that proposal", () => {
     detail,
   );
   assert.equal(messageId, "revised");
+});
+
+test("a proposal does not hang on a chat that started after it", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "direction",
+      payload: { slug: "mission", body: "We host the river." },
+    }),
+  );
+  assert.equal(
+    proposalMessageId(
+      [{ id: "greeting", createdAt: 500, body: "Hey", tags: [] }],
+      detail,
+      100,
+    ),
+    null,
+  );
+});
+
+test("an edited publish stays on the draft it came from", () => {
+  const detail = proposalDetail(
+    proposal({
+      kind: "direction",
+      payload: {
+        slug: "mission",
+        body: "We build an operating system for volunteer-run teams of five to twenty.",
+      },
+    }),
+  );
+  const messageId = proposalMessageId(
+    [
+      {
+        id: "draft",
+        createdAt: 10,
+        tags: [
+          [
+            "direction",
+            "mission",
+            "We build an operating system for any group of people working together.",
+          ],
+        ],
+      },
+      { id: "later", createdAt: 40, tags: [] },
+    ],
+    detail,
+    30,
+  );
+  assert.equal(messageId, "draft");
 });
 
 test("a new objectives draft does not collect earlier versions", () => {
@@ -377,6 +511,44 @@ test("a publish announcement in #shapers carries the proposal", () => {
     ],
     detail,
     4,
+  );
+  assert.equal(messageId, "announced");
+});
+
+test("a codebases proposal hangs on its publish line", () => {
+  const detail = proposalDetail(
+    proposal(
+      {
+        kind: "codebases",
+        payload: {
+          title: "buzz-hypha",
+          brief: "buzz-hypha — https://github.com/hypha-dao/buzz-hypha",
+        },
+      },
+      [
+        ["d", PROPOSAL],
+        ["t", "codebases"],
+        ["s", "open"],
+      ],
+    ),
+  );
+  assert.equal(detail.kind, "codebases");
+  assert.equal(detail.title, "buzz-hypha");
+  assert.equal(
+    detail.body,
+    "buzz-hypha — https://github.com/hypha-dao/buzz-hypha",
+  );
+  const messageId = proposalMessageId(
+    [
+      {
+        id: "announced",
+        createdAt: 5,
+        body: "Opened a codebases proposal: buzz-hypha.",
+        tags: [],
+      },
+    ],
+    detail,
+    6,
   );
   assert.equal(messageId, "announced");
 });

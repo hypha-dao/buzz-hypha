@@ -2004,7 +2004,7 @@ CREATE INDEX idx_io_work_items_offered_to
 CREATE TABLE io_proposals (
     community_id        UUID NOT NULL REFERENCES communities(id),
     id                  UUID NOT NULL,
-    kind                TEXT NOT NULL CHECK (kind IN ('direction', 'project', 'dri', 'shapers', 'money', 'join', 'withdraw')),
+    kind                TEXT NOT NULL CHECK (kind IN ('direction', 'project', 'dri', 'shapers', 'money', 'join', 'withdraw', 'codebases')),
     status              TEXT NOT NULL CHECK (status IN ('open', 'passed', 'rejected', 'expired', 'settled')),
     opened_by           BYTEA NOT NULL CHECK (length(opened_by) = 32),
     opened_at           TIMESTAMPTZ NOT NULL,

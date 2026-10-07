@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
+import { cardOpenItemId } from "@/features/org/cards/classify";
 import { proposalVoteMarks } from "@/features/org/cards/parse";
 import {
   proposalCardFace,
@@ -42,6 +43,7 @@ export function OrgCardShell({
   const lines = linePlan(model);
   const headingId = `org-card-claim-${model.event.id}`;
   const panelId = useId();
+  const openItemId = cardOpenItemId(model);
   const destination =
     proposalDestination(model.event) ??
     (model.event.kind === KIND_IO_PROPOSAL && model.proposalId
@@ -115,12 +117,12 @@ export function OrgCardShell({
             {open ? "Hide the proposal" : "Show the proposal"}
           </span>
         </button>
-      ) : model.itemId ? (
+      ) : openItemId ? (
         <Link
           aria-labelledby={labelledBy}
           className={faceClass}
           data-testid="org-card-open"
-          params={{ itemId: model.itemId }}
+          params={{ itemId: openItemId }}
           to="/org/work/$itemId"
         >
           {face}

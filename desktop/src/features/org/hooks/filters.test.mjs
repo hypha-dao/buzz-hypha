@@ -23,6 +23,7 @@ test("overviewFilters is the Protocol §6.5 Overview set", () => {
     })),
     [
       { kinds: [39100], d: undefined, t: undefined },
+      { kinds: [39106], d: ["codebases"], t: undefined },
       { kinds: [39103], d: ["shapers"], t: undefined },
       { kinds: [39101], d: undefined, t: ["project"] },
       { kinds: [39105], d: undefined, t: undefined },
@@ -54,6 +55,14 @@ test("workItemFilters is d, u, command trail, work log", () => {
   assert.equal(IO_COMMAND_KINDS.at(-1), 50023);
   assert.deepEqual(filters[2]["#i"], [ITEM]);
   assert.deepEqual(filters[3].kinds, [50102]);
+  assert.deepEqual(filters[4].kinds, [50100]);
+  assert.deepEqual(filters[4]["#u"], [ITEM]);
+  assert.deepEqual(filters[4]["#t"], ["ticket"]);
+  assert.deepEqual(filters[5], {
+    ids: [ITEM],
+    kinds: [50100],
+    limit: 500,
+  });
 });
 
 test("myWorkFilters is p/n/s plus 39103, and the shaper addendum", () => {

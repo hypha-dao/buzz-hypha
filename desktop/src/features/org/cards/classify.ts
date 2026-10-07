@@ -5,6 +5,7 @@
 
 import {
   KIND_IO_DRAFT,
+  KIND_IO_DRAFT_OUTCOME,
   KIND_IO_PROPOSAL,
   KIND_IO_WORK_ITEM,
 } from "@/shared/constants/kinds";
@@ -191,6 +192,21 @@ export function compareByDue(left: OrgCardModel, right: OrgCardModel): number {
   return right.event.created_at - left.event.created_at;
 }
 
+/** Where a card click opens. A ticket draft opens itself, not its project. */
+export function cardOpenItemId(
+  model: Pick<OrgCardModel, "draftKind" | "event" | "itemId">,
+): string | null {
+  if (model.draftKind === "ticket") return model.event.id;
+  return model.itemId;
+}
+
+function ticketDraftParent(event: OrgEventLike): string | null {
+  if (draftKindOf(event) !== "ticket") return null;
+  return (
+    anyTag(event.tags, "u") ?? asString(parseJsonObject(event.content)?.parent)
+  );
+}
+
 function draftCardType(event: OrgEventLike): OrgCardType {
   const kind = draftKindOf(event);
   if (kind === "done") return "done";
@@ -275,7 +291,7 @@ export function classifyEvent(
     fromAgent: kicker.kind !== "person",
     dueAt: dueAtOf(event),
     itemKind: workKindOf(event),
-    parentId: workParentId(event),
+    parentId: workParentId(event) ?? ticketDraftParent(event),
     parentTitle: null,
   };
 
@@ -314,11 +330,42 @@ export function classifyEvent(
   return null;
 }
 
+/** Draft ids whose newest `39104` is no longer open. Those cards are settled. */
+export function settledDraftIds(events: readonly OrgEventLike[]): Set<string> {
+  const latest = new Map<string, { at: number; id: string; status: string }>();
+  for (const event of events) {
+    if (event.kind !== KIND_IO_DRAFT_OUTCOME) continue;
+    const draftId = anyTag(event.tags, "d");
+    const status = anyTag(event.tags, "s");
+    if (!draftId || !status) continue;
+    const current = latest.get(draftId);
+    if (
+      !current ||
+      event.created_at > current.at ||
+      (event.created_at === current.at && event.id > current.id)
+    ) {
+      latest.set(draftId, {
+        at: event.created_at,
+        id: event.id,
+        status,
+      });
+    }
+  }
+  const settled = new Set<string>();
+  for (const [id, row] of latest) {
+    if (row.status !== "open") settled.add(id);
+  }
+  return settled;
+}
+
 export function classifyMyWork(
   events: readonly OrgEventLike[],
   ctx: ClassifyContext,
 ): Record<MyWorkColumn, OrgCardModel[]> {
-  const drafts = events.filter((event) => event.kind === KIND_IO_DRAFT);
+  const settled = settledDraftIds(events);
+  const drafts = events.filter(
+    (event) => event.kind === KIND_IO_DRAFT && !settled.has(event.id),
+  );
   const items = newestAddressable(events, KIND_IO_WORK_ITEM);
   const proposals = newestAddressable(events, KIND_IO_PROPOSAL);
   const models: OrgCardModel[] = [];

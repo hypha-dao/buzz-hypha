@@ -2,7 +2,7 @@
 //! direction draft that does not meet that row. The model explains; it does
 //! not decide that a vague objective is ready.
 
-use super::{Board, RawAct, SeenLine};
+use super::{Board, CodebaseLink, RawAct};
 
 /// Said once every row in the minimum table is confirmed. No question.
 pub const READY_LINE: &str = "The org is ready. I can draft a project from an objective.";
@@ -17,6 +17,7 @@ const STRATEGY_Q: &str = "What is one bet you are making, and what will you refu
 const PEOPLE_Q: &str =
     "In one sentence, what do you do here? Then name the skills you actually have, after Skills:";
 const CODE_Q: &str = "Where does the code live, or is there no repository yet?";
+const SITE_Q: &str = "Where is the landing page, or is there no site yet?";
 
 const OBJECTIVE_HOLD: &str = "That objective needs a date and a done when someone could answer yes or no. What would be true, and by when?";
 
@@ -38,6 +39,8 @@ pub struct InterviewReply {
     pub body: Option<String>,
     /// Set when the person just answered the profile row.
     pub profile: Option<RawAct>,
+    /// The codebases list to draft. Confirming it does not change strategy.
+    pub codebases: Option<Vec<CodebaseLink>>,
 }
 
 impl Board {
@@ -52,10 +55,12 @@ impl Board {
         if !prose_ready(self, "situation") {
             return ask("situation", SITUATION_Q);
         }
-        if !objectives_ready(self) {
-            return ask("objectives", OBJECTIVES_Q);
-        }
+        // A confirmed strategy is not rewound to the objective count. The
+        // Shapers already published it, so the walk continues.
         if !strategy_ready(self) {
+            if !objectives_ready(self) {
+                return ask("objectives", OBJECTIVES_Q);
+            }
             return ask("strategy", STRATEGY_Q);
         }
         if !people_ready(self) {
@@ -64,7 +69,22 @@ impl Board {
         if !code_ready(self) {
             return ask("code", CODE_Q);
         }
+        if !site_ready(self) {
+            return ask("site", SITE_Q);
+        }
         InterviewCue::Ready
+    }
+
+    /// The row after a profile was just saved. The board may not show that
+    /// profile yet, so this does not ask the profile question again.
+    pub fn question_after_people(&self) -> Option<&'static str> {
+        if !code_ready(self) {
+            return Some(CODE_Q);
+        }
+        if !site_ready(self) {
+            return Some(SITE_Q);
+        }
+        None
     }
 
     /// One line for the overview the model reads before it speaks.
@@ -89,6 +109,19 @@ pub fn apply_interview(
     direction: Option<String>,
     body: Option<String>,
 ) -> InterviewReply {
+    let cue = board.interview_cue();
+    if let InterviewCue::Ask { row: "code", .. } = cue {
+        return match repository_items(user) {
+            Some(items) => codebases_reply(with_role(board, "repository", items)),
+            None => ask_only(CODE_Q),
+        };
+    }
+    if let InterviewCue::Ask { row: "site", .. } = cue {
+        return match site_items(user) {
+            Some(items) => codebases_reply(with_role(board, "site", items)),
+            None => ask_only(SITE_Q),
+        };
+    }
     if let (Some(slug), Some(text)) = (direction.as_deref(), body.as_deref()) {
         return match accept_body(slug, text) {
             Ok(kept) => InterviewReply {
@@ -96,27 +129,18 @@ pub fn apply_interview(
                 direction: Some(slug.to_string()),
                 body: Some(kept),
                 profile: None,
+                codebases: None,
             },
             Err(follow) => InterviewReply {
                 say: follow,
                 direction: None,
                 body: None,
                 profile: None,
+                codebases: None,
             },
         };
     }
 
-    let cue = board.interview_cue();
-    if let InterviewCue::Ask { row: "code", .. } = cue {
-        if let Some(line) = code_line_from(user) {
-            return InterviewReply {
-                say: super::direction_draft_say("strategy"),
-                direction: Some("strategy".to_string()),
-                body: Some(line),
-                profile: None,
-            };
-        }
-    }
     if let InterviewCue::Ask { row: "people", .. } = cue {
         if let Some(act) = profile_from(user) {
             return InterviewReply {
@@ -124,12 +148,16 @@ pub fn apply_interview(
                 direction: None,
                 body: None,
                 profile: Some(act),
+                codebases: None,
             };
         }
     }
 
     let say = match cue {
         InterviewCue::Ready if asks_a_row(&say) => READY_LINE.to_string(),
+        InterviewCue::Ask { question, .. } if declares_direction_finished(&say) => {
+            question.to_string()
+        }
         InterviewCue::Ask { row, question } if asks_some_other_row(&say, row) => {
             question.to_string()
         }
@@ -140,7 +168,39 @@ pub fn apply_interview(
         direction: None,
         body: None,
         profile: None,
+        codebases: None,
     }
+}
+
+fn ask_only(question: &str) -> InterviewReply {
+    InterviewReply {
+        say: question.to_string(),
+        direction: None,
+        body: None,
+        profile: None,
+        codebases: None,
+    }
+}
+
+fn codebases_reply(items: Vec<CodebaseLink>) -> InterviewReply {
+    InterviewReply {
+        say: "A draft of the codebases. Open it, then publish.".to_string(),
+        direction: None,
+        body: None,
+        profile: None,
+        codebases: Some(items),
+    }
+}
+
+fn with_role(board: &Board, role: &str, incoming: Vec<CodebaseLink>) -> Vec<CodebaseLink> {
+    let mut kept: Vec<CodebaseLink> = board
+        .codebases
+        .iter()
+        .filter(|item| item.kind != role)
+        .cloned()
+        .collect();
+    kept.extend(incoming);
+    kept
 }
 
 fn accept_body(slug: &str, body: &str) -> Result<String, String> {
@@ -293,36 +353,122 @@ fn people_ready(board: &Board) -> bool {
 }
 
 fn code_ready(board: &Board) -> bool {
-    let Some(head) = board.direction.get("strategy") else {
-        return false;
-    };
-    head.lines.iter().any(is_code_line)
-        || head.body.to_ascii_lowercase().contains("no repository yet")
+    board.codebases.iter().any(|item| item.kind == "repository")
 }
 
-fn is_code_line(line: &SeenLine) -> bool {
-    if line.line_type.as_deref() != Some("rule") {
-        return false;
-    }
-    let text = line.text.to_ascii_lowercase();
-    text.contains("no repository yet") || (text.contains("code lives at ") && text.contains("http"))
+fn site_ready(board: &Board) -> bool {
+    board.codebases.iter().any(|item| item.kind == "site")
 }
 
-fn code_line_from(user: &str) -> Option<String> {
+fn repository_items(user: &str) -> Option<Vec<CodebaseLink>> {
     let lower = user.to_ascii_lowercase();
-    if lower.contains("no repository yet") || lower.contains("no repo yet") {
-        return Some("no repository yet. Type: rule".to_string());
+    if lower.contains("no repository yet")
+        || lower.contains("no repo yet")
+        || lower.contains("no repositories yet")
+    {
+        return Some(vec![CodebaseLink {
+            kind: "repository".to_string(),
+            name: String::new(),
+            url: String::new(),
+            about: "no repository yet".to_string(),
+        }]);
     }
-    let start = lower.find("https://").or_else(|| lower.find("http://"))?;
-    let rest = &user[start..];
-    let end = rest
-        .find(|ch: char| ch.is_whitespace() || ch == ')')
-        .unwrap_or(rest.len());
-    let url = rest[..end].trim_end_matches(['.', ',', ';']);
-    if url.len() < 12 {
-        return None;
+    let items: Vec<CodebaseLink> = https_urls(user)
+        .into_iter()
+        .map(|url| CodebaseLink {
+            kind: "repository".to_string(),
+            name: name_from_url(url),
+            url: url.to_string(),
+            about: String::new(),
+        })
+        .collect();
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
     }
-    Some(format!("code lives at {url}. Type: rule"))
+}
+
+fn site_items(user: &str) -> Option<Vec<CodebaseLink>> {
+    if let Some(url) = https_urls(user)
+        .into_iter()
+        .find(|url| !url.to_ascii_lowercase().contains("github.com"))
+    {
+        return Some(vec![CodebaseLink {
+            kind: "site".to_string(),
+            name: name_from_url(url),
+            url: url.to_string(),
+            about: String::new(),
+        }]);
+    }
+    if declines_site(user) {
+        return Some(vec![CodebaseLink {
+            kind: "site".to_string(),
+            name: String::new(),
+            url: String::new(),
+            about: "no landing page yet".to_string(),
+        }]);
+    }
+    None
+}
+
+/// "No public site yet" and "no site" are the same answer as "no site yet".
+fn declines_site(user: &str) -> bool {
+    let lower = user.to_ascii_lowercase().replace("public ", "");
+    lower.contains("no site")
+        || lower.contains("no landing")
+        || lower.contains("no website")
+        || lower.contains("no web site")
+        || lower.contains("isn't one")
+        || lower.contains("isnt one")
+        || lower.contains("there isn't")
+        || lower.contains("there isnt")
+        || lower.contains("there is no")
+        || lower.contains("don't have")
+        || lower.contains("dont have")
+        || lower.contains("do not have")
+        || lower.contains("none yet")
+        || lower.contains("not yet")
+}
+
+fn name_from_url(url: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let path = path.trim_end_matches('/');
+    let name = path.rsplit('/').next().unwrap_or("repository");
+    let name = name.trim_end_matches(".git");
+    if name.is_empty() || name.contains(':') {
+        "repository".to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+fn https_urls(user: &str) -> Vec<&str> {
+    let mut urls = Vec::new();
+    let mut rest = user;
+    while let Some(start) = rest.find("https://").or_else(|| rest.find("http://")) {
+        let from = &rest[start..];
+        let end = from
+            .find(|ch: char| ch.is_whitespace() || ch == ')' || ch == '>')
+            .unwrap_or(from.len());
+        let url = from[..end].trim_end_matches(['.', ',', ';']);
+        if url.len() >= 12 {
+            urls.push(url);
+        }
+        if end == 0 {
+            break;
+        }
+        rest = &from[end..];
+    }
+    urls
+}
+
+/// The model closed the interview and offered a project while a row is open.
+fn declares_direction_finished(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    lower.contains("direction is set")
+        || lower.contains("the org is ready")
+        || (lower.contains("project") && lower.contains("in the draft"))
 }
 
 fn profile_from(user: &str) -> Option<RawAct> {
@@ -358,6 +504,7 @@ fn asks_a_row(say: &str) -> bool {
             "strategy",
             "skill",
             "repository",
+            "landing",
         ]
         .iter()
         .any(|word| say.to_ascii_lowercase().contains(word))
@@ -375,6 +522,7 @@ fn asks_some_other_row(say: &str, next: &str) -> bool {
         ("strategy", "strategy"),
         ("people", "skill"),
         ("code", "repository"),
+        ("site", "landing"),
     ];
     let lower = say.to_ascii_lowercase();
     ROWS.iter()
@@ -480,8 +628,22 @@ mod tests {
                 "body": "How we get there.",
                 "lines": [
                     {"n": 1, "id": "d", "text": "Try one Thursday before any build", "type": "bet"},
-                    {"n": 2, "id": "e", "text": "No brand money", "type": "refusal"},
-                    {"n": 3, "id": "f", "text": "no repository yet", "type": "rule"}
+                    {"n": 2, "id": "e", "text": "No brand money", "type": "refusal"}
+                ]
+            })
+            .to_string(),
+        );
+        board.observe(
+            39106,
+            "relay",
+            31,
+            Some("codebases"),
+            &json!({
+                "slug": "codebases",
+                "version": 1,
+                "items": [
+                    {"kind": "repository", "name": "", "url": "", "about": "no repository yet"},
+                    {"kind": "site", "name": "", "url": "", "about": "no landing page yet"}
                 ]
             })
             .to_string(),
@@ -534,5 +696,202 @@ mod tests {
         );
         assert_eq!(ready.direction.as_deref(), Some("objectives"));
         assert!(ready.body.unwrap().contains("Done when:"));
+    }
+
+    fn strategy_without_code_or_site(board: &mut Board) {
+        board.observe(
+            39103,
+            "relay",
+            10,
+            Some("shapers"),
+            &json!({ "shapers": [ME], "room": "room-1" }).to_string(),
+        );
+        prose(
+            board,
+            "situation",
+            "A Saturday stall since March, three growers, no weekday night. The next unknown is whether weekday buyers will come.",
+        );
+        board.observe(
+            39100,
+            "relay",
+            30,
+            Some("objectives"),
+            &json!({
+                "version": 1,
+                "body": "Two outcomes.",
+                "lines": [
+                    {"n": 1, "id": "a", "text": "Weekday trial", "date": 1_780_000_000, "done_when": "one paid night happened"},
+                    {"n": 2, "id": "b", "text": "Three growers stay", "date": 1_790_000_000, "done_when": "all three sold that night"}
+                ]
+            })
+            .to_string(),
+        );
+        board.observe(
+            39100,
+            "relay",
+            31,
+            Some("strategy"),
+            &json!({
+                "version": 1,
+                "body": "How we get there.",
+                "lines": [
+                    {"n": 1, "id": "d", "text": "Try one Thursday before any build", "type": "bet"},
+                    {"n": 2, "id": "e", "text": "No brand money", "type": "refusal"}
+                ]
+            })
+            .to_string(),
+        );
+    }
+
+    #[test]
+    fn a_confirmed_strategy_asks_for_the_profile_then_the_code_then_the_site() {
+        let mut board = mission_and_vision();
+        strategy_without_code_or_site(&mut board);
+        let InterviewCue::Ask { row, question } = board.interview_cue() else {
+            panic!("expected the profile question");
+        };
+        assert_eq!(row, "people");
+        assert!(question.contains("Skills:"));
+        assert_eq!(
+            board.question_after_people(),
+            Some("Where does the code live, or is there no repository yet?")
+        );
+
+        let jumped = apply_interview(
+            &board,
+            "ok",
+            "The strategy is in, so the direction is set. The first project is in the draft below."
+                .to_string(),
+            None,
+            None,
+        );
+        assert!(jumped.say.contains("Skills:"));
+        assert!(jumped.direction.is_none());
+        assert!(!jumped.say.to_ascii_lowercase().contains("direction is set"));
+
+        board.observe(
+            39105,
+            "relay",
+            32,
+            Some(ME),
+            &json!({ "about": "I run the Saturday stall.", "skills": ["hosting"] }).to_string(),
+        );
+        let InterviewCue::Ask { row, .. } = board.interview_cue() else {
+            panic!("expected the code question");
+        };
+        assert_eq!(row, "code");
+        let strategy_version = board.direction.get("strategy").map(|head| head.version);
+        let repos = apply_interview(
+            &board,
+            "https://github.com/hypha/relay and https://github.com/hypha/desktop",
+            "A draft of the strategy. Open it, then publish.".to_string(),
+            Some("strategy".to_string()),
+            Some("code lives at https://github.com/hypha/relay. Type: rule".to_string()),
+        );
+        assert!(repos.direction.is_none());
+        assert!(repos.say.contains("codebases"));
+        let listed = repos.codebases.expect("codebases");
+        assert!(listed.iter().all(|item| item.kind == "repository"));
+        assert!(listed
+            .iter()
+            .any(|item| item.url == "https://github.com/hypha/relay"));
+        assert!(listed
+            .iter()
+            .any(|item| item.url == "https://github.com/hypha/desktop"));
+        assert_eq!(
+            board.direction.get("strategy").map(|head| head.version),
+            strategy_version
+        );
+
+        board.observe(
+            39100,
+            "relay",
+            33,
+            Some("strategy"),
+            &json!({
+                "version": 2,
+                "body": "How we get there.",
+                "lines": [
+                    {"n": 1, "id": "d", "text": "Try one Thursday before any build", "type": "bet"},
+                    {"n": 2, "id": "e", "text": "No brand money", "type": "refusal"},
+                    {"n": 3, "id": "f", "text": "code lives at https://github.com/hypha/relay", "type": "rule"}
+                ]
+            })
+            .to_string(),
+        );
+        let InterviewCue::Ask { row, .. } = board.interview_cue() else {
+            panic!("a strategy line is not the codebase list");
+        };
+        assert_eq!(row, "code");
+        board.observe(
+            39106,
+            "relay",
+            34,
+            Some("codebases"),
+            &json!({
+                "slug": "codebases",
+                "version": 1,
+                "items": [
+                    {"kind": "repository", "name": "relay", "url": "https://github.com/hypha/relay", "about": "The relay"},
+                    {"kind": "repository", "name": "desktop", "url": "https://github.com/hypha/desktop", "about": "The desktop"}
+                ]
+            })
+            .to_string(),
+        );
+        let InterviewCue::Ask { row, question } = board.interview_cue() else {
+            panic!("expected the landing page question");
+        };
+        assert_eq!(row, "site");
+        assert!(question.to_ascii_lowercase().contains("landing page"));
+        assert_eq!(
+            board.question_after_people(),
+            Some("Where is the landing page, or is there no site yet?")
+        );
+        let site = apply_interview(
+            &board,
+            "the site is https://hypha.earth and the code is https://github.com/hypha/relay",
+            "Where?".to_string(),
+            None,
+            None,
+        );
+        assert!(site.direction.is_none());
+        let items = site.codebases.expect("codebases");
+        assert!(items.iter().any(|item| {
+            item.kind == "repository" && item.url == "https://github.com/hypha/relay"
+        }));
+        assert!(items
+            .iter()
+            .any(|item| item.kind == "site" && item.url == "https://hypha.earth"));
+        let github_only = apply_interview(
+            &board,
+            "https://github.com/hypha/relay",
+            "A draft of the strategy.".to_string(),
+            Some("strategy".to_string()),
+            Some("code lives at https://github.com/hypha/relay. Type: rule".to_string()),
+        );
+        assert!(github_only.direction.is_none());
+        assert!(github_only.codebases.is_none());
+        assert!(github_only
+            .say
+            .to_ascii_lowercase()
+            .contains("landing page"));
+        for answer in ["no public site yet", "no site"] {
+            let declined = apply_interview(&board, answer, "Where?".to_string(), None, None);
+            assert!(declined.direction.is_none(), "{answer}");
+            assert!(declined.say.contains("codebases"), "{answer}");
+            let items = declined.codebases.expect(answer);
+            assert!(
+                items.iter().any(|item| item.kind == "repository"),
+                "{answer}"
+            );
+            assert!(
+                items.iter().any(|item| {
+                    item.kind == "site"
+                        && item.url.is_empty()
+                        && item.about == "no landing page yet"
+                }),
+                "{answer}"
+            );
+        }
     }
 }

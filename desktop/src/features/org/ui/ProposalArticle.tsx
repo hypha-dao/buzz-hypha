@@ -25,7 +25,13 @@ type ProposalArticleProps = {
   status: string;
   briefHeading: string;
   brief: string;
-  lines: readonly { id: string; text: string }[];
+  lines: readonly {
+    id: string;
+    text: string;
+    doneWhen?: string;
+    date?: number;
+    lineType?: "bet" | "rule" | "refusal";
+  }[];
   /** `ProposalFact` cells; omitted when the page has none. */
   facts?: React.ReactNode;
   children?: React.ReactNode;
@@ -119,11 +125,22 @@ export function ProposalArticle({
             className="list-decimal space-y-3 pl-5"
             data-testid={`${testId}-lines`}
           >
-            {lines.map((line) => (
-              <li className="text-sm leading-relaxed" key={line.id}>
-                {line.text}
-              </li>
-            ))}
+            {lines.map((line) => {
+              const note = lineNote(line);
+              return (
+                <li className="text-sm leading-relaxed" key={line.id}>
+                  {line.text}
+                  {note ? (
+                    <p className="mt-1 text-sm text-muted-foreground">{note}</p>
+                  ) : null}
+                  {line.lineType ? (
+                    <p className="mt-1 text-sm capitalize text-muted-foreground">
+                      {line.lineType}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
           </ol>
         </section>
       ) : null}
@@ -133,6 +150,15 @@ export function ProposalArticle({
       {children}
     </article>
   );
+}
+
+function lineNote(line: { doneWhen?: string; date?: number }): string | null {
+  const parts: string[] = [];
+  if (line.doneWhen) parts.push(`Done when: ${line.doneWhen}`);
+  if (line.date !== undefined) {
+    parts.push(`By: ${new Date(line.date * 1000).toISOString().slice(0, 10)}`);
+  }
+  return parts.length > 0 ? parts.join(". ") : null;
 }
 
 export function ProposalFact({

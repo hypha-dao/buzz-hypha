@@ -298,8 +298,10 @@ pub fn decode(event: &Event) -> Result<Decoded, ApplyError> {
                 ProposalKind::Shapers if subject.len() > 1 => {
                     return Err(t.err("a shapers proposal names at most one subject"));
                 }
-                ProposalKind::Direction | ProposalKind::Project if !subject.is_empty() => {
-                    return Err(t.err("a direction/project proposal has no subject"));
+                ProposalKind::Direction | ProposalKind::Project | ProposalKind::Codebases
+                    if !subject.is_empty() =>
+                {
+                    return Err(t.err("a direction, project, or codebases proposal has no subject"));
                 }
                 _ => {}
             }

@@ -403,6 +403,54 @@ fn five_step_plan() -> serde_json::Value {
 }
 
 #[tokio::test]
+async fn a_held_project_without_a_plan_asks_for_steps() {
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Continuous task flow");
+    root.brief = "The AI suggests the next task.".into();
+    let mut state = OrgState::new();
+    state.item_generations.insert(root.id.clone(), gen.clone());
+    state.items.insert(root.id.clone(), root);
+    let (mut agent, _dir) = agent(state);
+    agent.link.connect(&Default::default()).expect("connect");
+    agent.model.push(ModelOutput {
+        value: serde_json::json!({
+            "steps": [
+                { "piece": "Show the next task on My work", "kind": "code", "after": [], "produces": ["the next task is visible"] },
+                { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task on My work"], "produces": ["done work opens the next task"] }
+            ]
+        }),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    agent
+        .handle(
+            Transition::HolderSet {
+                item: "root-1".into(),
+                dri: "aa".repeat(32),
+                generation: gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("hold");
+    let published = agent.run_jobs().await.expect("tickets");
+    assert_eq!(published, 1);
+    let body: serde_json::Value = agent
+        .link
+        .io()
+        .published()
+        .iter()
+        .find(|event| u32::from(event.kind.as_u16()) == 50100)
+        .map(|event| serde_json::from_str(&event.content).expect("ticket json"))
+        .expect("draft");
+    assert_eq!(body["title"], "Show the next task on My work");
+    assert_eq!(body["brief"], "the next task is visible");
+    assert_ne!(body["title"], "Continuous task flow");
+    let again = agent.run_jobs().await.expect("quiet");
+    assert_eq!(again, 0);
+}
+
+#[tokio::test]
 async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
     use buzz_core::intelligent_org::{
         ClosedBy, DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,

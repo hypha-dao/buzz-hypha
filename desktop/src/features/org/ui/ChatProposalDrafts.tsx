@@ -157,7 +157,23 @@ export function ChatProposalDrafts({
           <span className="block text-xs font-medium text-muted-foreground">
             Draft · {draftKindLabel(draft)}
           </span>
-          {draft.kind === "direction" || draft.kind === "revise-direction" ? (
+          {draft.kind === "codebases" ? (
+            <span className="mt-2 block space-y-1.5 text-sm text-foreground">
+              {draft.items.map((item) => (
+                <span
+                  className="block rounded-md border border-border/60 bg-background/40 px-3 py-1.5"
+                  key={`${item.kind}:${item.url}:${item.about}`}
+                >
+                  {item.url
+                    ? [item.name, item.url, item.about]
+                        .filter(Boolean)
+                        .join(" — ")
+                    : item.about || item.kind}
+                </span>
+              ))}
+            </span>
+          ) : draft.kind === "direction" ||
+            draft.kind === "revise-direction" ? (
             draft.slug === "objectives" || draft.slug === "strategy" ? (
               <span className="mt-2 block space-y-1.5 text-sm text-foreground">
                 {directionBodyLines(draft.slug, draft.body).map((line) => (

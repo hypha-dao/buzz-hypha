@@ -667,6 +667,9 @@ pub const KIND_IO_SHAPERS: u32 = 39103;
 pub const KIND_IO_DRAFT_OUTCOME: u32 = 39104;
 /// IO state: one member's org profile — about, skills, limit; `d` = member pubkey.
 pub const KIND_IO_PROFILE: u32 = 39105;
+/// IO state: one org knowledge section. `d` = `codebases` is the repository
+/// and landing-page list. Other section slugs are not registered yet.
+pub const KIND_IO_KNOWLEDGE: u32 = 39106;
 
 // Commands (person-signed, executed transactionally). Protocol §3.2, §4.8.
 /// IO command `io_shapers_propose`: open a `shapers` proposal (op add / remove / rules / agent).
@@ -721,6 +724,11 @@ pub const KIND_IO_WITHDRAW: u32 = 50022;
 /// Only when more than one Shaper is seated. Passing it runs the same
 /// removal as [`KIND_IO_WITHDRAW`].
 pub const KIND_IO_WITHDRAW_PROPOSE: u32 = 50023;
+/// IO command `io_knowledge_set`: a Shaper replaces the codebases list (`39106`).
+///
+/// This is not a direction proposal. A vote when more than one Shaper is
+/// seated is not part of this command.
+pub const KIND_IO_KNOWLEDGE_SET: u32 = 50024;
 
 // Drafts and reads (agent- or person-signed, regular, never change state). Protocol §3.3.
 /// IO read `io_draft`: a suggestion addressed to one party (`n` tag).
@@ -748,6 +756,7 @@ pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
     KIND_IO_SHAPERS,
     KIND_IO_DRAFT_OUTCOME,
     KIND_IO_PROFILE,
+    KIND_IO_KNOWLEDGE,
     KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_DIRECTION_PROPOSE,
     KIND_IO_VOTE,
@@ -771,6 +780,7 @@ pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
     KIND_IO_PROFILE_SET,
     KIND_IO_WITHDRAW,
     KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_KNOWLEDGE_SET,
     KIND_IO_DRAFT,
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
@@ -778,7 +788,7 @@ pub const INTELLIGENT_ORG_KINDS: &[u32] = &[
     KIND_IO_WORK_PROMPT,
 ];
 
-/// Returns `true` for a registered intelligent-org **state** kind (`39100–39105`).
+/// Returns `true` for a registered intelligent-org **state** kind (`39100–39106`).
 ///
 /// These are relay-signed and addressable; a client `EVENT` of one is
 /// rejected (`is_relay_only_kind`). Only registered constants match — the rest
@@ -792,16 +802,18 @@ pub const fn is_intelligent_org_state_kind(kind: u32) -> bool {
             | KIND_IO_SHAPERS
             | KIND_IO_DRAFT_OUTCOME
             | KIND_IO_PROFILE
+            | KIND_IO_KNOWLEDGE
     )
 }
 
-/// Returns `true` for a registered intelligent-org **command** kind (`50001–50023`).
+/// Returns `true` for a registered intelligent-org **command** kind (`50001–50024`).
 ///
 /// Includes the reserved money and join commands (`50013`, `50014`, `50016`):
 /// they route to the executor like every other command so it can reject them
 /// with the fixed `restricted:` reasons of Protocol §3.2.
 pub const fn is_intelligent_org_command_kind(kind: u32) -> bool {
-    kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_WITHDRAW_PROPOSE
+    (kind >= KIND_IO_SHAPERS_PROPOSE && kind <= KIND_IO_WITHDRAW_PROPOSE)
+        || kind == KIND_IO_KNOWLEDGE_SET
 }
 
 /// Returns `true` for a registered intelligent-org **draft or read** kind.
@@ -963,6 +975,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_IO_SHAPERS,
     KIND_IO_DRAFT_OUTCOME,
     KIND_IO_PROFILE,
+    KIND_IO_KNOWLEDGE,
     KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_DIRECTION_PROPOSE,
     KIND_IO_VOTE,
@@ -986,6 +999,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_IO_PROFILE_SET,
     KIND_IO_WITHDRAW,
     KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_KNOWLEDGE_SET,
     KIND_IO_DRAFT,
     KIND_IO_HEALTH,
     KIND_IO_PROGRESS,
@@ -1041,7 +1055,7 @@ pub const fn is_identity_archive_request_kind(kind: u32) -> bool {
 
 /// Returns `true` if `kind` is a Buzz command kind that requires transactional execution.
 ///
-/// Intelligent-org commands (`50001–50023`) are members: they route to the
+/// Intelligent-org commands (`50001–50024`) are members: they route to the
 /// command executor, which owns their role checks and rejections
 /// (Protocol §3.2, §6.1).
 pub const fn is_command_kind(kind: u32) -> bool {
@@ -1060,7 +1074,7 @@ pub const fn is_command_kind(kind: u32) -> bool {
 /// Returns `true` if `kind` may only be authored by the relay.
 /// Client submission of these kinds must be rejected.
 ///
-/// Intelligent-org state (`39100–39105`) is relay-signed: a client `EVENT` of
+/// Intelligent-org state (`39100–39106`) is relay-signed: a client `EVENT` of
 /// one is rejected `restricted: relay-only kind` (Protocol §3.1, §6.1).
 pub const fn is_relay_only_kind(kind: u32) -> bool {
     matches!(
@@ -1194,10 +1208,10 @@ mod tests {
 
     // ── Intelligent organization (Protocol §3, Development plan R-1) ─────
 
-    const IO_STATE: [u32; 6] = [39100, 39101, 39102, 39103, 39104, 39105];
-    const IO_COMMANDS: [u32; 23] = [
+    const IO_STATE: [u32; 7] = [39100, 39101, 39102, 39103, 39104, 39105, 39106];
+    const IO_COMMANDS: [u32; 24] = [
         50001, 50002, 50003, 50004, 50005, 50006, 50007, 50008, 50009, 50010, 50011, 50012, 50013,
-        50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021, 50022, 50023,
+        50014, 50015, 50016, 50017, 50018, 50019, 50020, 50021, 50022, 50023, 50024,
     ];
     const IO_READS: [u32; 5] = [50100, 50101, 50102, 50103, 50104];
 
@@ -1231,7 +1245,7 @@ mod tests {
             assert!(!is_intelligent_org_read_kind(kind), "{kind}");
         }
         // The rest of the state range is reserved, not registered.
-        for kind in [39106, 39149, 39099, 39150] {
+        for kind in [39107, 39149, 39099, 39150] {
             assert!(!is_intelligent_org_state_kind(kind), "{kind}");
             assert!(!is_relay_only_kind(kind), "{kind}");
         }
@@ -1248,8 +1262,8 @@ mod tests {
                 "{kind} is a regular event"
             );
         }
-        // 50000 is not a kind; 50024+ is reserved.
-        for kind in [50000, 50024, 50049, 50050] {
+        // 50000 is not a kind; 50025+ is reserved.
+        for kind in [50000, 50025, 50049, 50050] {
             assert!(!is_intelligent_org_command_kind(kind), "{kind}");
             assert!(!is_command_kind(kind), "{kind}");
         }

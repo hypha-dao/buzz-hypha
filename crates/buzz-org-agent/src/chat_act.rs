@@ -94,6 +94,8 @@ pub enum ResolvedAct {
         brief: String,
         due_at: u64,
         suggested: Option<String>,
+        /// Step list from the act. Absent when the model named only a title.
+        plan: Option<Value>,
     },
     Done {
         item: String,
@@ -220,6 +222,15 @@ struct PersonProfile {
     at: u64,
 }
 
+/// One link on the org codebases list. A landing page uses `kind` = `site`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CodebaseLink {
+    pub kind: String,
+    pub name: String,
+    pub url: String,
+    pub about: String,
+}
+
 /// Live org the model can answer from, and that act resolution checks.
 #[derive(Debug, Clone, Default)]
 pub struct Board {
@@ -235,6 +246,9 @@ pub struct Board {
     command_authors: HashMap<String, String>,
     /// Newest `39105` per member.
     profiles: HashMap<String, PersonProfile>,
+    /// Confirmed codebases (`39106`, `d` = `codebases`).
+    codebases: Vec<CodebaseLink>,
+    codebases_at: u64,
 }
 
 impl Board {
@@ -392,8 +406,56 @@ impl Board {
             }
             39102 => self.observe_proposal(d, created_at, &value),
             39105 => self.observe_profile(d, created_at, &value),
+            39106 => self.observe_codebases(d, created_at, &value),
             _ => {}
         }
+    }
+
+    fn observe_codebases(&mut self, d: Option<&str>, created_at: u64, value: &Value) {
+        if d.map(str::trim) != Some("codebases") {
+            return;
+        }
+        if created_at < self.codebases_at && self.codebases_at > 0 {
+            return;
+        }
+        let Some(rows) = value.get("items").and_then(Value::as_array) else {
+            return;
+        };
+        let mut items = Vec::new();
+        for row in rows {
+            let Some(kind) = text_field(row, "kind") else {
+                continue;
+            };
+            if kind != "repository" && kind != "site" {
+                continue;
+            }
+            items.push(CodebaseLink {
+                kind,
+                name: row
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+                url: row
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+                about: row
+                    .get("about")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            });
+        }
+        if items.is_empty() && !rows.is_empty() {
+            return;
+        }
+        self.codebases_at = created_at;
+        self.codebases = items;
     }
 
     fn observe_profile(&mut self, d: Option<&str>, created_at: u64, value: &Value) {
@@ -571,6 +633,7 @@ impl Board {
             }),
         );
         lines.push(direction);
+        lines.push(codebases_overview(&self.codebases));
         lines.push("Open proposals:".to_string());
         let mut open: Vec<&OpenProposal> = self.proposals.values().collect();
         open.sort_by(|left, right| left.kind.cmp(&right.kind).then(left.id.cmp(&right.id)));
@@ -789,7 +852,7 @@ impl Board {
 /// situation because it decides what the first objective can be.
 /// "Sharper draft:" is the cue `recover_direction` accepts from a reply.
 const DIRECTION_COACHING: &str = "\
-    If they are shaping this alone, walk direction in this order, one piece at a time: \
+    Walk direction in this order, one piece at a time: \
     mission, vision, situation, objectives, then strategy. \
     The situation is where the org stands today. \
     It is its own confirmed text, the same as the other four. \
@@ -804,10 +867,13 @@ const DIRECTION_COACHING: &str = "\
     say what to do with the draft, open it and publish it, and never ask about the next piece in the same reply. \
     In #shapers with several Shapers, add that it then waits for their votes. \
     Start the next piece only when the overview shows this one with a version, or when they ask to move on. \
-    When a note says a piece was just confirmed, say so in a few words and start the next piece in order, \
-    with the one question that decides it most, or a draft when the conversation already holds enough. \
-    Strategy is the last piece. When it is confirmed, do not draft any direction: \
-    say the direction is set, and offer the first project that moves an objective. \
+    When a note says a piece was just confirmed, say it the way a person would: \
+    that piece is in, then now let's define the next one, with one sentence on what it is. \
+    Do not send only the question. \
+    Use the one question that decides the next piece, or a draft when the conversation already holds enough. \
+    Strategy is the last of the five direction texts. When it is confirmed, do not offer a project. \
+    Ask the Interview line: the Shaper's profile, then where the code lives, then the landing page. \
+    Offer a project only when the Interview line says the org is ready. \
     A message that starts with Opened a and names a proposal is a member publishing a draft. \
     It asks nothing, so never draft from it, and never redraft the text it restates. \
     Ask one question per reply, never two, and about one thing: do not join two asks with and. \
@@ -878,16 +944,47 @@ const DIRECTION_COACHING: &str = "\
     Cut anything that moves no objective. Prefer the fastest cheap test to a long plan. \
     Be direct, specific, and brief. No jargon, no flattery, no pep talk. \
     Never write a live number, such as a balance or a member count, into direction. \
-    The seven rows, in order, are mission, vision, situation, objectives, strategy, the Shaper's profile, and where the code lives. \
+    The eight rows, in order, are mission, vision, situation, objectives, strategy, the Shaper's profile, where the code lives, and the landing page. \
     Ask the Interview line from the overview, and no earlier row. \
+    That line waits until who decides is settled. On the turn an invite link is created, explain the link and do not ask the mission question in that reply. The next message asks about the mission. \
     An objective line is a draft only when it names a date and a done when a person could answer yes or no. \
     Write each objective as: <outcome>. Done when: <the check>. By: YYYY-MM-DD. \
     A vague line such as be more visible is a follow-up, never a draft. \
     Write each strategy line as: <the line>. Type: bet, or Type: rule, or Type: refusal. \
     At least one line is a bet and one is a refusal. \
-    Code is a strategy line of type rule: code lives at <url>, or the line no repository yet. \
+    Code and the landing page are the codebases list, not strategy. \
+    Each repository is a name, a URL, and one line on what it is. One repository per URL. \
+    The landing page is one link on that same list. \
+    Draft that list on its own card. Publishing it does not change strategy. \
+    When you draft a project, name the repository from the Codebases line it should change. \
+    Do not open that repository, and do not take a URL from strategy. \
     The profile is one sentence of what they do and the skills they actually have, written Skills: after the sentence. \
     When the Interview line says the org is ready, say that and offer to draft a project. Ask no question.";
+
+/// Who decides, before the direction interview. The model writes the words.
+/// `setup` is only the side effect that creates the channel and the invite.
+const SETUP_COACHING: &str = "\
+    Until this chat has settled who decides, that comes before the direction interview. \
+    Do not ask the Interview line, and do not set direction, until it is settled. \
+    If they have not said they have time to set the organization up, answer what they said. Do not start the interview. \
+    Once they say they have time, and they have not said who decides, ask this one question and nothing else: \
+    Would you like to be the only one taking decisions about direction and priorities of the organization's, or would you like to do it with someone else? \
+    Read their answer in their own words. \
+    Only me, just me, or I am the only one means they decide alone. \
+    With four more people, four others, or there will be four others means four other people will decide with them. \
+    That number is how many they will invite. Do not ask them to choose again, and do not ask how many. \
+    With someone else, without a number, means they will decide with others and you still need the number. Ask only how many people they will invite. \
+    If they will decide with others and have not said how many must agree, ask only that: how many of them should agree before a decision passes. \
+    The number includes them. It cannot be higher than the people they will invite, plus them. \
+    When they are the only one, set setup to {\"mode\":\"alone\"} and then ask what they do and for whom. \
+    When you know how many they will invite and how many must agree, set setup to {\"mode\":\"invite\",\"invitees\":N,\"quorum\":K}. \
+    The chat shows a copyable invite link under that message. Do not jump straight to the mission question. \
+    In your own words, say they can share that link with the Shapers, that once those people are in they can set direction and priorities together in the Shapers chat, \
+    that you can start drafts now, and that until someone else has joined they decide on their own. \
+    The number who must agree is for the full group. While fewer have joined, a decision needs that same share of the Shapers who are seated. \
+    Do not explain that arithmetic unless they ask. Do not ask about the mission in that reply. The next message does. \
+    setup is null on every other turn. Never invent a URL. \
+    A question already in the chat is answered. Do not ask it again. One question per reply. Never send a second question in the same reply.";
 
 /// Prompt plus the live overview. `place` is the DM or `#shapers`.
 pub fn system_prompt(place: &str, overview: &str) -> String {
@@ -900,7 +997,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     ambition sized to the stage, and ruthless focus. \
     This conversation is {place}. \
     Reply as JSON only, no markdown fence: \
-    {{\"say\":\"<the full reply, plain sentences>\",\"direction\":null,\"body\":null,\"act\":null}} \
+    {{\"say\":\"<the full reply, plain sentences>\",\"direction\":null,\"body\":null,\"act\":null,\"setup\":null}} \
     direction is \"mission\", \"vision\", \"situation\", \"objectives\", or \"strategy\" on the same turn \
     they name that artifact and give its text. body is that text, cleaned into the artifact sentence, \
     never their yes and never a question back to them. \
@@ -916,7 +1013,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     body holds only the lines being added. The published lines stay on the draft, where they can edit or drop any. \
     mission and vision stay a single sentence. situation is one paragraph with no line breaks. \
     act is null, or exactly one of: \
-    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null}} \
+    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null,\"plan\":[{{\"piece\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"]}}]}} \
     {{\"kind\":\"done\",\"item\":\"<exact title from the overview>\"}} \
     {{\"kind\":\"ticket\",\"parent\":\"<title, a description, or empty>\",\"title\":\"...\",\"brief\":\"...\",\"who\":\"me\" or a person's name or null,\"due_days\":14}} \
     {{\"kind\":\"dri\",\"item\":\"<exact title>\",\"who\":\"me\" or a person's name}} \
@@ -931,6 +1028,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     When they agree to a ticket, done, or a ticket removal — yes, publish it, assign to me, remove it, delete it — set act again and say that you are opening it. A proposal is not opened by yes; they publish the draft. \
     When they name a DRI, set the dri act. It is a draft they publish. When they mark work done, set act and say that it is done. Do not ask them to confirm done. \
     project opens a project proposal. due_days is the review date the Shapers named, in days from today. who is a suggested holder only when they named a person; otherwise who is null. Do not set who to the speaker unless they said the project is for them. A null who is filled from Profiles when someone's about or the work they want matches, and they are under their limit. \
+    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Each step has piece, kind (code, research, writing, outreach, design, or ops), gate, after, and produces. piece is the step itself, never the project title. A step that can start now has an empty after. A later step names the earlier piece in after. produces is the check for that step. \
     done marks a ticket they already hold. \
     ticket creates a child under a project or ticket they hold, offered to them (who=me) or to someone else. who null means the same match: the person whose profile fits and who is holding the least. When nobody fits, leave who null and still set the ticket act. The ticket stays open for a match. When they say create the ticket, or put themselves as DRI, that is the yes: set the ticket act again, and set who to me when they named themselves. \
     parent is the overview title when you know it, copied in full. A shorter name is only safe when one live item starts with it. \
@@ -964,9 +1062,53 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     saving what they say about themselves, the work they want, and their social links onto their profile; \
     and answering from the overview. \
     say has no headings and no lists. \
-    If other people will join as Shapers and they are not settling an artifact or asking for a proposal yet, leave direction and act null.\n\
+    If other Shapers will join, still draft with the person in this chat. They can modify those drafts after they join. Do not wait for them before the first draft, and do not ask again who decides. \
+    {SETUP_COACHING}\n\
     Overview:\n{overview}"
     )
+}
+
+/// What the invite-link reply says. The mission question is the next message.
+/// The model is asked for this. If it skips it, or folds the question in, the
+/// published reply is still just the explanation.
+pub const INVITE_TRANSITION: &str = "\
+You can share the invite link under this message with the Shapers. \
+Once they are inside, you can chat in the Shapers chat to set direction and priorities together. \
+We can already start working on drafts. As long as nobody has joined, you decide by yourself.";
+
+/// The message after the invite link: a human handoff into the mission.
+pub const MISSION_HANDOFF: &str = "\
+Now let's move on to defining your organization's mission. Do you already have a mission? \
+If you do, what is it?";
+
+/// The invite-link reply explains the link and does not ask the mission question.
+/// A reply that already says those things, and does not ask the mission, is kept.
+pub fn invite_transition_say(say: &str) -> String {
+    let trimmed = say.trim();
+    if covers_invite_transition(trimmed) && !asks_mission(trimmed) {
+        return trimmed.to_string();
+    }
+    INVITE_TRANSITION.to_string()
+}
+
+fn asks_mission(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    lower.contains('?')
+        && (lower.contains("what do you do")
+            || lower.contains("mission")
+            || lower.contains("for whom"))
+}
+
+fn covers_invite_transition(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    let share = lower.contains("share") && (lower.contains("link") || lower.contains("invite"));
+    let together = lower.contains("shaper") && lower.contains("chat");
+    let drafts = lower.contains("draft");
+    let alone = lower.contains("joined")
+        || lower.contains("by yourself")
+        || lower.contains("on your own")
+        || lower.contains("on their own");
+    share && together && drafts && alone
 }
 
 /// Read the model's JSON. A confirmation is not an artifact. An unknown act is dropped.
@@ -1002,6 +1144,39 @@ pub fn parse_model_reply(raw: &str) -> (String, Option<String>, Option<String>, 
         act = None;
     }
     (say, direction, body, act)
+}
+
+/// Desktop side effect on the model's own reply. Absent, null, or an
+/// impossible count means no tag. The words stay in `say`.
+pub fn setup_tag(raw: &str) -> Option<Vec<String>> {
+    let value = json_object(&strip_think(raw))?;
+    let setup = value.get("setup")?;
+    if setup.is_null() {
+        return None;
+    }
+    match setup.get("mode").and_then(Value::as_str)? {
+        "alone" => Some(vec!["io-setup".to_string(), "alone".to_string()]),
+        "invite" => {
+            let invitees = json_count(setup.get("invitees")?)?;
+            let quorum = json_count(setup.get("quorum")?)?;
+            if !(1..=10_000).contains(&invitees) || quorum < 1 || quorum > invitees + 1 {
+                return None;
+            }
+            Some(vec![
+                "io-setup".to_string(),
+                "invite".to_string(),
+                invitees.to_string(),
+                quorum.to_string(),
+            ])
+        }
+        _ => None,
+    }
+}
+
+fn json_count(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
 }
 
 fn board_as_org_state(board: &Board) -> crate::state::OrgState {
@@ -1060,8 +1235,13 @@ fn board_as_org_state(board: &Board) -> crate::state::OrgState {
     state
 }
 
-/// A chat project is a draft only when the change plan passes the same judge
-/// the gap scan uses. A free-text title does not.
+/// A project act that includes a change plan is a draft only when that plan
+/// passes the same judge the gap scan uses. A title and a brief, with no
+/// plan fields, is still the chat draft.
+fn is_change_plan(plan: &Value) -> bool {
+    plan.get("gap").is_some() || plan.get("change").is_some() || plan.get("options").is_some()
+}
+
 fn project_plan_ok(board: &Board, raw: &Value) -> bool {
     let state = board_as_org_state(board);
     let snapshot = crate::compile::compile(&state);
@@ -1080,6 +1260,47 @@ fn project_plan_ok(board: &Board, raw: &Value) -> bool {
     crate::plan::judge_change_plan(&state, card, raw).is_ok()
 }
 
+/// A project draft already carries two or more real steps.
+pub fn project_has_steps(act: &ResolvedAct) -> bool {
+    match act {
+        ResolvedAct::Project { plan, .. } => plan
+            .as_ref()
+            .and_then(Value::as_array)
+            .is_some_and(|steps| steps.len() >= 2),
+        _ => false,
+    }
+}
+
+/// Title and brief of a project that still needs a step list.
+pub fn project_to_plan(act: &ResolvedAct) -> Option<(&str, &str)> {
+    match act {
+        ResolvedAct::Project { title, brief, .. } if !project_has_steps(act) => {
+            Some((title.as_str(), brief.as_str()))
+        }
+        _ => None,
+    }
+}
+
+/// Attach a judged step list to a project draft.
+pub fn project_with_steps(act: ResolvedAct, steps: Value) -> ResolvedAct {
+    match act {
+        ResolvedAct::Project {
+            title,
+            brief,
+            due_at,
+            suggested,
+            ..
+        } => ResolvedAct::Project {
+            title,
+            brief,
+            due_at,
+            suggested,
+            plan: Some(steps),
+        },
+        other => other,
+    }
+}
+
 /// Turn a parsed act into tags, or nothing when the overview does not support it.
 pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Option<ResolvedAct> {
     let speaker = speaker.trim().to_ascii_lowercase();
@@ -1091,8 +1312,10 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
             who,
             plan,
         } => {
-            let plan = plan.as_ref()?;
-            if !project_plan_ok(board, plan) {
+            let Some(plan) = plan.as_ref() else {
+                return None;
+            };
+            if is_change_plan(plan) && !project_plan_ok(board, plan) {
                 return None;
             }
             let title = clean_title(plan.get("title").and_then(Value::as_str).unwrap_or(title))?;
@@ -1104,11 +1327,16 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
                 Some(name) => resolve_who(name, board, &speaker),
                 None => board.suggest_holder(&title, &brief),
             };
+            let steps = plan
+                .get("plan")
+                .and_then(|value| crate::plan::steps_ready(&title, value))
+                .and_then(|steps| serde_json::to_value(steps).ok());
             Some(ResolvedAct::Project {
                 title,
                 brief,
                 due_at: due_unix(*due_days, now),
                 suggested,
+                plan: steps,
             })
         }
         RawAct::Done { item } => {
@@ -1902,7 +2130,12 @@ pub fn direction_draft_say(slug: &str) -> String {
 pub fn confirmed_note(slug: &str, version: u64) -> String {
     format!(
         "(Note from the relay, not a member: the {slug} was just confirmed as version {version}. \
-         Nobody has written since.)"
+         Nobody has written since. \
+         Say it the way a person would: the {slug} is in, then now let's define the next piece, \
+         with one sentence on what that piece is. \
+         The next piece is the Interview line in the overview. \
+         Do not offer a project unless that line says the org is ready. \
+         Do not send only the question.)"
     )
 }
 
@@ -1921,7 +2154,217 @@ pub fn direction_reply_say(say: &str, slug: &str) -> String {
     if lower.contains("published") {
         return direction_draft_say(slug);
     }
-    say.trim().to_string()
+    without_later_piece(say.trim(), slug)
+}
+
+/// Drop questions about a later direction piece. The draft reply stays on
+/// this piece; the next question waits until it is accepted.
+fn without_later_piece(say: &str, slug: &str) -> String {
+    let kept: Vec<&str> = say_sentences(say)
+        .into_iter()
+        .filter(|sentence| !later_piece_question(sentence, slug))
+        .collect();
+    let text = kept.join(" ").trim().to_string();
+    if text.is_empty() {
+        direction_draft_say(slug)
+    } else {
+        text
+    }
+}
+
+fn later_piece_question(sentence: &str, slug: &str) -> bool {
+    if !sentence.contains('?') {
+        return false;
+    }
+    const PIECES: &[(&str, &[&str])] = &[
+        ("mission", &["mission", "what do you do, and for whom"]),
+        ("vision", &["vision", "what does success look like"]),
+        ("situation", &["situation", "where does the org stand"]),
+        ("objectives", &["objective", "what outcome should be true"]),
+        ("strategy", &["strategy", "what is one bet"]),
+        ("people", &["skill", "what do you do here"]),
+        ("code", &["repository", "where does the code live"]),
+        ("site", &["landing page", "where is the landing page"]),
+    ];
+    let lower = sentence.to_ascii_lowercase();
+    PIECES
+        .iter()
+        .any(|(row, words)| *row != slug && words.iter().any(|word| lower.contains(word)))
+}
+
+/// After a piece is accepted, move on the way a person would.
+/// A reply that already does is kept. A bare interview question is replaced.
+pub fn acceptance_transition(slug: &str, say: &str, next_question: Option<&str>) -> String {
+    let trimmed = say.trim();
+    if trimmed.is_empty() || is_bare_question(trimmed, next_question) {
+        return human_handoff(slug, next_question);
+    }
+    if next_question.is_some()
+        && (declares_interview_finished(trimmed) || !leads_into_next(trimmed, next_question))
+    {
+        return human_handoff(slug, next_question);
+    }
+    if acknowledges_acceptance(trimmed, slug) || already_leads(trimmed) {
+        return trimmed.to_string();
+    }
+    let lead = format!("The {} is in.", piece_name(slug));
+    if trimmed
+        .to_ascii_lowercase()
+        .starts_with(&lead.to_ascii_lowercase())
+    {
+        trimmed.to_string()
+    } else {
+        format!("{lead} {trimmed}")
+    }
+}
+
+pub fn next_interview_question(board: &Board) -> Option<&'static str> {
+    match board.interview_cue() {
+        interview::InterviewCue::Ask { question, .. } => Some(question),
+        interview::InterviewCue::Ready => None,
+    }
+}
+
+fn piece_name(slug: &str) -> &str {
+    match slug {
+        "mission" | "vision" | "situation" | "objectives" | "strategy" => slug,
+        "codebases" => "repository list",
+        other => other,
+    }
+}
+
+fn acknowledges_acceptance(say: &str, slug: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    let name = piece_name(slug);
+    (lower.contains("accepted") || lower.contains("confirmed") || lower.contains("is set"))
+        && (lower.contains(name) || lower.contains(slug))
+}
+
+fn is_bare_question(say: &str, next: Option<&str>) -> bool {
+    let trimmed = say.trim();
+    if let Some(question) = next {
+        if trimmed.eq_ignore_ascii_case(question) {
+            return true;
+        }
+    }
+    trimmed.ends_with('?') && !trimmed.contains(". ") && !trimmed.contains("! ")
+}
+
+fn already_leads(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    lower.contains("now let's") || lower.contains("now lets") || lower.contains("let's define")
+}
+
+/// Strategy was treated as the end of the interview, or a project was offered,
+/// while a later row is still open.
+fn declares_interview_finished(say: &str) -> bool {
+    pitches_project(say)
+}
+
+/// A reply that closes the interview or offers a project while a row is open.
+pub fn pitches_project(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    lower.contains("direction is set")
+        || lower.contains("the org is ready")
+        || claims_project_draft(say)
+        || (lower.contains("project") && lower.contains("draft"))
+}
+
+fn leads_into_next(say: &str, next: Option<&str>) -> bool {
+    let Some(question) = next else {
+        return true;
+    };
+    let lower = say.to_ascii_lowercase();
+    if lower.contains(&question.to_ascii_lowercase()) {
+        return true;
+    }
+    if question.contains("success look like") {
+        return lower.contains("vision");
+    }
+    if question.contains("org stand today") {
+        return lower.contains("situation") || lower.contains("stand today");
+    }
+    if question.contains("outcome should be true") {
+        return lower.contains("objective");
+    }
+    if question.contains("one bet you are making") {
+        return lower.contains("strategy") && !lower.contains("direction is set");
+    }
+    if question.contains("what do you do here") {
+        return lower.contains("skill")
+            || lower.contains("what you do")
+            || lower.contains("profile")
+            || lower.contains("who does the work");
+    }
+    if question.contains("code live") {
+        return lower.contains("repository")
+            || lower.contains("code live")
+            || lower.contains("where the code");
+    }
+    if question.contains("landing page") {
+        return lower.contains("landing") || lower.contains("no site");
+    }
+    if question.contains("what do you do, and for whom") {
+        return lower.contains("mission");
+    }
+    false
+}
+
+/// The line used when the model only asked the interview question.
+fn human_handoff(confirmed: &str, next: Option<&str>) -> String {
+    let name = piece_name(confirmed);
+    let Some(question) = next else {
+        return format!(
+            "The {name} is in. The direction is set, and I can draft a project from an objective whenever you want."
+        );
+    };
+    let (piece, about) = if question.contains("success look like") {
+        (
+            "vision",
+            "a picture someone could walk into once this has worked, and by when. What does that look like for you?",
+        )
+    } else if question.contains("org stand today") {
+        (
+            "situation",
+            "where the org stands today, and the one thing it has to learn next. Where do you stand?",
+        )
+    } else if question.contains("outcome should be true") {
+        (
+            "objectives",
+            "the outcomes that should be true by a date, and how someone could check. What's the first one?",
+        )
+    } else if question.contains("one bet you are making") {
+        (
+            "strategy",
+            "one bet you are making, and something you will refuse to do. What's the bet?",
+        )
+    } else if question.contains("what do you do here") {
+        (
+            "who does the work",
+            "what you do here, and the skills you actually have. What's the sentence?",
+        )
+    } else if question.contains("code live") {
+        (
+            "where the code lives",
+            "the repository, or that there isn't one yet. Where is it?",
+        )
+    } else if question.contains("landing page") {
+        (
+            "the landing page",
+            "the public site, or that there isn't one yet. Where is it?",
+        )
+    } else if question.contains("what do you do, and for whom") {
+        (
+            "mission",
+            "what you do, and for whom. Do you already have one?",
+        )
+    } else {
+        (
+            "next piece",
+            "the next thing the direction needs. What should it say?",
+        )
+    };
+    format!("The {name} is in. Now let's define the {piece}: {about}")
 }
 
 /// The draft card already shows `body` under the reply. Sentences of `say`
@@ -2007,6 +2450,201 @@ pub fn recover_project(user: &str, say: &str) -> Option<RawAct> {
         return project_from_request(user);
     }
     None
+}
+
+fn draft_cue(lower: &str) -> bool {
+    lower.contains("in the draft")
+        || lower.contains("open the draft")
+        || lower.contains("open it, edit")
+        || lower.contains("open it and publish")
+}
+
+/// The reply tells them a project draft is already under the message.
+pub fn claims_project_draft(say: &str) -> bool {
+    let lower = say.to_ascii_lowercase();
+    word_has(&lower, "project") && draft_cue(&lower)
+}
+
+/// A project draft for this reply. The model's act wins when it resolves.
+/// A change plan the judge refused is not replaced by the sentence. Otherwise
+/// the project the reply says is already in the draft is used.
+pub fn project_draft_for_reply(
+    act: Option<&RawAct>,
+    say: &str,
+    board: &Board,
+    speaker: &str,
+    now: u64,
+) -> Option<ResolvedAct> {
+    if let Some(act) = act {
+        if let Some(resolved) = resolve_act(act, board, speaker, now) {
+            if matches!(resolved, ResolvedAct::Project { .. }) {
+                return Some(resolved);
+            }
+        }
+        if let RawAct::Project {
+            plan: Some(plan), ..
+        } = act
+        {
+            if is_change_plan(plan) {
+                return None;
+            }
+        }
+    }
+    claimed_project(say, now).and_then(|raw| resolve_act(&raw, board, speaker, now))
+}
+
+/// The project named in a reply that says the draft is already there.
+///
+/// "Want me to publish?" with no plan stays unresolved. This is the other
+/// case: the reply asserts the card and describes the work.
+pub fn claimed_project(say: &str, now: u64) -> Option<RawAct> {
+    if !claims_project_draft(say) {
+        return None;
+    }
+    let (title, brief) = project_claim_text(say)?;
+    let title = clean_title(&title)?;
+    let brief = clean_brief(&brief, &title);
+    let due_days = review_days(say, now).unwrap_or(14);
+    Some(RawAct::Project {
+        title: title.clone(),
+        brief: brief.clone(),
+        due_days,
+        who: None,
+        plan: Some(serde_json::json!({
+            "kind": "project",
+            "title": title,
+            "brief": brief,
+            "due_days": due_days,
+        })),
+    })
+}
+
+/// Drop the sentence that says the card is there, when no card was attached.
+pub fn without_false_project_draft(say: &str) -> String {
+    let kept: Vec<&str> = say_sentences(say)
+        .into_iter()
+        .filter(|sentence| !draft_cue(&sentence.to_ascii_lowercase()))
+        .collect();
+    let text = kept.join(" ").trim().to_string();
+    if text.is_empty() {
+        "I have not opened that project draft.".to_string()
+    } else {
+        format!("{text} I have not opened that project draft.")
+    }
+}
+
+fn project_claim_text(say: &str) -> Option<(String, String)> {
+    let lower = say.to_ascii_lowercase();
+    let cut_at = [
+        "it is in the draft",
+        "it's in the draft",
+        "in the draft",
+        "open the draft",
+        "open it, edit",
+        "open it and publish",
+    ]
+    .iter()
+    .filter_map(|marker| lower.find(marker))
+    .min()?;
+    let head = say[..cut_at].trim().trim_end_matches(['.', ';', ',', ':']);
+    let description = head
+        .rfind(':')
+        .map(|at| head[at + 1..].trim())
+        .filter(|text| !text.is_empty())
+        .unwrap_or(head);
+    let description = strip_review_clause(description);
+    if description.chars().count() < 3 {
+        return None;
+    }
+    if let Some((title, brief)) = description.split_once(", so ") {
+        return Some((
+            title.trim().to_string(),
+            brief.trim().trim_end_matches('.').to_string(),
+        ));
+    }
+    if let Some((title, brief)) = description.split_once(". ") {
+        return Some((
+            title.trim().to_string(),
+            brief.trim().trim_end_matches('.').to_string(),
+        ));
+    }
+    Some((description.clone(), description))
+}
+
+fn strip_review_clause(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let at = lower.rfind(", with ").or_else(|| lower.rfind(" with "));
+    if let Some(at) = at {
+        let tail = &lower[at..];
+        if tail.contains("review") || tail.contains("due date") {
+            return text[..at].trim().trim_end_matches(['.', ',']).to_string();
+        }
+    }
+    text.trim().trim_end_matches('.').to_string()
+}
+
+fn review_days(text: &str, now: u64) -> Option<u32> {
+    let lower = text.to_ascii_lowercase();
+    const MONTHS: [&str; 12] = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    ];
+    use chrono::Datelike;
+    let today = chrono::DateTime::from_timestamp(now as i64, 0)?.date_naive();
+    for (index, name) in MONTHS.iter().enumerate() {
+        let Some(at) = month_at(&lower, name) else {
+            continue;
+        };
+        let rest = lower[at + name.len()..].trim_start_matches([' ', ',']);
+        let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+        let day: u32 = digits.parse().ok()?;
+        if !(1..=31).contains(&day) {
+            continue;
+        }
+        let after_day = rest[digits.len()..].trim_start_matches([' ', ',']);
+        let year_digits: String = after_day
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect();
+        let explicit_year = (year_digits.len() == 4)
+            .then(|| year_digits.parse::<i32>().ok())
+            .flatten();
+        let year = explicit_year.unwrap_or(today.year());
+        let mut date = chrono::NaiveDate::from_ymd_opt(year, (index as u32) + 1, day)?;
+        if explicit_year.is_none() && date < today {
+            date = chrono::NaiveDate::from_ymd_opt(year + 1, (index as u32) + 1, day)?;
+        }
+        let days = (date - today).num_days();
+        if days < 1 {
+            return Some(1);
+        }
+        return Some((days as u32).clamp(1, 180));
+    }
+    None
+}
+
+fn month_at(lower: &str, name: &str) -> Option<usize> {
+    lower.match_indices(name).find_map(|(at, _)| {
+        let before_ok = lower[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        let after_ok = lower[at + name.len()..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        (before_ok && after_ok).then_some(at)
+    })
 }
 
 fn project_from_sentences(say: &str) -> Option<RawAct> {
@@ -2308,6 +2946,7 @@ pub fn act_tags(act: &ResolvedAct, from: &str) -> Vec<Vec<String>> {
             brief,
             due_at,
             suggested,
+            plan,
         } => {
             tags.push(vec!["project".into(), title.clone(), brief.clone()]);
             tags.push(vec!["due".into(), due_at.to_string()]);
@@ -2318,6 +2957,9 @@ pub fn act_tags(act: &ResolvedAct, from: &str) -> Vec<Vec<String>> {
                     "".into(),
                     "suggested".into(),
                 ]);
+            }
+            if let Some(steps) = plan {
+                tags.push(vec!["plan".into(), steps.to_string()]);
             }
         }
         ResolvedAct::Done { item } => {
@@ -3305,6 +3947,41 @@ fn clip(text: &str, max: usize) -> String {
     format!("{}…", trimmed[..end].trim_end())
 }
 
+fn codebases_overview(items: &[CodebaseLink]) -> String {
+    if items.is_empty() {
+        return "Codebases: not set.".to_string();
+    }
+    let mut lines = vec!["Codebases:".to_string()];
+    for item in items {
+        let role = if item.kind == "site" {
+            "landing page"
+        } else {
+            "repository"
+        };
+        if item.url.is_empty() {
+            let note = if item.about.is_empty() {
+                "none"
+            } else {
+                item.about.as_str()
+            };
+            lines.push(format!("- {note} ({role})"));
+        } else {
+            let name = if item.name.is_empty() {
+                item.url.as_str()
+            } else {
+                item.name.as_str()
+            };
+            let about = if item.about.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", item.about)
+            };
+            lines.push(format!("- {name} {}{about} ({role})", item.url));
+        }
+    }
+    lines.join("\n")
+}
+
 fn text_field(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)
@@ -3535,6 +4212,7 @@ mod tests {
             }),
         );
         assert!(text.contains(&direction));
+        assert!(text.contains("Codebases: not set."));
         assert!(text.contains("mission v1: We exist so organizations can run themselves."));
         assert!(text.contains("vision: not set"));
         assert!(text.contains("Hall roof"));
@@ -4122,8 +4800,60 @@ mod tests {
         );
         assert_eq!(
             direction_reply_say("Got it. What's the vision?", "mission"),
-            "Got it. What's the vision?"
+            "Got it."
         );
+        assert_eq!(
+            direction_reply_say(
+                "Your words are in the draft below. Which small teams do you mean first? What does success look like, and by when?",
+                "mission",
+            ),
+            "Your words are in the draft below. Which small teams do you mean first?"
+        );
+    }
+
+    #[test]
+    fn an_accepted_piece_leads_into_the_next_question() {
+        let question = "What does success look like, and by when?";
+        let bare = acceptance_transition("mission", question, Some(question));
+        assert!(bare.starts_with("The mission is in. Now let's define the vision:"));
+        assert!(bare.contains("What does that look like for you?"));
+        assert_ne!(bare, question);
+        let kept = acceptance_transition(
+            "mission",
+            "The mission is in. Now let's define the vision: what it looks like once a volunteer team is running on this. What does that picture look like, and by when?",
+            Some(question),
+        );
+        assert!(kept.starts_with("The mission is in. Now let's define the vision:"));
+        let profile = "In one sentence, what do you do here? Then name the skills you actually have, after Skills:";
+        let skipped = acceptance_transition(
+            "strategy",
+            "The strategy is in, so the direction is set. The first project should be continuous task flow. It is in the draft below; open it, edit it, and publish it.",
+            Some(profile),
+        );
+        assert!(skipped.contains("who does the work"));
+        assert!(skipped.contains("skills you actually have"));
+        assert!(!skipped.to_ascii_lowercase().contains("direction is set"));
+        assert!(!skipped.to_ascii_lowercase().contains("first project"));
+        let code = acceptance_transition(
+            "profile",
+            "",
+            Some("Where does the code live, or is there no repository yet?"),
+        );
+        assert!(code.contains("where the code lives"));
+        let site = acceptance_transition(
+            "strategy",
+            "The strategy is in. The direction is set.",
+            Some("Where is the landing page, or is there no site yet?"),
+        );
+        assert!(site.contains("landing page"));
+        let listed = acceptance_transition(
+            "codebases",
+            "",
+            Some("Where is the landing page, or is there no site yet?"),
+        );
+        assert!(listed.contains("repository list"));
+        assert!(listed.contains("landing page"));
+        assert!(!site.to_ascii_lowercase().contains("direction is set"));
     }
 
     #[test]
@@ -4306,7 +5036,14 @@ mod tests {
         assert!(prompt.contains("Once it is confirmed, propose objectives"));
         assert!(!prompt.contains("Then propose objectives that fit it"));
         assert!(prompt.contains("When a note says a piece was just confirmed"));
-        assert!(prompt.contains("Strategy is the last piece"));
+        assert!(prompt.contains("Do not send only the question"));
+        assert!(prompt.contains("Strategy is the last of the five direction texts"));
+        assert!(prompt.contains("do not offer a project"));
+        assert!(prompt.contains("where the code lives, then the landing page"));
+        assert!(prompt.contains("codebases list, not strategy"));
+        assert!(prompt.contains("does not change strategy"));
+        assert!(!prompt.contains("Code is a strategy line"));
+        assert!(!prompt.contains("Strategy is the last piece"));
         assert!(prompt.contains("never draft from it"));
         assert!(confirmed_note("vision", 1).contains("the vision was just confirmed as version 1"));
     }
@@ -4322,6 +5059,70 @@ mod tests {
         assert!(prompt.contains("at most three short sentences before its one question"));
         assert!(prompt.contains("Every draft of them carries the whole list"));
         assert!(prompt.contains("say never repeats the drafted text or its lines"));
+    }
+
+    #[test]
+    fn the_model_runs_setup_and_reads_a_count_in_their_words() {
+        let prompt = system_prompt("a private DM with one member", "Overview:\nnone");
+        assert!(prompt.contains(
+            "Would you like to be the only one taking decisions about direction and priorities of the organization's, or would you like to do it with someone else?"
+        ));
+        assert!(prompt.contains("With four more people"));
+        assert!(prompt.contains("Do not ask them to choose again"));
+        assert!(prompt.contains("Never send a second question in the same reply"));
+        assert!(prompt.contains("\"mode\":\"invite\""));
+        assert!(prompt.contains("comes before the direction interview"));
+        assert!(prompt.contains("share that link with the Shapers"));
+        assert!(prompt.contains("Shapers chat"));
+        assert!(prompt.contains("until someone else has joined they decide on their own"));
+        assert!(prompt.contains("Do not jump straight to the mission question"));
+        assert!(prompt.contains("explain the link and do not ask the mission question"));
+        assert!(prompt.contains("The next message does"));
+    }
+
+    #[test]
+    fn an_invite_reply_explains_the_link_and_leaves_the_mission_for_the_next_message() {
+        let bare = invite_transition_say("What do you do, and for whom?");
+        assert!(bare.contains("share the invite link"));
+        assert!(bare.contains("Shapers chat"));
+        assert!(bare.contains("start working on drafts"));
+        assert!(bare.contains("nobody has joined, you decide by yourself"));
+        assert!(!bare.contains('?'));
+
+        let mixed = "You can share the invite link with them. Once they are inside, chat in the Shapers chat. We can start a draft now. As long as nobody has joined, you decide by yourself.\n\nWhat do you do, and for whom?";
+        assert_eq!(invite_transition_say(mixed), INVITE_TRANSITION);
+        assert!(!invite_transition_say(mixed).contains("What do you do"));
+
+        let already = "You can share the invite link with them. Once they are inside, chat in the Shapers chat. We can start a draft now. As long as nobody has joined, you decide by yourself.";
+        assert_eq!(invite_transition_say(already), already);
+
+        assert!(MISSION_HANDOFF.contains("Do you already have a mission?"));
+        assert!(MISSION_HANDOFF.contains("what is it?"));
+        assert!(!MISSION_HANDOFF
+            .to_ascii_lowercase()
+            .contains("what do you do"));
+    }
+
+    #[test]
+    fn setup_tag_keeps_a_real_invite_and_drops_a_bad_count() {
+        let invite = r#"{"say":"Send this to them.","direction":null,"body":null,"act":null,"setup":{"mode":"invite","invitees":4,"quorum":3}}"#;
+        assert_eq!(
+            setup_tag(invite),
+            Some(vec![
+                "io-setup".to_string(),
+                "invite".to_string(),
+                "4".to_string(),
+                "3".to_string(),
+            ])
+        );
+        let alone = r#"{"say":"You decide.","setup":{"mode":"alone"}}"#;
+        assert_eq!(
+            setup_tag(alone),
+            Some(vec!["io-setup".to_string(), "alone".to_string()])
+        );
+        let too_high = r#"{"say":"x","setup":{"mode":"invite","invitees":"4","quorum":9}}"#;
+        assert_eq!(setup_tag(too_high), None);
+        assert_eq!(setup_tag(r#"{"say":"hi","setup":null}"#), None);
     }
 
     #[test]
@@ -4416,6 +5217,7 @@ mod tests {
             brief: "Fix the roof.".into(),
             due_at: NOW,
             suggested: Some(ADA.into()),
+            plan: None,
         };
         let project_say = annotate_act_say("A draft for the hall.", &project, &named);
         assert!(project_say.contains("Suggested holder: Ada Lovelace."));
@@ -4599,6 +5401,75 @@ mod tests {
     }
 
     #[test]
+    fn a_title_and_brief_is_a_project_draft() {
+        let raw = act_json(json!({
+            "kind": "project",
+            "title": "Continuous task flow",
+            "brief": "The AI suggests the next task the moment one is done.",
+            "due_days": 8,
+            "who": null
+        }));
+        let (_, _, _, act) = parse_model_reply(&raw);
+        let resolved = resolve_act(act.as_ref().expect("act"), &board(), ME, NOW).expect("draft");
+        match resolved {
+            ResolvedAct::Project { title, due_at, .. } => {
+                assert_eq!(title, "Continuous task flow");
+                assert_eq!(due_at, NOW + 8 * 86_400);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_claimed_project_draft_is_recovered_from_the_reply() {
+        let say = "The strategy is in, so the direction is set: mission, vision, situation, objectives, and strategy are all confirmed. The first project should be the one your bet and your first objective both hang on: building continuous task flow, so the AI suggests your next task the moment one is done, with October 15 as the review date. It is in the draft below; open it, edit it, and publish it.";
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 7)
+            .expect("date")
+            .and_hms_opt(12, 0, 0)
+            .expect("time")
+            .and_utc()
+            .timestamp() as u64;
+        let resolved = project_draft_for_reply(None, say, &board(), ME, now).expect("draft");
+        match resolved {
+            ResolvedAct::Project {
+                title,
+                brief,
+                due_at,
+                ..
+            } => {
+                assert_eq!(title, "building continuous task flow");
+                assert!(brief.to_ascii_lowercase().contains("next task"));
+                assert_eq!(due_at, now + 8 * 86_400);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(!claims_project_draft(
+            "Your words are in the draft below. Which small teams do you mean first?"
+        ));
+        let stripped = without_false_project_draft(say);
+        assert!(!stripped.to_ascii_lowercase().contains("draft below"));
+        assert!(stripped.contains("building continuous task flow"));
+        assert!(stripped.contains("have not opened"));
+    }
+
+    #[test]
+    fn a_refused_change_plan_is_not_replaced_by_the_sentence() {
+        let act = RawAct::Project {
+            title: "Nope".into(),
+            brief: "A plan the judge refuses.".into(),
+            due_days: 14,
+            who: None,
+            plan: Some(json!({
+                "gap": { "ref": "objectives@1#missing", "verdict": "uncovered" },
+                "options": [],
+                "change": { "from": "a", "to": "b" }
+            })),
+        };
+        let say = "The first project should be: building continuous task flow, so the AI suggests the next task. It is in the draft below.";
+        assert!(project_draft_for_reply(Some(&act), say, &board(), ME, NOW).is_none());
+    }
+
+    #[test]
     fn a_chat_project_goes_through_the_change_plan_judge() {
         let mut board = board();
         board.observe(
@@ -4644,7 +5515,8 @@ mod tests {
                 "moves": ["objectives@1#line-a"]
             },
             "plan": [
-                { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] }
+                { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] },
+                { "piece": "Run the first session", "kind": "ops", "gate": false, "after": ["Evening licence application"], "produces": ["one session held"] }
             ]
         });
         let (_, _, _, act) =
@@ -4654,6 +5526,11 @@ mod tests {
         assert!(tags
             .iter()
             .any(|tag| tag.first().map(String::as_str) == Some("project")));
+        let plan_tag = tags
+            .iter()
+            .find(|tag| tag.first().map(String::as_str) == Some("plan"))
+            .expect("plan");
+        assert!(plan_tag[1].contains("Evening licence application"));
         let kept = plan.clone();
         let mut bad = kept;
         bad["options"][1]["kept"] = json!(true);
@@ -4668,10 +5545,48 @@ mod tests {
             brief: "Use the app inside Hypha first.".into(),
             due_at: 1,
             suggested: None,
+            plan: None,
         });
         assert!(say.contains("Internal Dogfooding at Hypha"));
         assert!(say.contains("Use the app inside Hypha first."));
         assert!(say.contains("Open the draft"));
+    }
+
+    #[test]
+    fn a_project_named_as_its_own_step_does_not_keep_that_plan() {
+        let (_, _, _, clone) = parse_model_reply(
+            &json!({
+                "say": "Drafted.",
+                "act": {
+                    "kind": "project",
+                    "title": "Continuous task flow",
+                    "brief": "The AI suggests the next task.",
+                    "due_days": 14,
+                    "plan": [{ "piece": "Continuous task flow", "kind": "code", "produces": ["done"] }]
+                }
+            })
+            .to_string(),
+        );
+        let resolved = resolve_act(clone.as_ref().unwrap(), &board(), ME, NOW).expect("project");
+        assert!(!project_has_steps(&resolved));
+        let (_, _, _, planned) = parse_model_reply(
+            &json!({
+                "say": "Drafted.",
+                "act": {
+                    "kind": "project",
+                    "title": "Continuous task flow",
+                    "brief": "The AI suggests the next task.",
+                    "due_days": 14,
+                    "plan": [
+                        { "piece": "Show the next task", "kind": "code", "produces": ["the next task is visible"] },
+                        { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task"], "produces": ["done work opens the next task"] }
+                    ]
+                }
+            })
+            .to_string(),
+        );
+        let resolved = resolve_act(planned.as_ref().unwrap(), &board(), ME, NOW).expect("steps");
+        assert!(project_has_steps(&resolved));
     }
 
     #[test]
@@ -4776,6 +5691,7 @@ mod tests {
     fn the_prompt_lists_the_chat_acts() {
         let prompt = system_prompt("a private DM with one member", "Overview:\nnone");
         assert!(prompt.contains("project proposal"));
+        assert!(prompt.contains("plan is the steps"));
         assert!(prompt.contains("marking their ticket done"));
         assert!(prompt.contains("naming a DRI"));
         assert!(prompt.contains("removing a project"));

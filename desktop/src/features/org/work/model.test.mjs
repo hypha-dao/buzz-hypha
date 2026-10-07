@@ -5,6 +5,7 @@ import {
   assembleWorkDoor,
   canChangeTicketDue,
   childrenOf,
+  countsForList,
   formatChildrenCounts,
   formatReviewDate,
   contextPaths,
@@ -15,6 +16,8 @@ import {
   SEEDED_CONTEXT_PATHS,
   latestHealth,
   latestWorkPrompt,
+  openTicketDrafts,
+  parseOfferedTicket,
   parseWorkItem,
   stateChipLabel,
   trailForItem,
@@ -461,6 +464,76 @@ test("a prompt is stale when the ticket version or the commit moved", () => {
   assert.equal(workPromptIsStale(latest, older, "abc1234"), false);
   assert.equal(workPromptIsStale(latest, newer, "abc1234"), true);
   assert.equal(workPromptIsStale(latest, older, "def5678"), true);
+});
+
+test("an open ticket draft is listed under its project as offered", () => {
+  const draftId = "cd".repeat(32);
+  const draft = event({
+    id: draftId,
+    kind: 50100,
+    tags: [
+      ["t", "ticket"],
+      ["u", ROOT],
+      ["n", HOLDER],
+    ],
+    content: JSON.stringify({
+      parent: ROOT,
+      title: "Define how the AI picks the next task",
+      brief: "Write the rule in one paragraph.",
+      how: ["Write the rule.", "Name what the screen shows."],
+      done_when: ["the rule is written"],
+      due_at: 1_792_087_012,
+      suggested_holder: HOLDER,
+    }),
+  });
+  const offered = parseOfferedTicket(draft);
+  assert.equal(offered?.id, draftId);
+  assert.equal(offered?.state, "offered");
+  assert.equal(offered?.parent, ROOT);
+  assert.equal(offered?.how, "Write the rule.\nName what the screen shows.");
+  assert.deepEqual(offered?.doneWhen, ["the rule is written"]);
+
+  const listed = openTicketDrafts([draft], [], ROOT, []);
+  assert.deepEqual(
+    listed.map((row) => row.title),
+    ["Define how the AI picks the next task"],
+  );
+  assert.equal(
+    countsForList({ open: 0, offered: 0, accepted: 0, done: 0 }, listed)
+      .offered,
+    1,
+  );
+
+  const declined = event({
+    id: "ef".repeat(32),
+    kind: 39104,
+    tags: [
+      ["d", draftId],
+      ["s", "declined"],
+    ],
+  });
+  assert.equal(openTicketDrafts([draft], [declined], ROOT, []).length, 0);
+
+  const live = itemEvent(
+    CHILD,
+    {
+      id: CHILD,
+      parent: ROOT,
+      root: ROOT,
+      title: "Define how the AI picks the next task",
+      state: "accepted",
+    },
+    [
+      ["s", "accepted"],
+      ["u", ROOT],
+      ["t", "ticket"],
+    ],
+  );
+  const child = parseWorkItem(live);
+  assert.equal(
+    openTicketDrafts([draft], [], ROOT, child ? [child] : []).length,
+    0,
+  );
 });
 
 test("open and offered sit in not-accepted; held work is ongoing", () => {

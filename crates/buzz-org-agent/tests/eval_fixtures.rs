@@ -195,7 +195,7 @@ fn state_events_are_signed_by_the_relay_and_drafts_by_the_agent() {
         for e in fixture.seeds.values().flatten() {
             let k = kind(e);
             let signer = e.pubkey.to_hex();
-            if (39100..39106).contains(&k)
+            if (39100..39107).contains(&k)
                 || k == KIND_NIP43_MEMBERSHIP_LIST
                 || (39000..39003).contains(&k)
             {
@@ -637,7 +637,7 @@ fn locale_seeds_share_ids_pubkeys_timestamps_and_tags_with_en() {
                 ) {
                     (Ok(x), Ok(y)) => ids.same_shape(&at, &x, &y),
                     (Err(_), Err(_)) => assert!(
-                        !(39100..39106).contains(&kind(a)) && !(50000..50200).contains(&kind(a)),
+                        !(39100..39107).contains(&kind(a)) && !(50000..50200).contains(&kind(a)),
                         "{at}: an org kind carries JSON"
                     ),
                     _ => panic!("{at}: one locale is JSON, the other is not"),

@@ -6,6 +6,8 @@
 
 import type { RelayEvent } from "@/shared/api/types";
 import {
+  KIND_IO_DRAFT,
+  KIND_IO_DRAFT_OUTCOME,
   KIND_IO_HEALTH,
   KIND_IO_WORK_ITEM,
   KIND_IO_WORK_PROMPT,
@@ -63,6 +65,10 @@ export type WorkItem = {
   lastProgress: string | null;
   /** Original content when it carries a change plan. */
   planContent: string | null;
+  /** How to do this ticket. Empty on a project. */
+  how: string | null;
+  /** Checks that say the ticket is done. */
+  doneWhen: string[];
 };
 
 export type WorkHealthSentence = {
@@ -280,6 +286,158 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
       content.plan !== undefined || content.change !== undefined
         ? event.content
         : null,
+    how: joinedLines(content.how),
+    doneWhen: linesOf(content.done_when),
+  };
+}
+
+function linesOf(value: unknown): string[] {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return [value.trim()];
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function joinedLines(value: unknown): string | null {
+  const lines = linesOf(value);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/**
+ * An open ticket draft (`50100` `t=ticket`) as an offered ticket.
+ * Its id is the draft event id, which is the ticket page until it is agreed.
+ */
+export function parseOfferedTicket(event: RelayEvent): WorkItem | null {
+  if (event.kind !== KIND_IO_DRAFT) return null;
+  if (tagValue(event.tags, TAG_TYPE) !== "ticket") return null;
+
+  let content: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(event.content || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      content = parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  const parent =
+    asString(content.parent) ?? tagValue(event.tags, TAG_PARENT) ?? null;
+  if (!parent) return null;
+  const title = asString(content.title);
+  if (!title) return null;
+  const brief = typeof content.brief === "string" ? content.brief : "";
+  const how = joinedLines(content.how) ?? (brief.length > 0 ? brief : null);
+  const offeredTo =
+    asString(content.suggested_holder) ??
+    taggedValues(event.tags, "p", "suggested")[0] ??
+    null;
+
+  return {
+    id: event.id,
+    eventId: event.id,
+    createdAt: event.created_at,
+    parent,
+    root: parent,
+    depth: 1,
+    path: [],
+    title,
+    brief,
+    state: "offered",
+    type: "ticket",
+    dri: null,
+    offeredTo,
+    offeredBy: "agent",
+    createdBy: null,
+    offeredByMember: null,
+    dueAt: asUnix(content.due_at),
+    approvedAt: null,
+    children: EMPTY_COUNTS,
+    home: null,
+    lastProgress: null,
+    planContent: null,
+    how,
+    doneWhen: linesOf(content.done_when),
+  };
+}
+
+/** Newest `39104` status per draft id. Missing means still open. */
+export function draftOutcomeStatus(
+  events: readonly RelayEvent[],
+): Map<string, string> {
+  const latest = new Map<string, { at: number; id: string; status: string }>();
+  for (const event of events) {
+    if (event.kind !== KIND_IO_DRAFT_OUTCOME) continue;
+    const draftId = tagValue(event.tags, "d");
+    const status = tagValue(event.tags, TAG_STATUS);
+    if (!draftId || !status) continue;
+    const current = latest.get(draftId);
+    if (
+      !current ||
+      event.created_at > current.at ||
+      (event.created_at === current.at && event.id > current.id)
+    ) {
+      latest.set(draftId, {
+        at: event.created_at,
+        id: event.id,
+        status,
+      });
+    }
+  }
+  return new Map([...latest].map(([id, row]) => [id, row.status]));
+}
+
+/**
+ * Ticket drafts under a project that are still waiting for a yes.
+ * A draft whose title is already a live child stays off the list.
+ */
+export function openTicketDrafts(
+  drafts: readonly RelayEvent[],
+  outcomes: readonly RelayEvent[],
+  parentId: string,
+  liveChildren: readonly WorkItem[],
+): WorkItem[] {
+  const titles = new Set(liveChildren.map((child) => child.title));
+  const status = draftOutcomeStatus(outcomes);
+  return drafts
+    .map(parseOfferedTicket)
+    .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.parent === parentId)
+    .filter((item) => !titles.has(item.title))
+    .filter((item) => {
+      const outcome = status.get(item.id);
+      return outcome === undefined || outcome === "open";
+    })
+    .sort((left, right) => left.title.localeCompare(right.title));
+}
+
+/** Relay counters, raised to whatever the page is actually listing. */
+export function countsForList(
+  relay: WorkChildrenCounts,
+  children: readonly WorkItem[],
+): WorkChildrenCounts {
+  const listed: WorkChildrenCounts = {
+    open: 0,
+    offered: 0,
+    accepted: 0,
+    done: 0,
+  };
+  for (const child of children) {
+    if (child.state === "open") listed.open += 1;
+    else if (child.state === "offered") listed.offered += 1;
+    else if (child.state === "accepted" || child.state === "in_review") {
+      listed.accepted += 1;
+    } else if (child.state === "done") listed.done += 1;
+  }
+  return {
+    open: Math.max(relay.open, listed.open),
+    offered: Math.max(relay.offered, listed.offered),
+    accepted: Math.max(relay.accepted, listed.accepted),
+    done: Math.max(relay.done, listed.done),
   };
 }
 
