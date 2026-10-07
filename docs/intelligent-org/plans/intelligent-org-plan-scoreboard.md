@@ -14,6 +14,7 @@ so no wave has a judge score and the corpus counts below are not claimed.
 | ---- | --- | -------- | ------- | ------- | ---------- | ----- | ------------- | ---- |
 | 1 | — | — | — | — | accept publishes every step, including steps that wait; how and done-when survive a cleared `plans` map | not run | Publish the full step list and a `50104` with each ticket. Recover how-lines from the ticket drafts. | kept |
 | 2 | buzz (digest only) | — | — | — | a code path outside the digest publishes nothing; the buzz digest names 80 tracked files at `132d0d0de6e38e9ac3ea9ba9cd57956a9a9b3360` | not run | Put the home-repo listing and the `39106` file list in the planner prompt. Ground steps before publish. The relay stores `commit` and `files` on a repository. | kept |
+| 3 | — | — | — | — | accept-time code prompts name `repo@commit`; a vacuous title publishes nothing; a missing skill sets `unfilled` and no holder | not run | Keep the digest commit on the accept path. Reject the vacuous-title list in `step_ready`. Parse `requires` and match it to a profile skill. | kept |
 
 ## Still open
 

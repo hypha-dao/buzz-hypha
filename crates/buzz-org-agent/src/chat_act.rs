@@ -1076,7 +1076,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     When they agree to a ticket, done, or a ticket removal — yes, publish it, assign to me, remove it, delete it — set act again and say that you are opening it. A proposal is not opened by yes; they publish the draft. \
     When they name a DRI, set the dri act. It is a draft they publish. When they mark work done, set act and say that it is done. Do not ask them to confirm done. \
     project opens a project proposal. due_days is the review date the Shapers named, in days from today. who is a suggested holder only when they named a person; otherwise who is null. Do not set who to the speaker unless they said the project is for them. A null who is filled from Profiles when someone's about or the work they want matches, and they are under their limit. \
-    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Every step becomes a ticket when the project is accepted, including a step that waits on another. Each step has piece, brief, kind (code, research, writing, outreach, design, or ops), gate, after, produces, how, and files. piece is a short specific title, never the project title. brief is one sentence of what to do, and it is not the title. how is two to four imperative sentences, and it is not a copy of produces. produces is the check that the step is done. It is not the title and it is not \"the step is done\". A step that can start now has an empty after. A later step names the earlier piece in after. A code step's files are paths from the digest in the overview. Do not invent a path. \
+    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Every step becomes a ticket when the project is accepted, including a step that waits on another. Each step has piece, brief, kind (code, research, writing, outreach, design, or ops), gate, after, requires, produces, how, and files. piece is a short specific title, never the project title, and never a title that could sit under any project (Do research, Make a plan, Kick-off, Implement the feature). brief is one sentence of what to do, and it is not the title. how is two to four imperative sentences, and it is not a copy of produces. produces is the check that the step is done. It is not the title and it is not \"the step is done\". A step that can start now has an empty after. A later step names the earlier piece in after. requires is the skill the step needs, or empty when any member could do it. A code step's files are paths from the digest in the overview. Do not invent a path. \
     done marks a ticket they already hold. \
     ticket creates a child under a project or ticket they hold, offered to them (who=me) or to someone else. who null means the same match: the person whose profile fits and who is holding the least. When nobody fits, leave who null and still set the ticket act. The ticket stays open for a match. When they say create the ticket, or put themselves as DRI, that is the yes: set the ticket act again, and set who to me when they named themselves. \
     parent is the overview title when you know it, copied in full. A shorter name is only safe when one live item starts with it. \
@@ -1360,9 +1360,7 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
             who,
             plan,
         } => {
-            let Some(plan) = plan.as_ref() else {
-                return None;
-            };
+            let plan = plan.as_ref()?;
             if is_change_plan(plan) && !project_plan_ok(board, plan) {
                 return None;
             }

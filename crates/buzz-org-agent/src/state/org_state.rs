@@ -154,6 +154,10 @@ pub struct OrgState {
     /// Not an event. Empty means this process has not read a digest.
     #[serde(skip)]
     pub code_paths: BTreeMap<String, Vec<String>>,
+    /// Commit each digest was read at, keyed the same way as [`Self::code_paths`].
+    /// Not an event. A code prompt names this commit.
+    #[serde(skip)]
+    pub code_commits: BTreeMap<String, String>,
 }
 
 impl OrgState {

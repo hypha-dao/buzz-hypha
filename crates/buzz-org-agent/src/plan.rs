@@ -423,7 +423,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
                 .map(|root| self.planner_digest(root))
                 .unwrap_or_default();
             if !paths.is_empty() {
-                self.state.code_paths.insert(repo.clone(), paths.clone());
+                remember_digest(&mut self.state, &repo, &commit, &paths);
             }
             let recovered = plan_for_root(&self.state, &root_id);
             let needs_steps = match &recovered {
@@ -839,19 +839,23 @@ fn draft_ready(
             continue;
         }
         let after = sibling_ids(state, &root_id, step);
-        let draft = ticket_from_step(&root, &dri, &plan, step, after);
+        let draft = ticket_from_step(state, &root, &dri, &plan, step, after);
         let ticket = stage_ticket_draft(state, keys, &root_id, &dri, &receipt, &draft)?;
         let draft_id = ticket.id.to_hex();
         events.push(ticket);
         tickets += 1;
+        let commit = digest_commit(state, &root);
         if let Some(prompt) = stage_prompt(
             keys,
             &draft_id,
-            &repo,
-            &objective,
-            &change_from,
-            &change_to,
-            &constraints,
+            &PromptFacts {
+                repo: &repo,
+                commit: &commit,
+                objective: &objective,
+                change_from: &change_from,
+                change_to: &change_to,
+                constraints: &constraints,
+            },
             step,
         )? {
             events.push(prompt);
@@ -924,6 +928,9 @@ fn plan_ready(plan: &[PlanStep]) -> bool {
 }
 
 fn step_ready(step: &PlanStep) -> bool {
+    if vacuous_title(&step.piece) {
+        return false;
+    }
     let brief = step.brief.trim();
     if brief.is_empty() || same_title(brief, &step.piece) {
         return false;
@@ -990,10 +997,12 @@ pub(crate) fn project_steps_prompt(title: &str, brief: &str, context: &str) -> S
          Title: {title}\n\
          Brief: {brief}\n\
          {context}\n\
-         Return JSON only, no markdown: {{\"steps\":[{{\"piece\":\"...\",\"brief\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"],\"how\":[\"...\",\"...\"],\"files\":[]}}]}}\n\
+         Return JSON only, no markdown: {{\"steps\":[{{\"piece\":\"...\",\"brief\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"requires\":[],\"produces\":[\"...\"],\"how\":[\"...\",\"...\"],\"files\":[]}}]}}\n\
          Two to seven steps. piece is a short specific title, at most eight words, never the project title.\n\
+         A title that could sit under any project is not a step: Do research, Make a plan, Kick-off, Implement the feature.\n\
          brief is one sentence of what to do. It is not the title and not a how-line.\n\
          kind is code, research, writing, outreach, design, or ops.\n\
+         requires is the skill this step needs. Leave it empty when any member could do it. Do not name a person who is not in the org.\n\
          If a later step needs an answer, an earlier step is the one that gets that answer, and the later step names that piece in after.\n\
          produces is the check that the step is done. It is not the title and not \"the step is done\".\n\
          how is two to four imperative sentences. Do not copy produces into how.\n\
@@ -1090,11 +1099,91 @@ pub fn steps_ready_in(
 }
 
 /// Record a digest the accept path can enforce. An empty list is not a digest.
-pub(crate) fn remember_digest(state: &mut OrgState, repo: &str, paths: &[String]) {
+/// `commit` is the revision the paths were read from. A code prompt names it.
+pub(crate) fn remember_digest(state: &mut OrgState, repo: &str, commit: &str, paths: &[String]) {
     if paths.is_empty() {
         return;
     }
     state.code_paths.insert(repo.to_string(), paths.to_vec());
+    if !commit.is_empty() {
+        state
+            .code_commits
+            .insert(repo.to_string(), commit.to_string());
+    }
+}
+
+/// Store every `Digest files` block in `context`. Each repository keeps its
+/// own commit. Paths are also merged under `""` for a project with no home yet.
+pub(crate) fn remember_digests_in(state: &mut OrgState, context: &str) {
+    let mut repo = String::new();
+    let mut commit = String::new();
+    let mut paths = Vec::new();
+    let mut in_digest = false;
+    for line in context.lines() {
+        let line = line.trim();
+        if let Some((next_repo, next_commit)) = digest_header(line) {
+            flush_digest(state, &repo, &commit, &mut paths);
+            repo = next_repo;
+            commit = next_commit;
+            in_digest = true;
+            continue;
+        }
+        if !in_digest {
+            continue;
+        }
+        let Some(path) = line.strip_prefix('-') else {
+            if line.is_empty() {
+                continue;
+            }
+            in_digest = false;
+            continue;
+        };
+        let path = path.trim();
+        if !path.is_empty() && !path.contains("..") {
+            paths.push(path.to_string());
+        }
+    }
+    flush_digest(state, &repo, &commit, &mut paths);
+}
+
+fn flush_digest(state: &mut OrgState, repo: &str, commit: &str, paths: &mut Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    let kept = paths.clone();
+    remember_digest(state, repo, commit, &kept);
+    if !repo.is_empty() {
+        let mut merged = state.code_paths.get("").cloned().unwrap_or_default();
+        for path in &kept {
+            if !merged.iter().any(|have| have == path) {
+                merged.push(path.clone());
+            }
+        }
+        state.code_paths.insert(String::new(), merged);
+        if !commit.is_empty() && !state.code_commits.contains_key("") {
+            state.code_commits.insert(String::new(), commit.to_string());
+        }
+    }
+    paths.clear();
+}
+
+fn digest_header(line: &str) -> Option<(String, String)> {
+    let rest = line.strip_prefix("Digest files (")?.strip_suffix("):")?;
+    match rest.rsplit_once('@') {
+        Some((repo, commit)) if !repo.is_empty() && !commit.is_empty() && !commit.contains(' ') => {
+            Some((repo.to_string(), commit.to_string()))
+        }
+        _ => Some((rest.to_string(), String::new())),
+    }
+}
+
+fn digest_commit(state: &OrgState, root: &WorkItem) -> String {
+    if let Some(repo) = root.home.as_ref().and_then(|home| home.repo.as_deref()) {
+        if let Some(commit) = state.code_commits.get(repo) {
+            return commit.clone();
+        }
+    }
+    state.code_commits.get("").cloned().unwrap_or_default()
 }
 
 fn allowed_paths(state: &OrgState, root: &WorkItem) -> Vec<String> {
@@ -1156,7 +1245,8 @@ pub(crate) fn digest_paths_in(context: &str) -> Vec<String> {
             if line.is_empty() {
                 continue;
             }
-            break;
+            in_digest = false;
+            continue;
         };
         let path = path.trim();
         if !path.is_empty() && !path.contains("..") {
@@ -1263,7 +1353,7 @@ fn parse_step_array(raw: &serde_json::Value) -> Option<Vec<PlanStep>> {
                 .and_then(|item| item.as_bool())
                 .unwrap_or(false),
             answers: None,
-            requires: Vec::new(),
+            requires: string_list(value, "requires"),
             after,
             held: value
                 .get("held")
@@ -1445,20 +1535,22 @@ fn sibling_ids(state: &OrgState, root_id: &str, step: &PlanStep) -> Vec<String> 
 }
 
 fn ticket_from_step(
+    state: &OrgState,
     root: &buzz_core::intelligent_org::WorkItem,
     dri: &str,
     plan: &[PlanStep],
     step: &PlanStep,
     after: Vec<String>,
 ) -> TicketDraft {
+    let (suggested_holder, unfilled) = holder_for(state, dri, &step.requires);
     TicketDraft {
         parent: root.id.clone(),
         title: step.piece.clone(),
         brief: step.brief.clone(),
         due_at: root.due_at,
         requires: step.requires.clone(),
-        suggested_holder: Some(dri.to_string()),
-        unfilled: None,
+        suggested_holder,
+        unfilled,
         covers: step.piece.clone(),
         after,
         gate: step.gate,
@@ -1486,14 +1578,19 @@ fn ticket_from_step(
     }
 }
 
+struct PromptFacts<'a> {
+    repo: &'a str,
+    commit: &'a str,
+    objective: &'a str,
+    change_from: &'a str,
+    change_to: &'a str,
+    constraints: &'a [String],
+}
+
 fn stage_prompt(
     keys: &nostr::Keys,
     draft_id: &str,
-    repo: &str,
-    objective: &str,
-    change_from: &str,
-    change_to: &str,
-    constraints: &[String],
+    facts: &PromptFacts<'_>,
     step: &PlanStep,
 ) -> Result<Option<buzz_core::Event>, PublishError> {
     let digest = if step.kind == "code" {
@@ -1501,8 +1598,8 @@ fn stage_prompt(
             return Ok(None);
         }
         Ok(Some(CodeDigest {
-            repo: repo.to_string(),
-            commit: String::new(),
+            repo: facts.repo.to_string(),
+            commit: facts.commit.to_string(),
             paths: step.files.clone(),
         }))
     } else {
@@ -1512,11 +1609,11 @@ fn stage_prompt(
         ticket_id: draft_id,
         title: &step.piece,
         step: &step.brief,
-        objective,
-        change_from,
-        change_to,
+        objective: facts.objective,
+        change_from: facts.change_from,
+        change_to: facts.change_to,
         done_when: &step.produces,
-        constraints,
+        constraints: facts.constraints,
         kind: &step.kind,
         how: &step.how,
         waits_on: &step.after,
@@ -1525,11 +1622,136 @@ fn stage_prompt(
     let Some(text) = prompt::prompt_text(&input, digest) else {
         return Ok(None);
     };
-    let tags = vec![
-        parsed_tag(&["i", draft_id])?,
-        parsed_tag(&["based_on", draft_id])?,
-    ];
+    let tags = if step.kind == "code" && !facts.commit.is_empty() {
+        vec![
+            parsed_tag(&["i", draft_id])?,
+            parsed_tag(&["based_on", draft_id, facts.commit])?,
+        ]
+    } else {
+        vec![
+            parsed_tag(&["i", draft_id])?,
+            parsed_tag(&["based_on", draft_id])?,
+        ]
+    };
     Ok(Some(sign(keys, Permitted::WorkPrompt, &text, tags)?))
+}
+
+/// Titles that could sit under any project. The eval list is the same set.
+const VACUOUS_TITLES: &[&str] = &[
+    "Make a plan",
+    "Make a plan for this",
+    "Do research",
+    "Research",
+    "Kick-off",
+    "Kickoff",
+    "Kick off",
+    "Get started",
+    "Start the work",
+    "Follow up",
+    "Follow-up",
+    "Next steps",
+    "Move this forward",
+    "Coordinate",
+    "Coordination",
+    "Sync",
+    "Alignment",
+    "Set up a meeting",
+    "Send an update",
+    "Write a brief",
+    "Draft a proposal",
+    "Improve things",
+    "Be more visible",
+    "General outreach",
+    "Stakeholder engagement",
+    "Capacity building",
+    "Project management",
+    "Admin",
+    "Miscellaneous",
+    "TBD",
+    "TODO",
+    "Phase 1",
+    "Workstream",
+    "Initiative",
+    "Implement the feature",
+];
+
+fn vacuous_title(title: &str) -> bool {
+    let title = title.trim();
+    VACUOUS_TITLES
+        .iter()
+        .any(|bad| title.eq_ignore_ascii_case(bad))
+}
+
+fn string_list(value: &serde_json::Value, key: &str) -> Vec<String> {
+    value
+        .get(key)
+        .and_then(|item| item.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| item.chars().take(80).collect::<String>())
+                .take(6)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The member whose skills cover every requirement, or nobody.
+/// An empty `requires` keeps the project holder.
+fn holder_for(
+    state: &OrgState,
+    dri: &str,
+    requires: &[String],
+) -> (Option<String>, Option<String>) {
+    if requires.is_empty() {
+        return (Some(dri.to_string()), None);
+    }
+    if state
+        .profiles
+        .get(dri)
+        .is_some_and(|profile| covers_requires(profile, requires))
+    {
+        return (Some(dri.to_string()), None);
+    }
+    if let Some(pubkey) = state
+        .profiles
+        .iter()
+        .find(|(_, profile)| covers_requires(profile, requires))
+        .map(|(pubkey, _)| pubkey.clone())
+    {
+        return (Some(pubkey), None);
+    }
+    (
+        None,
+        Some(format!("nobody here can hold it: {}", requires.join(", "))),
+    )
+}
+
+fn covers_requires(profile: &buzz_core::intelligent_org::OrgProfile, requires: &[String]) -> bool {
+    requires.iter().all(|need| {
+        profile
+            .skills
+            .iter()
+            .any(|skill| same_skill(&skill.slug, need) || same_skill(&skill.label, need))
+    })
+}
+
+fn same_skill(have: &str, need: &str) -> bool {
+    let have = normalize_skill(have);
+    let need = normalize_skill(need);
+    !need.is_empty() && have == need
+}
+
+fn normalize_skill(value: &str) -> String {
+    value
+        .split(['-', ' ', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 fn card_now() -> u64 {
@@ -1902,6 +2124,7 @@ mod tests {
         remember_digest(
             &mut state,
             "30617:aa:buzz",
+            "abc1234",
             &[
                 "desktop/src/features/org/work/model.ts".into(),
                 "crates/buzz-org-agent/src/plan.rs".into(),
@@ -1998,5 +2221,257 @@ mod tests {
         let mut missing = raw;
         missing["steps"][1]["files"] = serde_json::json!(["src/missing.rs"]);
         assert!(steps_ready_in("Digest allow list", &missing, &files).is_none());
+    }
+
+    #[test]
+    fn a_vacuous_title_publishes_nothing() {
+        let listed: Vec<String> =
+            serde_json::from_str(include_str!("../tests/eval/cases/vacuous-titles.json"))
+                .expect("vacuous titles");
+        for title in &listed {
+            assert!(vacuous_title(title), "{title}");
+        }
+        let raw = serde_json::json!({
+            "steps": [
+                offerable("Do research", "research", &[]),
+                offerable("Count the weekday buyers", "ops", &["Do research"])
+            ]
+        });
+        assert!(steps_ready("Weekday hall trial", &raw).is_none());
+        let mut state = held_root("Weekday hall trial");
+        state.proposals.insert(
+            "prop-1".into(),
+            passed_plan(
+                "Weekday hall trial",
+                &serde_json::json!([
+                    offerable("Do research", "research", &[]),
+                    offerable("Count the weekday buyers", "ops", &["Do research"])
+                ]),
+            ),
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        assert!(events.is_empty(), "a generic title publishes no ticket");
+    }
+
+    #[test]
+    fn accept_names_the_digest_commit_on_the_code_prompt() {
+        let paths = vec![
+            "desktop/src/features/org/work/model.ts".to_string(),
+            "crates/buzz-org-agent/src/plan.rs".to_string(),
+        ];
+        let mut state = held_root("Show the next task");
+        state.items.get_mut("root-1").expect("root").home =
+            Some(buzz_core::intelligent_org::ProjectHome {
+                channel: "room-1".into(),
+                repo: Some("30617:aa:buzz".into()),
+                project: Some("30621:aa:buzz".into()),
+            });
+        remember_digests_in(
+            &mut state,
+            &digest_block("30617:aa:buzz", "abc1234", &paths),
+        );
+        state.proposals.insert(
+            "prop-1".into(),
+            passed_plan(
+                "Show the next task",
+                &serde_json::json!([
+                    {
+                        "piece": "Render the next task",
+                        "brief": "Render the next offered task in the My work column.",
+                        "kind": "code",
+                        "files": ["desktop/src/features/org/work/model.ts"],
+                        "produces": ["the next task is visible on My work"],
+                        "how": ["Open the My work column.", "Render the next offered task there."]
+                    },
+                    {
+                        "piece": "Offer the waiting task",
+                        "brief": "Offer the task that was waiting when the first one is done.",
+                        "kind": "code",
+                        "after": ["Render the next task"],
+                        "files": ["crates/buzz-org-agent/src/plan.rs"],
+                        "produces": ["done work opens the next task"],
+                        "how": ["Read the done event.", "Offer the task that names it in after."]
+                    }
+                ]),
+            ),
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        let prompts: Vec<_> = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50104)
+            .collect();
+        assert_eq!(prompts.len(), 2);
+        for prompt in prompts {
+            assert!(
+                prompt.content.contains("30617:aa:buzz@abc1234"),
+                "{}",
+                prompt.content
+            );
+            assert!(
+                prompt
+                    .content
+                    .contains("desktop/src/features/org/work/model.ts")
+                    || prompt.content.contains("crates/buzz-org-agent/src/plan.rs"),
+                "{}",
+                prompt.content
+            );
+            assert!(prompt.tags.iter().any(|tag| {
+                let row = tag.as_slice();
+                row.first().map(String::as_str) == Some("based_on")
+                    && row.get(2).map(String::as_str) == Some("abc1234")
+            }));
+        }
+    }
+
+    #[test]
+    fn a_missing_skill_says_nobody_here_can_hold_it() {
+        let mut state = held_root("Certify the hall electrics");
+        state.proposals.insert(
+            "prop-1".into(),
+            passed_plan(
+                "Certify the hall electrics",
+                &serde_json::json!([
+                    {
+                        "piece": "Book the certified electrician",
+                        "brief": "Find who can sign the hall's electrical certificate.",
+                        "kind": "outreach",
+                        "requires": ["electrical-certification"],
+                        "produces": ["a named electrician has agreed to visit"],
+                        "how": ["Ask the members who can certify electrics.", "Write down who agreed and when they can come."]
+                    },
+                    {
+                        "piece": "Walk the hall with them",
+                        "brief": "Walk the circuits the certificate will cover.",
+                        "kind": "ops",
+                        "after": ["Book the certified electrician"],
+                        "requires": ["electrical-certification"],
+                        "produces": ["the certificate lists every circuit"],
+                        "how": ["Open each distribution board.", "Mark the circuits the certificate covers."]
+                    }
+                ]),
+            ),
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        let tickets: Vec<serde_json::Value> = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .map(|event| serde_json::from_str(&event.content).expect("json"))
+            .collect();
+        assert_eq!(tickets.len(), 2);
+        for ticket in &tickets {
+            assert!(ticket["suggested_holder"].is_null(), "{ticket}");
+            let unfilled = ticket["unfilled"].as_str().unwrap_or("");
+            assert!(unfilled.contains("nobody here can hold it"), "{unfilled}");
+            assert!(unfilled.contains("electrical-certification"), "{unfilled}");
+        }
+    }
+
+    #[test]
+    fn a_member_with_the_skill_is_the_suggested_holder() {
+        let electrician = "cc".repeat(32);
+        let mut state = held_root("Certify the hall electrics");
+        state.profiles.insert(
+            electrician.clone(),
+            buzz_core::intelligent_org::OrgProfile {
+                pubkey: electrician.clone(),
+                version: 1,
+                about: "I certify hall electrics.".into(),
+                skills: vec![buzz_core::intelligent_org::Skill {
+                    slug: "electrical-certification".into(),
+                    label: "electrical certification".into(),
+                }],
+                socials: vec![],
+                open_limit: Some(2),
+                updated_at: 1,
+                receipt: "dd".repeat(32),
+            },
+        );
+        state.proposals.insert(
+            "prop-1".into(),
+            passed_plan(
+                "Certify the hall electrics",
+                &serde_json::json!([
+                    {
+                        "piece": "Book the certified electrician",
+                        "brief": "Find who can sign the hall's electrical certificate.",
+                        "kind": "outreach",
+                        "requires": ["electrical certification"],
+                        "produces": ["a named electrician has agreed to visit"],
+                        "how": ["Ask the members who can certify electrics.", "Write down who agreed and when they can come."]
+                    },
+                    {
+                        "piece": "Walk the hall with them",
+                        "brief": "Walk the circuits the certificate will cover.",
+                        "kind": "ops",
+                        "after": ["Book the certified electrician"],
+                        "produces": ["the certificate lists every circuit"],
+                        "how": ["Open each distribution board.", "Mark the circuits the certificate covers."]
+                    }
+                ]),
+            ),
+        );
+        let keys = nostr::Keys::generate();
+        let events = take_due_tickets(&mut state, &keys).expect("tickets");
+        let tickets: Vec<serde_json::Value> = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .map(|event| serde_json::from_str(&event.content).expect("json"))
+            .collect();
+        let booked = tickets
+            .iter()
+            .find(|ticket| ticket["title"] == "Book the certified electrician")
+            .expect("booked");
+        assert_eq!(booked["suggested_holder"], electrician);
+        assert!(booked["unfilled"].is_null());
+        let walk = tickets
+            .iter()
+            .find(|ticket| ticket["title"] == "Walk the hall with them")
+            .expect("walk");
+        assert_eq!(walk["suggested_holder"], "aa".repeat(32));
+    }
+
+    fn held_root(title: &str) -> OrgState {
+        let mut root = crate::test_support::root_held(&"aa".repeat(32));
+        root.title = title.into();
+        root.due_at = 1_785_488_400;
+        let mut state = OrgState::new();
+        state
+            .item_generations
+            .insert(root.id.clone(), "ab".repeat(32));
+        state.items.insert(root.id.clone(), root);
+        state
+    }
+
+    fn passed_plan(title: &str, plan: &serde_json::Value) -> buzz_core::intelligent_org::Proposal {
+        use buzz_core::intelligent_org::{
+            DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,
+        };
+        Proposal {
+            id: "prop-1".into(),
+            kind: ProposalKind::Project,
+            status: ProposalStatus::Passed,
+            opened_by: "aa".repeat(32),
+            opened_at: 1,
+            expires_at: 2,
+            draft: None,
+            payload: serde_json::json!({
+                "title": title,
+                "brief": "The work this project actually does.",
+                "plan": plan
+            }),
+            rule: DecisionRule::MAJORITY,
+            needed: 1,
+            eligible: vec![],
+            votes: vec![],
+            decided_at: Some(2),
+            executed: Some(Executed {
+                kind: "work_item".into(),
+                id: "root-1".into(),
+            }),
+            settlement: None,
+        }
     }
 }

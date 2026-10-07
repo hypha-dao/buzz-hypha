@@ -1006,7 +1006,7 @@ async fn publish_due_tickets(
     board: &Board,
 ) -> Result<(), String> {
     let digest = board.planner_digest();
-    crate::plan::remember_digest(org, "", &crate::plan::digest_paths_in(&digest));
+    crate::plan::remember_digests_in(org, &digest);
     ensure_held_plans(org, &digest).await;
     let events = crate::plan::take_due_tickets(org, keys).map_err(|error| error.to_string())?;
     for event in events {
