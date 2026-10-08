@@ -1,11 +1,12 @@
-//! Project home — the room half of Protocol §6.7 (R-9a).
+//! Project home — the room half of Protocol §6.7.
 //!
 //! On a passed `project` the relay creates an open NIP-29 room named from the
 //! title slug, puts `39103.agent` in it (via [`relay_rooms::create_room`]),
-//! and writes `home.channel` on the root `39101`. Repo / `30617` / `30621`
-//! wait for R-9b. Accept, release, and a passed `dri` keep the roster equal
-//! to the tree: root holder → admin, child holders → member, NIP-OA-attested
-//! agents → bot; talk joiners are never removed.
+//! and writes `home.channel` on the root `39101`. The repository half
+//! (`30617` / `30621` / context files) lives in [`super::home_repo`]. Accept,
+//! release, and a passed `dri` keep the roster equal to the tree: root holder
+//! → admin, child holders → member, NIP-OA-attested agents → bot; talk
+//! joiners are never removed.
 
 use buzz_core::channel::{ChannelType, ChannelVisibility, MemberRole};
 use buzz_core::intelligent_org::{ProjectHome, WorkItem};
@@ -77,7 +78,26 @@ pub(super) async fn create_project_room(
     .map_err(|e| internal("create project home room", e))
 }
 
-/// `39101.home` for R-9a — channel only; `repo` / `project` wait for R-9b.
+/// Archive a project's home room. Already archived, or a room that is gone,
+/// is a no-op so a retry of the same removal does not fail.
+pub(super) async fn archive_home_channel(
+    conn: &mut PgConnection,
+    community: CommunityId,
+    channel: Uuid,
+) -> Result<(), IngestError> {
+    sqlx::query(
+        "UPDATE channels SET archived_at = NOW() \
+         WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL AND archived_at IS NULL",
+    )
+    .bind(community.as_uuid())
+    .bind(channel)
+    .execute(conn)
+    .await
+    .map_err(|e| internal("archive project home room", e))?;
+    Ok(())
+}
+
+/// `39101.home` when the relay has no object storage: the room, and no repository.
 pub(super) fn home_channel_only(channel: Uuid) -> ProjectHome {
     ProjectHome {
         channel: channel.to_string(),

@@ -59,6 +59,7 @@ abstract final class EventKind {
   static const ioShapers = 39103;
   static const ioDraftOutcome = 39104;
   static const ioProfile = 39105;
+  static const ioKnowledge = 39106;
   // Commands (person-signed, executed transactionally by the relay).
   static const ioShapersPropose = 50001;
   static const ioDirectionPropose = 50002;
@@ -81,11 +82,15 @@ abstract final class EventKind {
   static const ioShaperAccept = 50019;
   static const ioShaperStepDown = 50020;
   static const ioProfileSet = 50021;
+  static const ioWithdraw = 50022;
+  static const ioWithdrawPropose = 50023;
+  static const ioKnowledgeSet = 50024;
   // Drafts and reads (agent- or person-signed; never change state).
   static const ioDraft = 50100;
   static const ioHealth = 50101;
   static const ioProgress = 50102;
   static const ioAgentNote = 50103;
+  static const ioWorkPrompt = 50104;
 
   /// Event kinds that represent user-visible channel messages.
   static const channelMessageEventKinds = [

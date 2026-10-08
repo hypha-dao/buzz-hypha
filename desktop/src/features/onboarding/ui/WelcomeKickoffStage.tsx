@@ -11,7 +11,7 @@ type StageCharacter = {
   animationUrl: string;
 };
 
-/** Same animated APNGs the "Meet your starter team" onboarding step uses. */
+/** Animated characters shown while the welcome channel is opening. */
 const STAGE_CHARACTERS: readonly StageCharacter[] = [
   { name: "Fizz", animationUrl: "/onboarding/starter-team/fizz.png" },
   { name: "Honey", animationUrl: "/onboarding/starter-team/honey.png" },

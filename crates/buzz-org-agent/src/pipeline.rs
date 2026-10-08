@@ -2,9 +2,12 @@
 //! A-1: handle a transition through JUDGE (and optional THINK hook).
 //! Nothing drafts.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::jobs::JobQueue;
 use crate::judge::{self, Draft, JudgeReason};
+use crate::prompt::{CachedDigest, RepoListing};
 use crate::relay::link::{RelayIo, RelayLink};
 use crate::relay::outbox::Outbox;
 use crate::relay::publish::{sign, Permitted, PublishError};
@@ -39,9 +42,21 @@ pub struct OrgAgent<M, R> {
     pub outbox: Outbox,
     /// Agent key.
     pub keys: Keys,
+    /// Verdict jobs. They compile and record. They do not publish.
+    pub jobs: JobQueue,
+    /// When false, uncovered objectives are compiled and not drafted.
+    pub move_1: bool,
     /// Hook the fencing test uses: run after the job snaps generation
     /// and before JUDGE, so a newer event can land mid-THINK.
     pub mid_think: Option<MidThinkHook>,
+    /// File listings keyed by the project's `home.repo` coordinate.
+    pub listings: BTreeMap<String, RepoListing>,
+    /// Digest paths kept per repository coordinate, keyed by commit.
+    pub(crate) digest_cache: BTreeMap<String, CachedDigest>,
+    /// Last prompt text published for a ticket. An unchanged prompt is not sent again.
+    pub(crate) last_prompt: BTreeMap<String, String>,
+    /// `context/` file bodies keyed by `home.repo`, then path.
+    pub context_files: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Test hook: mutate STATE after a job snaps generation.
@@ -63,7 +78,13 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             link: RelayLink::new(io, hear),
             outbox: Outbox::open(&state_dir)?,
             keys,
+            jobs: JobQueue::new(),
+            move_1: crate::plan::move_1_enabled(),
             mid_think: None,
+            listings: BTreeMap::new(),
+            digest_cache: BTreeMap::new(),
+            last_prompt: BTreeMap::new(),
+            context_files: BTreeMap::new(),
         })
     }
 
@@ -85,6 +106,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
             .unwrap_or(transition.generation())
             .to_owned();
         bundle.generation = current.clone();
+        self.jobs.enqueue(&transition, &self.state);
         let Some(mut draft) = draft else {
             return Ok(HandleOutcome::NoDraft);
         };
@@ -123,7 +145,7 @@ impl<M: ModelClient, R: RelayIo> OrgAgent<M, R> {
         Ok(())
     }
 
-    fn try_send(&mut self, event: &buzz_core::Event) -> Result<(), PublishError> {
+    pub(crate) fn try_send(&mut self, event: &buzz_core::Event) -> Result<(), PublishError> {
         let id = event.id.to_hex();
         match self.link.io().publish(event.clone()) {
             Ok(ack) if ack.accepted => self.outbox.ack(&id),

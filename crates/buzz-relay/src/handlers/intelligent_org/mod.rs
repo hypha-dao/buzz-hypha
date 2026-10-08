@@ -27,6 +27,11 @@ mod drafts;
 #[path = "drafts_postgres_tests.rs"]
 mod drafts_postgres_tests;
 mod home;
+mod home_repo;
+mod knowledge;
+#[cfg(test)]
+#[path = "knowledge_postgres_tests.rs"]
+mod knowledge_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
 mod profiles;
@@ -34,6 +39,7 @@ mod profiles;
 #[path = "profiles_postgres_tests.rs"]
 mod profiles_postgres_tests;
 mod proposals;
+pub(crate) mod repo_link;
 pub mod scheduler;
 #[cfg(test)]
 #[path = "scheduler_postgres_tests.rs"]
@@ -49,10 +55,11 @@ use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE,
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
     KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROFILE_SET,
-    KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_KNOWLEDGE_SET, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
+    KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
     KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_WORK_PROMPT,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_db::intelligent_org::{self as store, LedgerEntry};
@@ -101,6 +108,9 @@ pub async fn handle_command(
         KIND_IO_DRAFT_DECIDE => drafts::decide(&cmd).await,
         KIND_IO_HEALTH_RATE => drafts::health_rate(&cmd).await,
         KIND_IO_PROFILE_SET => profiles::set(&cmd).await,
+        KIND_IO_KNOWLEDGE_SET => knowledge::set(&cmd).await,
+        KIND_IO_WITHDRAW => work::withdraw(&cmd).await,
+        KIND_IO_WITHDRAW_PROPOSE => proposals::withdraw_propose(&cmd).await,
         KIND_IO_MONEY_PROPOSE | KIND_IO_MONEY_RELEASED => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
@@ -143,6 +153,7 @@ pub async fn handle_read(
         KIND_IO_DRAFT => drafts::ingest_draft(&cmd).await,
         KIND_IO_HEALTH => drafts::ingest_health(&cmd).await,
         KIND_IO_AGENT_NOTE => drafts::ingest_note(&cmd).await,
+        KIND_IO_WORK_PROMPT => drafts::ingest_work_prompt(&cmd).await,
         _ => Err(IngestError::Rejected(format!("unknown read kind: {kind}"))),
     }
 }
@@ -231,6 +242,8 @@ pub(crate) mod object {
     pub const DRAFT: &str = "draft";
     /// A member's org profile; `object_id` is their pubkey.
     pub const PROFILE: &str = "profile";
+    /// An org knowledge section; `object_id` is the slug (`codebases`).
+    pub const KNOWLEDGE: &str = "knowledge";
 }
 
 pub(crate) fn internal(context: &str, error: impl std::fmt::Display) -> IngestError {
@@ -311,6 +324,9 @@ async fn persist_write_inner(
     };
     let applied = apply::apply(&cmd.state.db, &mut tx, &ctx, &projections, &mut rows).await?;
     commit(tx).await?;
+    // The pass is durable. A failed context seed leaves its ledger row and
+    // does not roll the project back.
+    home_repo::seed_committed(cmd, &rows).await;
     finish(cmd, applied, room_created).await;
     Ok(cmd.accepted(message))
 }
@@ -433,6 +449,11 @@ pub(crate) fn content_value(event: &Event) -> Result<serde_json::Value, IngestEr
 /// membership notices for a room whose roster moved, and the membership
 /// caches those rows feed. Nothing here can fail the command — it is
 /// already durable.
+///
+/// Discovery (`39000`/`39002`) is stored before any membership notice.
+/// The desktop refetches its sidebar from `39002` the moment `44100`
+/// arrives; a notice that races ahead of that roster event leaves the
+/// project room out of the sidebar until the next poll.
 pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_created: Option<Uuid>) {
     use buzz_core::kind::{KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION};
     use buzz_db::relay_rooms::RosterChange;
@@ -472,6 +493,15 @@ pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_crea
         }
         cmd.state
             .invalidate_membership(cmd.tenant, *room, change.pubkey());
+    }
+    for room in rooms {
+        if let Err(e) =
+            super::side_effects::emit_group_discovery_events(cmd.tenant, cmd.state, room).await
+        {
+            warn!(room = %room, error = %e, "intelligent-org: NIP-29 discovery emission failed");
+        }
+    }
+    for (room, change) in &applied.roster {
         let notification = match change {
             RosterChange::Added { .. } => KIND_MEMBER_ADDED_NOTIFICATION,
             RosterChange::Removed { .. } => KIND_MEMBER_REMOVED_NOTIFICATION,
@@ -487,13 +517,6 @@ pub(crate) async fn finish(cmd: &Command<'_>, applied: apply::Applied, room_crea
         .await
         {
             warn!(room = %room, error = %e, "intelligent-org: membership notification failed");
-        }
-    }
-    for room in rooms {
-        if let Err(e) =
-            super::side_effects::emit_group_discovery_events(cmd.tenant, cmd.state, room).await
-        {
-            warn!(room = %room, error = %e, "intelligent-org: NIP-29 discovery emission failed");
         }
     }
 }

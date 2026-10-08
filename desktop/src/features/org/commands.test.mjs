@@ -76,6 +76,20 @@ test("shapers propose agent without p is the hosted default", () => {
   assert.equal(event.content, "{}");
 });
 
+test("direction propose can revise an open proposal without voting", () => {
+  const event = buildIoDirectionPropose({
+    slug: "mission",
+    base: 1,
+    body: "We host the hall and the garden.",
+    revises: PROPOSAL,
+  });
+  assert.deepEqual(event.tags, [
+    ["d", "mission"],
+    ["base", "1"],
+    ["e", PROPOSAL, "", "revises"],
+  ]);
+});
+
 test("direction propose carries d, base, draft e, vote — §4.8 50002", () => {
   const event = buildIoDirectionPropose({
     slug: "mission",
@@ -126,6 +140,28 @@ test("project propose draft tag is the settle marker", () => {
     ["e", DRAFT, "", "draft"],
     ["vote", "agree"],
   ]);
+});
+
+test("project propose copies the change plan onto 50004", () => {
+  const change = {
+    from: "no weekday night",
+    to: "a trial has answered whether buyers come",
+    done_when: ["sessions held"],
+  };
+  const plan = [
+    { piece: "Evening licence application", gate: true },
+    { piece: "Book the nights", held: "after the licence" },
+  ];
+  const event = buildIoProjectPropose({
+    title: "Weekday hall trial",
+    brief: "A short trial.",
+    dueAt: 1_785_488_400,
+    change,
+    plan,
+  });
+  const content = JSON.parse(event.content);
+  assert.deepEqual(content.change, change);
+  assert.deepEqual(content.plan, plan);
 });
 
 test("ticket create is u, optional p, optional draft", () => {

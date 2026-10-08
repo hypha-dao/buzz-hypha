@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { ActionButton, DeclineChips } from "./CardActions";
 import { reviewProjectInput } from "./draftPayload";
+import { asString, parseJsonObject } from "./tags";
 import { OrgCardShell } from "./OrgCardShell";
 import type { DeclineReason, OrgCardModel } from "./types";
 import { useCardCommand } from "./useCardCommand";
@@ -15,23 +16,35 @@ export function ReviewCard({ model }: { model: OrgCardModel }) {
   );
   const busy = pending !== null;
   const item = model.itemId;
+  const content = parseJsonObject(model.event.content);
+  const recommendation =
+    content?.recommendation && typeof content.recommendation === "object"
+      ? (content.recommendation as Record<string, unknown>)
+      : null;
+  const recommendationType = asString(recommendation?.type);
+  const followUp =
+    recommendationType === "follow_up" &&
+    recommendation?.project !== null &&
+    typeof recommendation?.project === "object";
 
   return (
     <OrgCardShell
       model={model}
       actions={
         <>
-          <ActionButton
-            disabled={busy}
-            label="Open the follow-up"
-            onClick={() =>
-              void publish(
-                "Open the follow-up",
-                commands.buildIoProjectPropose(reviewProjectInput(model)),
-              )
-            }
-            testId="org-card-open-follow-up"
-          />
+          {followUp ? (
+            <ActionButton
+              disabled={busy}
+              label="Open the follow-up"
+              onClick={() =>
+                void publish(
+                  "Open the follow-up",
+                  commands.buildIoProjectPropose(reviewProjectInput(model)),
+                )
+              }
+              testId="org-card-open-follow-up"
+            />
+          ) : null}
           <DeclineChips
             disabled={busy}
             onSelect={setReason}

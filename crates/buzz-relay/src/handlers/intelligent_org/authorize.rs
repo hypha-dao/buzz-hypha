@@ -13,7 +13,7 @@
 use buzz_core::intelligent_org::{
     tag, DecisionRule, DeclineReason, DirectionArtifact, DirectionProposeContent, DirectionSlug,
     DraftDecision, OfferedSeat, Proposal, ProposalStatus, RulesContent, Shapers, ShapersOp,
-    WorkItem, WorkItemState,
+    WorkItem, WorkItemState, OFFERED_BY_AGENT,
 };
 
 use crate::handlers::ingest::IngestError;
@@ -181,8 +181,9 @@ pub fn stale_base(base: u32, head_version: Option<u32>) -> Result<(), IngestErro
     }
 }
 
-/// The content of a `direction` proposal (§4.1): `mission` and `vision`
-/// have no `lines`.
+/// The content of a `direction` proposal (§4.1): only `objectives` and
+/// `strategy` have `lines`. An objectives line needs a date and `done_when`.
+/// A strategy line needs a `type`.
 pub fn direction_content(
     slug: DirectionSlug,
     content: &DirectionProposeContent,
@@ -194,7 +195,43 @@ pub fn direction_content(
             .as_ref()
             .is_some_and(|lines| !lines.is_empty())
     {
-        return Err(invalid("mission and vision have no lines"));
+        return Err(invalid("only objectives and strategy have lines"));
+    }
+    match slug {
+        DirectionSlug::Objectives => validate_objective_lines(content),
+        DirectionSlug::Strategy => validate_strategy_lines(content),
+        _ => Ok(()),
+    }
+}
+
+fn validate_objective_lines(content: &DirectionProposeContent) -> Result<(), IngestError> {
+    let lines = content.lines.as_deref().unwrap_or(&[]);
+    if lines.is_empty() {
+        return Err(invalid("objectives need lines"));
+    }
+    for line in lines {
+        if line.date.is_none() {
+            return Err(invalid("objective line needs a date"));
+        }
+        let done = line.done_when.as_deref().map(str::trim).unwrap_or("");
+        if done.is_empty() {
+            return Err(invalid("objective line needs done_when"));
+        }
+        if done.chars().count() > buzz_core::intelligent_org::DONE_WHEN_MAX_CHARS {
+            return Err(invalid("done_when is too long"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_strategy_lines(content: &DirectionProposeContent) -> Result<(), IngestError> {
+    let Some(lines) = content.lines.as_deref() else {
+        return Ok(());
+    };
+    for line in lines {
+        if line.line_type.is_none() {
+            return Err(invalid("strategy line needs a type"));
+        }
     }
     Ok(())
 }
@@ -325,11 +362,14 @@ pub fn offer(
 pub const REOPEN_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
 
 fn is_live(state: WorkItemState) -> bool {
-    !matches!(state, WorkItemState::Done)
+    !matches!(state, WorkItemState::Done | WorkItemState::Withdrawn)
 }
 
 /// `io_done` (§3.2, §5.1 rule 3): the holder, and no live child.
 pub fn done(item: &WorkItem, actor: &str, children: &[WorkItem]) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
     if item.state == WorkItemState::Done {
         return Err(invalid("item is done"));
     }
@@ -344,6 +384,9 @@ pub fn done(item: &WorkItem, actor: &str, children: &[WorkItem]) -> Result<(), I
 
 /// `io_release` (§3.2, §5.1 rule 4): the holder.
 pub fn release(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
     if item.state == WorkItemState::Done {
         return Err(invalid("item is done"));
     }
@@ -354,26 +397,113 @@ pub fn release(item: &WorkItem, actor: &str) -> Result<(), IngestError> {
     }
 }
 
-/// `io_set_due` (§3.2): a Shaper for a root; the parent holder for a child.
+/// `io_set_due` (§3.2): a Shaper moves a project's review date.
+/// On a ticket, the holder, the creator, or the parent holder may move the due date.
 pub fn set_due(
     item: &WorkItem,
     parent: Option<&WorkItem>,
     shapers: &Shapers,
     actor: &str,
 ) -> Result<(), IngestError> {
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
     if item.state == WorkItemState::Done {
         return Err(invalid("item is done"));
     }
     if item.parent.is_none() {
-        require_shaper(shapers, actor)
-    } else {
-        let parent = parent.ok_or_else(|| invalid("unknown parent"))?;
-        if is_holder(parent, actor) {
-            Ok(())
-        } else {
-            Err(restricted("not the holder"))
-        }
+        return require_shaper(shapers, actor);
     }
+    if is_holder(item, actor)
+        || item
+            .created_by
+            .as_deref()
+            .is_some_and(|pubkey| pubkey.eq_ignore_ascii_case(actor))
+    {
+        return Ok(());
+    }
+    let parent = parent.ok_or_else(|| invalid("unknown parent"))?;
+    if is_holder(parent, actor) {
+        Ok(())
+    } else {
+        Err(restricted("not the holder or the creator"))
+    }
+}
+
+fn member_pubkey(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Who may withdraw a ticket: its creator, or the member who offered it.
+/// `creator_from_command` is the author of `created_from` when the item
+/// was written before `created_by` existed.
+pub fn withdraw_ticket(
+    item: &WorkItem,
+    actor: &str,
+    creator_from_command: Option<&str>,
+) -> Result<(), IngestError> {
+    if item.parent.is_none() {
+        return Err(invalid("a project is removed by the Shapers"));
+    }
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
+    let creator = item.created_by.as_deref().or(creator_from_command);
+    let offerer = item.offered_by_member.as_deref().or_else(|| {
+        item.offered_by
+            .as_deref()
+            .filter(|pubkey| *pubkey != OFFERED_BY_AGENT && member_pubkey(pubkey))
+    });
+    if creator.is_some_and(|pubkey| pubkey.eq_ignore_ascii_case(actor))
+        || offerer.is_some_and(|pubkey| pubkey.eq_ignore_ascii_case(actor))
+    {
+        Ok(())
+    } else {
+        Err(restricted(
+            "only the ticket's creator or the person who offered it",
+        ))
+    }
+}
+
+/// The sole Shaper removes a project directly. More than one Shaper opens
+/// a `withdraw` proposal instead.
+pub fn withdraw_project(
+    item: &WorkItem,
+    shapers: &Shapers,
+    actor: &str,
+) -> Result<(), IngestError> {
+    if item.parent.is_some() {
+        return Err(invalid(
+            "a ticket is removed by its creator or the person who offered it",
+        ));
+    }
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
+    require_shaper(shapers, actor)?;
+    if shapers.shapers.len() == 1 {
+        Ok(())
+    } else {
+        Err(restricted("project removal is a proposal"))
+    }
+}
+
+/// A Shaper opens a `withdraw` proposal. One Shaper or many: it stays open
+/// until the rule is met. With one Shaper, their agree is that rule.
+pub fn open_withdraw(item: &WorkItem, shapers: &Shapers, actor: &str) -> Result<(), IngestError> {
+    if item.parent.is_some() {
+        return Err(invalid(
+            "a ticket is removed by its creator or the person who offered it",
+        ));
+    }
+    if item.state == WorkItemState::Withdrawn {
+        return Err(invalid("already removed"));
+    }
+    require_shaper(shapers, actor)?;
+    if shapers.shapers.is_empty() {
+        return Err(invalid("there is no Shaper"));
+    }
+    Ok(())
 }
 
 /// `io_reopen` (§3.2): the `dri` of a `done` item, within seven days of
@@ -864,14 +994,103 @@ mod tests {
                 id: None,
                 text: "a line".into(),
                 date: None,
+                done_when: None,
+                line_type: None,
             }]),
             why: None,
         };
         assert_eq!(
             message(direction_content(DirectionSlug::Vision, &lined)),
-            "invalid: mission and vision have no lines"
+            "invalid: only objectives and strategy have lines"
         );
-        assert!(direction_content(DirectionSlug::Objectives, &lined).is_ok());
+        assert!(direction_content(DirectionSlug::Situation, &empty).is_ok());
+        assert_eq!(
+            message(direction_content(DirectionSlug::Situation, &lined)),
+            "invalid: only objectives and strategy have lines"
+        );
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &lined)),
+            "invalid: objective line needs a date"
+        );
+    }
+
+    #[test]
+    fn objective_lines_need_done_when_and_strategy_lines_need_a_type() {
+        use buzz_core::intelligent_org::{
+            DirectionLineInput, DirectionProposeContent, StrategyLineType,
+        };
+        let dated = |done_when: Option<&str>| DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "Weekday hall".into(),
+                date: Some(1_780_000_000),
+                done_when: done_when.map(str::to_string),
+                line_type: None,
+            }]),
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &dated(None))),
+            "invalid: objective line needs done_when"
+        );
+        assert_eq!(
+            message(direction_content(
+                DirectionSlug::Objectives,
+                &dated(Some("   "))
+            )),
+            "invalid: objective line needs done_when"
+        );
+        let long = "x".repeat(buzz_core::intelligent_org::DONE_WHEN_MAX_CHARS + 1);
+        assert_eq!(
+            message(direction_content(
+                DirectionSlug::Objectives,
+                &dated(Some(&long))
+            )),
+            "invalid: done_when is too long"
+        );
+        assert!(direction_content(
+            DirectionSlug::Objectives,
+            &dated(Some("four weekday nights have been held"))
+        )
+        .is_ok());
+        let bare = DirectionProposeContent {
+            body: "b".into(),
+            lines: None,
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Objectives, &bare)),
+            "invalid: objectives need lines"
+        );
+        let untyped = DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "no brand money".into(),
+                date: None,
+                done_when: None,
+                line_type: None,
+            }]),
+            why: None,
+        };
+        assert_eq!(
+            message(direction_content(DirectionSlug::Strategy, &untyped)),
+            "invalid: strategy line needs a type"
+        );
+        let typed = DirectionProposeContent {
+            body: "b".into(),
+            lines: Some(vec![DirectionLineInput {
+                id: None,
+                text: "no brand money".into(),
+                date: None,
+                done_when: None,
+                line_type: Some(StrategyLineType::Refusal),
+            }]),
+            why: None,
+        };
+        assert!(direction_content(DirectionSlug::Strategy, &typed).is_ok());
+        assert!(direction_content(DirectionSlug::Strategy, &bare).is_ok());
     }
 
     #[test]
@@ -889,6 +1108,8 @@ mod tests {
             offered_to: None,
             offered_by: None,
             offered_at: None,
+            created_by: None,
+            offered_by_member: None,
             due_at: 1,
             approved_at: None,
             objective_ref: None,
@@ -937,6 +1158,8 @@ mod tests {
             offered_to: None,
             offered_by: None,
             offered_at: None,
+            created_by: None,
+            offered_by_member: None,
             due_at: 1,
             approved_at: None,
             objective_ref: None,
@@ -974,6 +1197,8 @@ mod tests {
                 id: "l_7f3a".into(),
                 text: "Weekday hall".into(),
                 date: None,
+                done_when: None,
+                line_type: None,
             }],
             confirmed_by: pk(1),
             confirmed_at: 1,
@@ -1107,12 +1332,20 @@ mod tests {
             "restricted: not a Shaper"
         );
         let parent = item(WorkItemState::Accepted, Some(pk(1)), None);
-        let child = item(WorkItemState::Accepted, Some(pk(3)), Some("root"));
+        let mut child = item(WorkItemState::Accepted, Some(pk(3)), Some("root"));
+        child.created_by = Some(pk(4));
         assert!(set_due(&child, Some(&parent), &two, &pk(1)).is_ok());
+        assert!(
+            set_due(&child, Some(&parent), &two, &pk(3)).is_ok(),
+            "the ticket holder can move the due date"
+        );
+        assert!(
+            set_due(&child, Some(&parent), &two, &pk(4)).is_ok(),
+            "the ticket creator can move the due date"
+        );
         assert_eq!(
-            message(set_due(&child, Some(&parent), &two, &pk(3))),
-            "restricted: not the holder",
-            "the child's own holder cannot set due"
+            message(set_due(&child, Some(&parent), &two, &pk(9))),
+            "restricted: not the holder or the creator"
         );
 
         let mut closed = held.clone();
@@ -1198,6 +1431,47 @@ mod tests {
         assert_eq!(
             message(iso_week("2026-38")),
             "invalid: week must be an ISO week like 2026-W38"
+        );
+    }
+
+    #[test]
+    fn removal_follows_who_may() {
+        let one = shapers(&[1], &[]);
+        let two = shapers(&[1, 2], &[]);
+        let mut project = item(WorkItemState::Accepted, Some(pk(3)), None);
+        assert!(withdraw_project(&project, &one, &pk(1)).is_ok());
+        assert_eq!(
+            message(withdraw_project(&project, &two, &pk(1))),
+            "restricted: project removal is a proposal"
+        );
+        assert!(open_withdraw(&project, &one, &pk(1)).is_ok());
+        assert!(open_withdraw(&project, &two, &pk(1)).is_ok());
+        assert_eq!(
+            message(open_withdraw(&project, &two, &pk(9))),
+            "restricted: not a Shaper"
+        );
+        project.state = WorkItemState::Withdrawn;
+        assert_eq!(
+            message(withdraw_project(&project, &one, &pk(1))),
+            "invalid: already removed"
+        );
+
+        let mut ticket = item(WorkItemState::Offered, None, Some("root"));
+        ticket.created_by = Some(pk(4));
+        ticket.offered_by_member = Some(pk(5));
+        assert!(withdraw_ticket(&ticket, &pk(4), None).is_ok());
+        assert!(withdraw_ticket(&ticket, &pk(5), None).is_ok());
+        assert_eq!(
+            message(withdraw_ticket(&ticket, &pk(1), None)),
+            "restricted: only the ticket's creator or the person who offered it"
+        );
+        assert_eq!(
+            message(withdraw_project(&ticket, &one, &pk(1))),
+            "invalid: a ticket is removed by its creator or the person who offered it"
+        );
+        assert_eq!(
+            message(withdraw_ticket(&project, &pk(1), None)),
+            "invalid: a project is removed by the Shapers"
         );
     }
 }

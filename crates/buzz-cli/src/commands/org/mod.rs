@@ -26,7 +26,7 @@ pub enum OrgCmd {
     /// Shaper set, rules, and the hosted agent
     #[command(subcommand)]
     Shapers(ShapersCmd),
-    /// Mission, vision, objectives, strategy
+    /// Mission, vision, situation, objectives, strategy
     #[command(subcommand)]
     Direction(DirectionCmd),
     /// Open and vote on proposals
@@ -106,6 +106,7 @@ pub enum ShapersCmd {
 pub enum DirectionSlugArg {
     Mission,
     Vision,
+    Situation,
     Objectives,
     Strategy,
 }
@@ -115,7 +116,7 @@ pub enum DirectionSlugArg {
 pub enum DirectionCmd {
     /// Live `39100` heads
     Show {
-        /// One of mission, vision, objectives, strategy
+        /// One of mission, vision, situation, objectives, strategy
         slug: Option<DirectionSlugArg>,
         #[arg(long)]
         limit: Option<u32>,
@@ -135,7 +136,7 @@ pub enum DirectionCmd {
         /// New body. Use '-' to read from stdin
         #[arg(long)]
         body: String,
-        /// JSON array of `{id?, text, date?}` lines
+        /// JSON array of `{id?, text, date?, done_when?, type?}` lines
         #[arg(long)]
         lines: Option<String>,
         /// Draft event id this command settles
@@ -272,7 +273,8 @@ pub enum WorkCmd {
         #[arg(long)]
         why: Option<String>,
     },
-    /// Move the due date (`50011`)
+    /// Move a project's review date or a ticket's due date (`50011`).
+    /// A Shaper on a project. On a ticket: the holder, the creator, or the parent holder.
     #[command(name = "set-due")]
     SetDue {
         item: String,

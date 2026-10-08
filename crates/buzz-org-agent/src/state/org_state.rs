@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use buzz_core::intelligent_org::{
     DirectionArtifact, DirectionSlug, DraftKind, DraftOutcome, DraftPayload, HealthRead,
-    OrgProfile, ProgressNote, Proposal, Shapers, WorkItem, WorkItemState,
+    OrgProfile, PlanStep, ProgressNote, Proposal, Shapers, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
     is_intelligent_org_command_kind, KIND_IO_DRAFT, KIND_IO_HEALTH, KIND_IO_PROGRESS, KIND_IO_VOTE,
@@ -146,6 +146,18 @@ pub struct OrgState {
     pub seen: BTreeSet<String>,
     /// When false, [`apply`] updates the mirror and emits nothing.
     pub live: bool,
+    /// Step lists written for a held project whose proposal had none.
+    /// Not an event. A later restart reads the same list off ticket coverage.
+    pub plans: BTreeMap<String, Vec<PlanStep>>,
+    /// Paths a code step may name. Keyed by `home.repo`, or `""` for the
+    /// org codebases list when a project has no home repository yet.
+    /// Not an event. Empty means this process has not read a digest.
+    #[serde(skip)]
+    pub code_paths: BTreeMap<String, Vec<String>>,
+    /// Commit each digest was read at, keyed the same way as [`Self::code_paths`].
+    /// Not an event. A code prompt names this commit.
+    #[serde(skip)]
+    pub code_commits: BTreeMap<String, String>,
 }
 
 impl OrgState {
@@ -426,7 +438,7 @@ impl OrgState {
         let homes: BTreeSet<String> = self
             .items
             .values()
-            .filter(|i| i.parent.is_none() && i.state != WorkItemState::Done)
+            .filter(|i| i.parent.is_none() && is_live_root(i.state))
             .filter_map(|i| i.home.as_ref().map(|h| h.channel.clone()))
             .collect();
         let agent = self
@@ -474,13 +486,10 @@ impl OrgState {
         let Some(root) = root else {
             return Vec::new();
         };
-        let live = self
-            .items
-            .get(&root)
-            .is_some_and(|i| i.state != WorkItemState::Done)
+        let live = self.items.get(&root).is_some_and(|i| is_live_root(i.state))
             || matches!(
                 decoded,
-                Decoded::WorkItem(i) if i.parent.is_none() && i.state != WorkItemState::Done
+                Decoded::WorkItem(i) if i.parent.is_none() && is_live_root(i.state)
             );
         if live {
             vec![Transition::RootLedgerChanged {
@@ -493,10 +502,15 @@ impl OrgState {
     }
 }
 
+fn is_live_root(state: WorkItemState) -> bool {
+    !matches!(state, WorkItemState::Done | WorkItemState::Withdrawn)
+}
+
 fn slug_key(slug: DirectionSlug) -> &'static str {
     match slug {
         DirectionSlug::Mission => "mission",
         DirectionSlug::Vision => "vision",
+        DirectionSlug::Situation => "situation",
         DirectionSlug::Objectives => "objectives",
         DirectionSlug::Strategy => "strategy",
     }

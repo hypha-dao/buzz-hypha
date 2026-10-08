@@ -10,4 +10,5 @@ export { useOverviewEvents } from "./useOverviewEvents";
 export { useWorkEvents } from "./useWorkEvents";
 export { useWorkItemEvents } from "./useWorkItemEvents";
 export { useMyWorkEvents, viewerIsShaper } from "./useMyWorkEvents";
+export { useMyDrafts, useWorkItemTitles } from "./useMyDrafts";
 export { useOrgProfile, useOrgProfileEvents } from "./useOrgProfileEvents";

@@ -50,6 +50,9 @@ pub mod tag {
     pub const NEEDS_SHAPER: &str = "shaper";
     /// Fourth element of `["e", <draft>, "", "draft"]` — the command settles that draft.
     pub const MARKER_DRAFT: &str = "draft";
+    /// Fourth element of `["e", <proposal>, "", "revises"]` — replace an open
+    /// `direction` or `project` proposal and clear its votes.
+    pub const MARKER_REVISES: &str = "revises";
     /// Fourth element of `["e"|"a", <id>, "", "receipt"]`.
     pub const MARKER_RECEIPT: &str = "receipt";
     /// Fourth element of `["p", <pubkey>, "", "needs"]` on `50100`.
@@ -66,7 +69,7 @@ pub mod tag {
 
 // ── §4.1 kind:39100 — direction artifact ─────────────────────────────────────
 
-/// The four direction artifacts; the `d` tag of a `39100`.
+/// The five direction artifacts; the `d` tag of a `39100`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DirectionSlug {
@@ -74,11 +77,29 @@ pub enum DirectionSlug {
     Mission,
     /// What it is becoming.
     Vision,
+    /// Where it stands today: stage, what exists, what is proven, what is
+    /// stuck. Prose, no lines; interpretation, never live readings.
+    Situation,
     /// Numbered, dated lines the work tree serves (`objective_ref` targets).
     Objectives,
     /// Numbered lines: how the objectives get met.
     Strategy,
 }
+
+/// How a strategy line binds the organization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StrategyLineType {
+    /// A bet the organization is making.
+    Bet,
+    /// A rule the work must follow.
+    Rule,
+    /// A refusal written so it can be checked.
+    Refusal,
+}
+
+/// Maximum characters in an objective line's `done_when`.
+pub const DONE_WHEN_MAX_CHARS: usize = 200;
 
 /// One numbered line of an `objectives` or `strategy` artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -89,8 +110,14 @@ pub struct DirectionLine {
     pub id: String,
     /// The line.
     pub text: String,
-    /// Target date, when the line has one.
+    /// Target date. Required on an objectives line.
     pub date: Option<Timestamp>,
+    /// A check a person could answer yes or no. Required on objectives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+    /// `bet`, `rule`, or `refusal`. Required on a strategy line.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub line_type: Option<StrategyLineType>,
 }
 
 /// Content of `kind:39100` — the latest confirmed version of one artifact.
@@ -102,7 +129,8 @@ pub struct DirectionArtifact {
     pub version: u32,
     /// Markdown: the statement and the paragraph or two behind it.
     pub body: String,
-    /// `objectives` and `strategy` only; empty for `mission` and `vision`.
+    /// `objectives` and `strategy` only; empty for `mission`, `vision`, and
+    /// `situation`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lines: Vec<DirectionLine>,
     /// The Shaper whose vote met the rule.
@@ -134,6 +162,8 @@ pub enum WorkItemState {
     InReview,
     /// Closed.
     Done,
+    /// Taken off the live board. The events stay.
+    Withdrawn,
 }
 
 /// `project` (a root) or `ticket` (has a parent); the `t` tag of a `39101`.
@@ -215,6 +245,14 @@ pub struct WorkItem {
     pub offered_by: Option<String>,
     /// When the open offer was made.
     pub offered_at: Option<Timestamp>,
+    /// The member who created a ticket (`io_ticket_create`). Absent on
+    /// projects and on items written before withdrawal existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<PubkeyHex>,
+    /// The member who last offered this item. Kept after the offer settles
+    /// so that member can still withdraw the ticket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offered_by_member: Option<PubkeyHex>,
     /// End date (root) or estimated completion (child).
     pub due_at: Timestamp,
     /// When the root went live; roots only.
@@ -342,6 +380,96 @@ pub struct ProjectDraft {
     /// Evidence for `suggested_dri`, when named.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched: Option<HolderMatch>,
+    /// The compiler verdict this draft claims. The judge checks it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<PlanGap>,
+    /// Options the planner kept or dropped. Two or three.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<PlanOption>,
+    /// From, to, and the checks that say the change happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<PlanChange>,
+    /// The step list. Every step becomes a ticket when the project is held.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<PlanStep>,
+}
+
+/// The gap a change plan restates from the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanGap {
+    /// `objectives@<version>#<line-id>`.
+    #[serde(rename = "ref")]
+    pub line_ref: String,
+    /// `uncovered`, `partly`, or `covered`.
+    pub verdict: String,
+}
+
+/// One option the planner considered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanOption {
+    /// Short name.
+    pub title: String,
+    /// Why this option would move the objective.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mechanism: String,
+    /// Kept options are the ones the plan may do.
+    pub kept: bool,
+    /// Why a dropped option was dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why_not: Option<String>,
+}
+
+/// The change a project draft promises.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanChange {
+    /// Where things stand.
+    pub from: String,
+    /// Where they stand when this is done.
+    pub to: String,
+    /// Checks a person could answer yes or no.
+    pub done_when: Vec<String>,
+    /// Objective refs this change moves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moves: Vec<String>,
+}
+
+/// One step of a change plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlanStep {
+    /// What this step is.
+    pub piece: String,
+    /// `code`, `research`, `writing`, `outreach`, `design`, or `ops`.
+    pub kind: String,
+    /// Its outcome decides later steps.
+    #[serde(default)]
+    pub gate: bool,
+    /// The open question this gate answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<String>,
+    /// Skill slugs or one-line capabilities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    /// Piece titles this step follows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<String>,
+    /// Why this step cannot start yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<String>,
+    /// A range in words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    /// `done_when` lines this step produces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub produces: Vec<String>,
+    /// How to do the step. Two to four short lines.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub how: Vec<String>,
+    /// One sentence of what to do. Not the title, and not a how-line.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub brief: String,
+    /// Paths a `code` step changes. Each one is in the digest the plan was read from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// `t = dri` payload.
@@ -372,7 +500,7 @@ pub struct CoveragePiece {
     /// Pieces this one follows.
     #[serde(default)]
     pub after: Vec<String>,
-    /// `after <piece>` when a predecessor is neither live nor done; a held piece is never drafted.
+    /// `after <piece>` when this step waits on another. The ticket still exists.
     pub held: Option<String>,
 }
 
@@ -408,6 +536,21 @@ pub struct TicketDraft {
     /// Evidence for `suggested_holder`, when named.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched: Option<HolderMatch>,
+    /// Checks a person could answer yes or no.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub done_when: Vec<String>,
+    /// `code`, `research`, `writing`, `outreach`, `design`, or `ops`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// How to do the ticket. One short line per step.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub how: Vec<String>,
+    /// Piece titles this ticket waits on. Names, not sibling ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits_on: Vec<String>,
+    /// Paths a `code` ticket changes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// `t = done` payload.
@@ -438,9 +581,14 @@ pub enum ReviewRecommendation {
     /// Open a follow-up project.
     FollowUp {
         /// The follow-up, as a `project` payload.
-        project: ProjectDraft,
+        project: Box<ProjectDraft>,
     },
-    /// Nothing more to do here.
+    /// Redraw objective lines. No project payload.
+    ObjectivesRedraw {
+        /// Strike, move, or add. The Shapers confirm it.
+        objectives: Box<ObjectivesDraft>,
+    },
+    /// Stop. No project payload.
     NoFurtherWork {
         /// One line.
         why: String,
@@ -529,6 +677,9 @@ pub struct ProfileDraft {
     /// Proposed skills, as the person's words.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Proposed social links. Empty keeps none on the replacement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// Proposed open-pieces limit.
     pub open_limit: Option<u32>,
     /// Messages it was heard in.
@@ -638,6 +789,11 @@ pub enum ProposalKind {
     Join,
     /// The Shaper set, its rules, or its agent.
     Shapers,
+    /// Take a project off the live board. Uses the `project` decision rule.
+    Withdraw,
+    /// The org codebases list (repositories and the landing page). Uses the
+    /// `direction` decision rule. Passing writes `39106`; strategy is unchanged.
+    Codebases,
 }
 
 /// Proposal state machine (Protocol §5.3); the `s` tag of a `39102`.
@@ -705,7 +861,7 @@ pub struct Settlement {
     pub error: Option<String>,
 }
 
-/// How many eligible Shapers must agree: `majority`, `all`, or an integer.
+/// How many eligible Shapers must agree: `majority`, `all`, an integer, or a share.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum DecisionRule {
@@ -713,6 +869,17 @@ pub enum DecisionRule {
     Named(NamedRule),
     /// At least N of `eligible` (capped at `eligible.len()` when resolved).
     AtLeast(u32),
+    /// `need` of a planned group of `of`, scaled to whoever is seated now.
+    Share(ShareRule),
+}
+
+/// A decision share, written `"3/5"`: `need` must agree when `of` are seated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ShareRule {
+    /// How many must agree when the planned group is seated.
+    pub need: u32,
+    /// The planned group, including the founder.
+    pub of: u32,
 }
 
 /// The two named decision rules.
@@ -733,8 +900,9 @@ impl DecisionRule {
 
     /// Resolve the rule to `needed` against the eligible set at opening
     /// (Protocol §4.5): `majority` is more than half, `all` is every one, an
-    /// integer is capped at `eligible`. With one eligible Shaper every rule
-    /// resolves to 1; with none, to 0.
+    /// integer is capped at `eligible`, and a share `"3/5"` is that fraction
+    /// of whoever is seated now, rounded up. With one eligible Shaper every
+    /// rule resolves to 1; with none, to 0.
     pub fn needed_for(self, eligible: u32) -> u32 {
         if eligible == 0 {
             return 0;
@@ -743,7 +911,64 @@ impl DecisionRule {
             Self::Named(NamedRule::Majority) => eligible / 2 + 1,
             Self::Named(NamedRule::All) => eligible,
             Self::AtLeast(n) => n.clamp(1, eligible),
+            Self::Share(share) => share.needed_for(eligible),
         }
+    }
+}
+
+impl ShareRule {
+    /// `"3/5"`. `need` is at least 1 and no greater than `of`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (need, of) = text.trim().split_once('/')?;
+        let need = need.trim().parse::<u32>().ok()?;
+        let of = of.trim().parse::<u32>().ok()?;
+        if need < 1 || of < need {
+            return None;
+        }
+        Some(Self { need, of })
+    }
+
+    /// Ceiling of `need/of` of the Shapers seated now, at least 1.
+    pub fn needed_for(self, eligible: u32) -> u32 {
+        if eligible == 0 || self.of == 0 {
+            return 0;
+        }
+        let scaled = u64::from(self.need) * u64::from(eligible);
+        let needed = scaled.div_ceil(u64::from(self.of));
+        u32::try_from(needed).unwrap_or(u32::MAX).clamp(1, eligible)
+    }
+}
+
+impl Serialize for ShareRule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}/{}", self.need, self.of))
+    }
+}
+
+impl<'de> Deserialize<'de> for ShareRule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("decision share must be need/of"))
+    }
+}
+
+impl JsonSchema for ShareRule {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ShareRule".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+            "description": "How many must agree out of the planned group, such as 3/5."
+        })
     }
 }
 
@@ -1186,6 +1411,25 @@ pub const PROFILE_MAX_SKILLS: usize = 20;
 pub const PROFILE_SKILL_LABEL_MAX_CHARS: usize = 40;
 /// `open_limit`, when set, is within `1..=50`.
 pub const PROFILE_OPEN_LIMIT_RANGE: std::ops::RangeInclusive<u32> = 1..=50;
+/// At most this many social links.
+pub const PROFILE_MAX_SOCIALS: usize = 8;
+/// Each social URL ≤ this many chars.
+pub const PROFILE_SOCIAL_URL_MAX_CHARS: usize = 200;
+
+/// Networks a profile link may name. `website` is any other https page.
+pub const PROFILE_SOCIAL_NETWORKS: &[&str] = &[
+    "website",
+    "github",
+    "x",
+    "linkedin",
+    "nostr",
+    "mastodon",
+    "telegram",
+    "discord",
+    "youtube",
+    "instagram",
+    "bluesky",
+];
 
 /// Kebab-case of a skill label for the `39105` `k` tag (§4.7a).
 ///
@@ -1222,6 +1466,132 @@ pub fn skill_slug(label: &str) -> String {
     slug
 }
 
+/// One link on a member's org profile. The URL is https and opens in a browser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileSocial {
+    /// One of [`PROFILE_SOCIAL_NETWORKS`].
+    pub network: String,
+    /// Canonical `https://` URL.
+    pub url: String,
+}
+
+/// Accept social links for a `39105`.
+///
+/// One link per named network (the first wins). Up to three `website` links.
+/// A named network must point at that network's host. An empty or generic
+/// network is inferred from the host.
+pub fn normalize_socials(input: &[ProfileSocial]) -> Result<Vec<ProfileSocial>, &'static str> {
+    if input.len() > PROFILE_MAX_SOCIALS {
+        return Err("at most 8 social links");
+    }
+    let mut out = Vec::with_capacity(input.len());
+    let mut seen = std::collections::HashSet::new();
+    let mut websites = 0u32;
+    for raw in input {
+        let (host, url) = https_url(&raw.url)?;
+        let network = canonical_network(raw.network.trim(), &host)?;
+        if !host_matches(&network, &host) {
+            return Err("link does not match that social");
+        }
+        if network == "website" {
+            websites += 1;
+            if websites > 3 {
+                return Err("at most 3 website links");
+            }
+            out.push(ProfileSocial { network, url });
+            continue;
+        }
+        if !seen.insert(network.clone()) {
+            continue;
+        }
+        out.push(ProfileSocial { network, url });
+    }
+    Ok(out)
+}
+
+fn https_url(raw: &str) -> Result<(String, String), &'static str> {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() > PROFILE_SOCIAL_URL_MAX_CHARS {
+        return Err("social link is too long");
+    }
+    let Some(rest) = trimmed.strip_prefix("https://") else {
+        return Err("social link must be https");
+    };
+    if rest.is_empty()
+        || rest.contains(' ')
+        || rest.contains('@')
+        || rest.chars().any(|ch| ch.is_control())
+    {
+        return Err("social link must be https");
+    }
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = rest[..host_end].to_ascii_lowercase();
+    if host.is_empty()
+        || !host.contains('.')
+        || host.starts_with('.')
+        || host.ends_with('.')
+        || host.contains("..")
+        || !host
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-')
+    {
+        return Err("social link must be https");
+    }
+    Ok((host.clone(), format!("https://{host}{}", &rest[host_end..])))
+}
+
+fn canonical_network(raw: &str, host: &str) -> Result<String, &'static str> {
+    let named = raw.trim().to_ascii_lowercase();
+    let named = match named.as_str() {
+        "" | "link" | "web" | "site" | "homepage" | "url" => infer_network(host).to_string(),
+        "twitter" => "x".to_string(),
+        other => other.to_string(),
+    };
+    if PROFILE_SOCIAL_NETWORKS.contains(&named.as_str()) {
+        Ok(named)
+    } else {
+        Err("unknown social")
+    }
+}
+
+fn infer_network(host: &str) -> &'static str {
+    let host = host.trim_start_matches("www.");
+    if host == "github.com" || host.ends_with(".github.io") {
+        "github"
+    } else if host == "x.com" || host == "twitter.com" {
+        "x"
+    } else if host == "linkedin.com" || host == "lnkd.in" {
+        "linkedin"
+    } else if host == "youtube.com" || host == "youtu.be" || host == "youtube-nocookie.com" {
+        "youtube"
+    } else if host == "instagram.com" {
+        "instagram"
+    } else if host == "t.me" || host == "telegram.me" || host == "telegram.org" {
+        "telegram"
+    } else if host == "discord.com" || host == "discord.gg" {
+        "discord"
+    } else if host == "bsky.app" {
+        "bluesky"
+    } else if host == "njump.me"
+        || host == "primal.net"
+        || host == "nostr.com"
+        || host == "snort.social"
+    {
+        "nostr"
+    } else if host.contains("mastodon") {
+        "mastodon"
+    } else {
+        "website"
+    }
+}
+
+fn host_matches(network: &str, host: &str) -> bool {
+    if network == "website" || network == "mastodon" {
+        return true;
+    }
+    infer_network(host) == network
+}
+
 /// Content of `kind:39105` — one member's org profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OrgProfile {
@@ -1231,9 +1601,12 @@ pub struct OrgProfile {
     pub version: u32,
     /// Free text.
     pub about: String,
-    /// The person's skills.
+    /// The person's skills — what they can do and the work they want.
     #[serde(default)]
     pub skills: Vec<Skill>,
+    /// Links to their socials. Empty when they have not added any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// How many open pieces at once; `null` = no limit.
     pub open_limit: Option<u32>,
     /// When last written.
@@ -1277,8 +1650,14 @@ pub struct DirectionLineInput {
     pub id: Option<String>,
     /// The line.
     pub text: String,
-    /// Target date, when it has one.
+    /// Target date. Required when the artifact is `objectives`.
     pub date: Option<Timestamp>,
+    /// Checkable completion. Required when the artifact is `objectives`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+    /// `bet`, `rule`, or `refusal`. Required when the artifact is `strategy`.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub line_type: Option<StrategyLineType>,
 }
 
 /// `50002` content — the whole new version.
@@ -1314,7 +1693,8 @@ pub struct ProjectProposeContent {
     /// The objective line it serves.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub objective_ref: Option<String>,
-    /// If named, the root opens `offered` to them.
+    /// If named, the root opens `offered` to them, unless they already
+    /// agreed on this proposal — then they hold it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_dri: Option<PubkeyHex>,
 }
@@ -1387,6 +1767,9 @@ pub struct ProfileSetContent {
     /// Labels in the person's words; the relay derives slugs.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Social links. Absent or empty clears them on this whole-profile replace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub socials: Vec<ProfileSocial>,
     /// Within [`PROFILE_OPEN_LIMIT_RANGE`], or absent for no limit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_limit: Option<u32>,
@@ -1454,6 +1837,12 @@ mod tests {
         assert!(!serde_json::to_string(&mission)
             .unwrap()
             .contains("\"lines\""));
+        let situation: DirectionArtifact = round_trip(json!({
+            "slug": "situation", "version": 1, "body": "A prototype, no outside users.",
+            "confirmed_by": PK, "confirmed_at": 1, "proposed_by": PK, "proposal": ID
+        }));
+        assert_eq!(situation.slug, DirectionSlug::Situation);
+        assert!(situation.lines.is_empty());
     }
 
     #[test]
@@ -1615,6 +2004,12 @@ mod tests {
             (DecisionRule::AtLeast(0), 5, 1),
             (DecisionRule::AtLeast(7), 1, 1),
             (DecisionRule::AtLeast(2), 0, 0),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 1, 1),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 2, 2),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 3, 2),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 4, 3),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 5, 3),
+            (DecisionRule::Share(ShareRule { need: 3, of: 5 }), 0, 0),
         ] {
             assert_eq!(
                 rule.needed_for(eligible),
@@ -1630,7 +2025,17 @@ mod tests {
             serde_json::to_value(DecisionRule::AtLeast(3)).unwrap(),
             json!(3)
         );
+        assert_eq!(
+            serde_json::to_value(DecisionRule::Share(ShareRule { need: 3, of: 5 })).unwrap(),
+            json!("3/5")
+        );
+        assert_eq!(
+            serde_json::from_value::<DecisionRule>(json!("3/5")).unwrap(),
+            DecisionRule::Share(ShareRule { need: 3, of: 5 })
+        );
         assert!(serde_json::from_value::<DecisionRule>(json!("most")).is_err());
+        assert!(serde_json::from_value::<DecisionRule>(json!("0/5")).is_err());
+        assert!(serde_json::from_value::<DecisionRule>(json!("6/5")).is_err());
     }
 
     #[test]
@@ -1781,6 +2186,34 @@ mod tests {
         assert_eq!(skill_slug("rust"), "rust");
         assert_eq!(skill_slug("---"), "");
         assert_eq!(skill_slug(""), "");
+    }
+
+    #[test]
+    fn social_links_are_https_and_match_the_network() {
+        let links = normalize_socials(&[
+            ProfileSocial {
+                network: "GitHub".into(),
+                url: "https://GitHub.com/travolta".into(),
+            },
+            ProfileSocial {
+                network: String::new(),
+                url: "https://example.com/me".into(),
+            },
+        ])
+        .expect("links");
+        assert_eq!(links[0].network, "github");
+        assert_eq!(links[0].url, "https://github.com/travolta");
+        assert_eq!(links[1].network, "website");
+        assert!(normalize_socials(&[ProfileSocial {
+            network: "github".into(),
+            url: "https://evil.example/phish".into(),
+        }])
+        .is_err());
+        assert!(normalize_socials(&[ProfileSocial {
+            network: "github".into(),
+            url: "http://github.com/travolta".into(),
+        }])
+        .is_err());
     }
 
     #[test]

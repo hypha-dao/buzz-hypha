@@ -169,7 +169,7 @@ fn direction_slug(cmd: &Command<'_>) -> Result<DirectionSlug, IngestError> {
         .ok_or_else(|| IngestError::Rejected("invalid: missing d tag (slug)".into()))?;
     serde_json::from_value(serde_json::Value::String(slug.to_owned())).map_err(|_| {
         IngestError::Rejected(format!(
-            "invalid: unknown direction slug {slug:?}; expected mission, vision, objectives, or strategy"
+            "invalid: unknown direction slug {slug:?}; expected mission, vision, situation, objectives, or strategy"
         ))
     })
 }
@@ -205,13 +205,36 @@ pub(super) fn markers(proposal: &Proposal) -> (Option<String>, Option<String>) {
         ProposalKind::Direction
         | ProposalKind::Project
         | ProposalKind::Money
-        | ProposalKind::Join => (None, None),
+        | ProposalKind::Join
+        | ProposalKind::Withdraw
+        | ProposalKind::Codebases => (None, None),
     }
+}
+
+/// `["e", <proposal>, "", "revises"]` — replace that open proposal.
+fn revises_marker(event: &nostr::Event) -> Result<Option<Uuid>, IngestError> {
+    for t in event.tags.iter() {
+        let parts = t.as_slice();
+        if parts.len() >= 4
+            && parts[0] == "e"
+            && parts[3] == buzz_core::intelligent_org::tag::MARKER_REVISES
+        {
+            return Uuid::parse_str(&parts[1])
+                .map(Some)
+                .map_err(|_| IngestError::Rejected("invalid: revises tag must be a uuid".into()));
+        }
+    }
+    Ok(None)
 }
 
 /// `io_direction_propose` (`50002`): a Shaper opens a `direction` proposal.
 /// `base` must equal the live head; `needed` is `39103.rules.direction`.
+/// With `revises`, the same command replaces that open proposal and clears
+/// its votes.
 pub(super) async fn direction_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    if let Some(proposal_id) = revises_marker(cmd.event)? {
+        return revise_direction(cmd, proposal_id).await;
+    }
     let slug = direction_slug(cmd)?;
     let base = version_tag(cmd.event, "base")?
         .ok_or_else(|| IngestError::Rejected("invalid: missing base tag".into()))?;
@@ -256,10 +279,61 @@ pub(super) async fn direction_propose(cmd: &Command<'_>) -> Result<IngestResult,
     open_and_settle(cmd, tx, shapers, opening).await
 }
 
+/// Replace an open direction proposal. The slug and `base` must still match
+/// the live head, and the proposal must already be that slug.
+async fn revise_direction(
+    cmd: &Command<'_>,
+    proposal_id: Uuid,
+) -> Result<IngestResult, IngestError> {
+    let slug = direction_slug(cmd)?;
+    let base = version_tag(cmd.event, "base")?
+        .ok_or_else(|| IngestError::Rejected("invalid: missing base tag".into()))?;
+    let content: DirectionProposeContent = serde_json::from_value(content_value(cmd.event)?)
+        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+    authorize::direction_content(slug, &content)?;
+    let payload = payload_with(
+        content_value(cmd.event)?,
+        &[
+            ("slug", serde_json::Value::String(slug_wire(slug))),
+            ("base", serde_json::json!(base)),
+        ],
+    )?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let head = store::get_direction_head(&mut tx, cmd.tenant.community(), slug)
+        .await
+        .map_err(|e| internal("read io_direction", e))?;
+    authorize::open_direction(
+        &shapers,
+        &cmd.actor_hex,
+        base,
+        head.as_ref().map(|row| row.content.version),
+    )?;
+    revise_open(
+        cmd,
+        tx,
+        shapers,
+        proposal_id,
+        ProposalKind::Direction,
+        payload,
+        Some(slug_wire(slug)),
+    )
+    .await
+}
+
 /// `io_project_propose` (`50004`): any member opens a `project` proposal.
 /// Money fields and a stale `objective_ref` are refused at opening; a
 /// passing vote executes through [`super::work::execute_project`].
 pub(super) async fn project_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    if let Some(proposal_id) = revises_marker(cmd.event)? {
+        return revise_project(cmd, proposal_id).await;
+    }
     let payload = content_value(cmd.event)?;
     authorize::money_fields(&payload)?;
     let content: ProjectProposeContent = serde_json::from_value(payload.clone())
@@ -289,6 +363,173 @@ pub(super) async fn project_propose(cmd: &Command<'_>) -> Result<IngestResult, I
         item: None,
         payload,
         detail: serde_json::json!({ "kind": "project", "rule": rule }),
+    };
+    open_and_settle(cmd, tx, shapers, opening).await
+}
+
+/// Replace an open project proposal. Only a Shaper may reset a vote that is
+/// already in front of the Shapers.
+async fn revise_project(cmd: &Command<'_>, proposal_id: Uuid) -> Result<IngestResult, IngestError> {
+    let payload = content_value(cmd.event)?;
+    authorize::money_fields(&payload)?;
+    let content: ProjectProposeContent = serde_json::from_value(payload.clone())
+        .map_err(|e| IngestError::Rejected(format!("invalid: command content: {e}")))?;
+    authorize::work_copy(&content.title, &content.brief)?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    if let Some(reference) = &content.objective_ref {
+        let head =
+            store::get_direction_head(&mut tx, cmd.tenant.community(), DirectionSlug::Objectives)
+                .await
+                .map_err(|e| internal("read io_direction", e))?;
+        authorize::objective_ref(reference, head.as_ref().map(|row| &row.content))?;
+    }
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    revise_open(
+        cmd,
+        tx,
+        shapers,
+        proposal_id,
+        ProposalKind::Project,
+        payload,
+        None,
+    )
+    .await
+}
+
+/// Write a new payload onto an open proposal, drop its votes, and restart
+/// the decision window. `slug`, when set, must match the proposal's payload.
+async fn revise_open(
+    cmd: &Command<'_>,
+    mut tx: Transaction<'static, Postgres>,
+    shapers: Shapers,
+    proposal_id: Uuid,
+    expected: ProposalKind,
+    payload: serde_json::Value,
+    slug: Option<String>,
+) -> Result<IngestResult, IngestError> {
+    authorize::require_shaper(&shapers, &cmd.actor_hex)?;
+    let row = store::get_proposal(&mut tx, cmd.tenant.community(), proposal_id)
+        .await
+        .map_err(|e| internal("read io_proposals", e))?
+        .ok_or_else(|| IngestError::Rejected("invalid: unknown proposal".into()))?;
+    let mut proposal = row.content;
+    if proposal.status != ProposalStatus::Open {
+        return Err(IngestError::Rejected(
+            "invalid: proposal is not open".into(),
+        ));
+    }
+    if proposal.kind != expected {
+        return Err(IngestError::Rejected(
+            "invalid: that proposal is a different kind".into(),
+        ));
+    }
+    if let Some(slug) = slug.as_deref() {
+        let stored = proposal
+            .payload
+            .get("slug")
+            .and_then(serde_json::Value::as_str);
+        if stored != Some(slug) {
+            return Err(IngestError::Rejected(
+                "invalid: that proposal is for a different artifact".into(),
+            ));
+        }
+    }
+    store::clear_votes(&mut tx, cmd.tenant.community(), proposal_id)
+        .await
+        .map_err(|e| internal("clear io_votes", e))?;
+    proposal.payload = payload;
+    proposal.votes.clear();
+    proposal.expires_at = cmd.at.saturating_add(shapers.decision_window_secs);
+    proposal.decided_at = None;
+    let mut rows = vec![cmd.ledger(
+        "proposal_revised",
+        object::PROPOSAL,
+        &proposal.id,
+        serde_json::json!({ "kind": expected, "by": cmd.actor_hex }),
+    )?];
+    let mut cast = Vec::new();
+    if opener_agrees(cmd, &proposal)? {
+        proposal.votes.push(Vote {
+            p: cmd.actor_hex.clone(),
+            vote: VoteChoice::Agree,
+            at: cmd.at,
+            receipt: cmd.receipt_hex(),
+        });
+        cast.push(CastVote {
+            receipt: cmd.receipt_hex(),
+            reason: None,
+        });
+        rows.push(cmd.ledger(
+            "vote_cast",
+            object::PROPOSAL,
+            &proposal.id,
+            serde_json::json!({ "vote": "agree", "after_revise": true }),
+        )?);
+    }
+    let (subject, item) = markers(&proposal);
+    let receipt = store::get_proposal_opening_receipt(&mut tx, cmd.tenant.community(), proposal_id)
+        .await
+        .map_err(|e| internal("read 39102 head", e))?
+        .ok_or_else(|| {
+            IngestError::Internal(format!(
+                "error: proposal {proposal_id} has no live 39102; restore it before revising"
+            ))
+        })?;
+    settle(
+        cmd, tx, shapers, proposal, subject, item, cast, rows, receipt,
+    )
+    .await
+}
+
+/// `io_withdraw_propose` (`50023`): a Shaper opens removal of a project
+/// when more than one Shaper is seated. The project rule decides it.
+pub(super) async fn withdraw_propose(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let item_id = uuid_tag(cmd.event, "i")?
+        .ok_or_else(|| IngestError::Rejected("invalid: missing i tag (item)".into()))?;
+    let raw = content_value(cmd.event)?;
+    authorize::money_fields(&raw)?;
+    let content: WhyContent = serde_json::from_value(raw.clone())
+        .map_err(|error| IngestError::Rejected(format!("invalid: command content: {error}")))?;
+
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("invalid: no Shapers yet".into()))?;
+    let item = store::get_work_item(&mut tx, cmd.tenant.community(), item_id)
+        .await
+        .map_err(|error| internal("read io_work_items", error))?
+        .ok_or_else(|| IngestError::Rejected("invalid: unknown item".into()))?;
+    authorize::open_withdraw(&item.content, &shapers, &cmd.actor_hex)?;
+    let title = format!("Remove {}", item.content.title);
+    let payload = payload_with(
+        raw,
+        &[
+            ("i", serde_json::Value::String(item_id.to_string())),
+            ("title", serde_json::Value::String(title)),
+        ],
+    )?;
+    let rule = shapers.rules.project;
+    let opening = Opening {
+        kind: ProposalKind::Withdraw,
+        rule,
+        subject: None,
+        item: Some(item_id.to_string()),
+        payload,
+        detail: serde_json::json!({
+            "kind": "withdraw",
+            "i": item_id,
+            "rule": rule,
+            "why": content.why,
+        }),
     };
     open_and_settle(cmd, tx, shapers, opening).await
 }
@@ -546,11 +787,31 @@ async fn execute(
         ProposalKind::Project => {
             super::work::execute_project(cmd, tx, proposal, opening_receipt).await
         }
+        ProposalKind::Withdraw => super::work::execute_withdraw_proposal(cmd, tx, proposal).await,
+        ProposalKind::Codebases => execute_codebases(cmd, tx, proposal).await,
         ProposalKind::Money => Err(IngestError::Rejected(
             "restricted: money not enabled".into(),
         )),
         ProposalKind::Join => Err(IngestError::Rejected("restricted: join not enabled".into())),
     }
+}
+
+/// A passed codebases proposal replaces `39106`. Strategy is not touched.
+async fn execute_codebases(
+    cmd: &Command<'_>,
+    tx: &mut Transaction<'static, Postgres>,
+    proposal: &Proposal,
+) -> Result<Execution, IngestError> {
+    let written = super::knowledge::write_passed(cmd, tx, &proposal.payload).await?;
+    Ok(Execution {
+        executed: Executed {
+            kind: object::KNOWLEDGE.to_owned(),
+            id: "codebases".to_owned(),
+        },
+        projections: vec![written.projection],
+        rows: vec![written.row],
+        room_created: None,
+    })
 }
 
 fn executed_direction(slug: DirectionSlug) -> Executed {
@@ -614,6 +875,8 @@ fn direction_lines(
             id,
             text: input.text.clone(),
             date: input.date,
+            done_when: input.done_when.clone(),
+            line_type: input.line_type,
         });
     }
     Ok(lines)

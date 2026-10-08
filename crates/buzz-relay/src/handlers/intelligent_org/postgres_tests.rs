@@ -10,17 +10,17 @@ use std::sync::Arc;
 
 use buzz_auth::Scope;
 use buzz_core::intelligent_org::{
-    DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers, VoteChoice, WorkItem,
-    WorkItemState,
+    DirectionArtifact, DirectionSlug, Proposal, ProposalStatus, Shapers, StrategyLineType,
+    VoteChoice, WorkItem, WorkItemState,
 };
 use buzz_core::kind::{
-    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_DECLINE, KIND_IO_DIRECTION,
-    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRI_PROPOSE, KIND_IO_JOIN_PROPOSE,
-    KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER, KIND_IO_PROJECT_PROPOSE,
-    KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS,
-    KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
+    KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_GIT_REPO_ANNOUNCEMENT, KIND_IO_ACCEPT, KIND_IO_DECLINE,
+    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRI_PROPOSE,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
+    KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE,
+    KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+    KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA, KIND_PROJECT,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::CommunityId;
@@ -1916,7 +1916,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             h.direction(&h.owner, "charter", 0, r#"{"body":"no"}"#, false)
                 .await
         ),
-        "invalid: unknown direction slug \"charter\"; expected mission, vision, objectives, or strategy"
+        "invalid: unknown direction slug \"charter\"; expected mission, vision, situation, objectives, or strategy"
     );
     assert_eq!(
         rejected(
@@ -1929,7 +1929,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             )
             .await
         ),
-        "invalid: mission and vision have no lines"
+        "invalid: only objectives and strategy have lines"
     );
     assert_eq!(
         rejected(
@@ -2015,7 +2015,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &h.owner,
             "objectives",
             0,
-            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
             false,
         )
         .await
@@ -2052,6 +2052,11 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
     assert_eq!(objectives.lines.len(), 1);
     assert_eq!(objectives.lines[0].id, "l_7f3a");
     assert_eq!(objectives.lines[0].n, 1);
+    assert_eq!(objectives.lines[0].date, Some(1_780_000_000));
+    assert_eq!(
+        objectives.lines[0].done_when.as_deref(),
+        Some("the hall has hosted a weekday night")
+    );
     assert_eq!(objectives.confirmed_by, second.public_key().to_hex());
 
     // A second confirm of the same slug: base must be 1; prev is the v1 id.
@@ -2067,7 +2072,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &h.owner,
             "objectives",
             1,
-            r#"{"body":"the lines, updated","lines":[{"id":"l_7f3a","text":"Weekday hall booked"},{"text":"Stall running"}]}"#,
+            r#"{"body":"the lines, updated","lines":[{"id":"l_7f3a","text":"Weekday hall booked","date":1780000000,"done_when":"the hall has hosted a weekday night"},{"text":"Stall running","date":1782000000,"done_when":"the stall has run every Saturday this season"}]}"#,
             true,
         )
         .await
@@ -2116,6 +2121,107 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             .body,
         "first"
     );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_passed_situation_writes_39100_without_lines() {
+    let h = harness().await;
+    h.bootstrap().await;
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "situation",
+                0,
+                r#"{"body":"A prototype, no outside users.","lines":[{"text":"no"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: only objectives and strategy have lines"
+    );
+    let reply = h
+        .direction(
+            &h.owner,
+            "situation",
+            0,
+            r#"{"body":"A working prototype, no outside users yet. Two developers, about 20 hours a week each."}"#,
+            true,
+        )
+        .await
+        .expect("open situation");
+    assert_eq!(reply["status"], "passed");
+    let head = h
+        .direction_head(DirectionSlug::Situation)
+        .await
+        .expect("39100 situation");
+    assert_eq!(head.version, 1);
+    assert!(head.body.starts_with("A working prototype"));
+    assert!(head.lines.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn objectives_need_done_when_and_strategy_lines_need_a_type() {
+    let h = harness().await;
+    h.bootstrap().await;
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "objectives",
+                0,
+                r#"{"body":"the lines","lines":[{"text":"be more visible","date":1780000000}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: objective line needs done_when"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "objectives",
+                0,
+                r#"{"body":"the lines","lines":[{"text":"A weekday hall is open.","done_when":"four nights held"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: objective line needs a date"
+    );
+    assert_eq!(
+        rejected(
+            h.direction(
+                &h.owner,
+                "strategy",
+                0,
+                r#"{"body":"how","lines":[{"text":"no brand money"}]}"#,
+                true
+            )
+            .await
+        ),
+        "invalid: strategy line needs a type"
+    );
+    let reply = h
+        .direction(
+            &h.owner,
+            "strategy",
+            0,
+            r#"{"body":"how","lines":[{"text":"No brand money.","type":"refusal"},{"text":"Borrow before we buy.","type":"bet"}]}"#,
+            true,
+        )
+        .await
+        .expect("open strategy");
+    assert_eq!(reply["status"], "passed");
+    let head = h
+        .direction_head(DirectionSlug::Strategy)
+        .await
+        .expect("39100 strategy");
+    assert_eq!(head.lines[0].line_type, Some(StrategyLineType::Refusal));
+    assert_eq!(head.lines[1].line_type, Some(StrategyLineType::Bet));
 }
 
 #[tokio::test]
@@ -2301,6 +2407,31 @@ async fn a_passed_dri_sets_the_holder_and_the_subject_cannot_vote() {
     assert!(item.offered_at.is_none());
 }
 
+async fn announcement_tags(h: &Harness, kind: u32) -> Vec<Vec<String>> {
+    let rows = sqlx::query(
+        "SELECT tags FROM events \
+         WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL \
+         ORDER BY created_at",
+    )
+    .bind(h.community().as_uuid())
+    .bind(kind as i32)
+    .fetch_all(&h.pool)
+    .await
+    .expect("announcement events");
+    let tags: serde_json::Value = rows.last().expect("one announcement").get("tags");
+    tags.as_array()
+        .expect("tags")
+        .iter()
+        .map(|tag| {
+            tag.as_array()
+                .expect("tag")
+                .iter()
+                .map(|part| part.as_str().unwrap_or("").to_owned())
+                .collect()
+        })
+        .collect()
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn a_passed_project_opens_a_root_in_open_or_offered() {
@@ -2348,7 +2479,7 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         &h.owner,
         "objectives",
         0,
-        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
         true,
     )
     .await
@@ -2382,17 +2513,24 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
     assert_eq!(root.state, WorkItemState::Open);
     assert_eq!(root.title, "Weekday hall");
     assert!(root.approved_at.is_some());
-    let home = root.home.as_ref().expect("R-9a writes home.channel");
+    let home = root.home.as_ref().expect("pass writes home.channel");
     let home_room = Uuid::parse_str(&home.channel).expect("home.channel uuid");
-    assert!(home.repo.is_none(), "repo is R-9b");
-    assert!(home.project.is_none(), "project is R-9b");
+    let repo = home.repo.as_deref().expect("home.repo");
+    let project = home.project.as_deref().expect("home.project");
+    assert!(repo.starts_with("30617:"), "{repo}");
+    assert!(project.starts_with("30621:"), "{project}");
+    let owner_and_slug = repo.trim_start_matches("30617:");
+    let (repo_owner, repo_slug) = owner_and_slug.split_once(':').expect("30617:owner:slug");
+    assert_eq!(repo_owner, h.state.relay_keypair.public_key().to_hex());
+    assert_eq!(repo_slug, "weekday-hall");
+    assert_eq!(project, format!("30621:{repo_owner}:{repo_slug}"));
     assert!(root.dri.is_none());
     assert_eq!(root.path, Vec::<String>::new());
     let live = h.live_state(KIND_IO_WORK_ITEM).await;
     assert_eq!(live.len(), 1, "one live 39101 for the new root");
     assert_eq!(live[0].1["state"], "open");
     assert_eq!(live[0].1["home"]["channel"], home.channel);
-    assert!(live[0].1["home"].get("repo").is_none());
+    assert_eq!(live[0].1["home"]["repo"], repo);
     let channel_row = sqlx::query(
         "SELECT name, visibility::text AS visibility, description FROM channels \
          WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
@@ -2426,7 +2564,60 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
             "proposal_passed",
             "item_created",
             "home_created",
+            "context_seed",
+            "context_seeded",
         ]
+    );
+    let paths = super::home_repo::list_seeded_paths(&h.state, &h.tenant, repo_owner, repo_slug)
+        .await
+        .expect("list seeded paths")
+        .expect("seeded repo");
+    assert_eq!(
+        paths,
+        vec![
+            "context/README.md".to_owned(),
+            "context/decisions.md".to_owned(),
+            "context/links.md".to_owned(),
+        ]
+    );
+    let readme = super::home_repo::read_seeded_file(
+        &h.state,
+        &h.tenant,
+        repo_owner,
+        repo_slug,
+        "context/README.md",
+    )
+    .await
+    .expect("read README")
+    .expect("README");
+    assert!(readme.contains("Weekday hall"));
+    assert!(readme.contains("Book it"));
+    assert!(!readme.contains("context/drafts"));
+    let tags = announcement_tags(&h, KIND_GIT_REPO_ANNOUNCEMENT).await;
+    let protect = tags
+        .iter()
+        .find(|tag| tag.first().map(String::as_str) == Some("buzz-protect"))
+        .expect("buzz-protect");
+    assert!(protect.iter().any(|part| part == "push:admin"));
+    let parsed = buzz_core::git_perms::parse_protection_tags(&tags).expect("parse protect");
+    let update = buzz_core::git_perms::RefUpdate {
+        ref_name: "refs/heads/main".into(),
+        kind: buzz_core::git_perms::UpdateKind::FastForward,
+        old_oid: "a".repeat(40),
+        new_oid: "b".repeat(40),
+    };
+    assert!(buzz_core::git_perms::evaluate_ref_update(
+        &update,
+        buzz_core::channel::MemberRole::Member,
+        &parsed.rules,
+    )
+    .is_err());
+    let project_tags = announcement_tags(&h, KIND_PROJECT).await;
+    assert!(
+        project_tags
+            .iter()
+            .any(|tag| tag.first().map(String::as_str) == Some("buzz-channel")),
+        "30621 points at the room"
     );
 
     let (_, offered) = h
@@ -2445,8 +2636,11 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         Some("objectives@1#l_7f3a")
     );
     assert!(
-        offered.home.as_ref().is_some_and(|h| h.repo.is_none()),
-        "offered root also gets a home room; repo is R-9b"
+        offered.home.as_ref().is_some_and(|home| home
+            .repo
+            .as_deref()
+            .is_some_and(|repo| repo.starts_with("30617:"))),
+        "offered root also gets a home room and a repository"
     );
     assert_eq!(
         h.roster(Uuid::parse_str(&offered.home.as_ref().unwrap().channel).unwrap())
@@ -2456,6 +2650,285 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         "suggested_dri is not yet a member; accept promotes them"
     );
     assert_eq!(h.live_state(KIND_IO_WORK_ITEM).await.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_rolled_back_project_announcement_leaves_no_repo() {
+    let h = harness().await;
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    let announced = super::home_repo::announce_home(
+        &super::home_repo::AnnounceCtx {
+            community: h.community(),
+            host: h.tenant.host(),
+            relay: &h.state.relay_keypair,
+            db: &h.state.db,
+            created_at: 1_700_000_000,
+        },
+        &mut tx,
+        &super::home_repo::AnnounceRequest {
+            title: "Weekday hall",
+            brief: "Book it",
+            room: Uuid::new_v4(),
+            item_id: Uuid::new_v4(),
+            dri: None,
+            payload: &serde_json::json!({ "title": "Weekday hall", "brief": "Book it" }),
+        },
+        true,
+    )
+    .await
+    .expect("announce inside the pass transaction");
+    assert!(announced.home.repo.is_some());
+    tx.rollback().await.expect("rollback");
+    let names: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM git_repo_names WHERE community_id = $1")
+            .bind(h.community().as_uuid())
+            .fetch_one(&h.pool)
+            .await
+            .expect("repo names");
+    assert_eq!(names, 0, "a rolled-back pass leaves no repo name");
+    let events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events \
+         WHERE community_id = $1 AND kind = $2 AND deleted_at IS NULL",
+    )
+    .bind(h.community().as_uuid())
+    .bind(KIND_GIT_REPO_ANNOUNCEMENT as i32)
+    .fetch_one(&h.pool)
+    .await
+    .expect("30617 rows");
+    assert_eq!(events, 0, "a rolled-back pass leaves no 30617");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_relay_without_object_storage_skips_the_repo() {
+    let h = harness().await;
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    let announced = super::home_repo::announce_home(
+        &super::home_repo::AnnounceCtx {
+            community: h.community(),
+            host: h.tenant.host(),
+            relay: &h.state.relay_keypair,
+            db: &h.state.db,
+            created_at: 1_700_000_000,
+        },
+        &mut tx,
+        &super::home_repo::AnnounceRequest {
+            title: "Weekday hall",
+            brief: "Book it",
+            room: Uuid::new_v4(),
+            item_id: Uuid::new_v4(),
+            dri: None,
+            payload: &serde_json::json!({ "title": "Weekday hall" }),
+        },
+        false,
+    )
+    .await
+    .expect("skip");
+    assert!(announced.home.repo.is_none());
+    assert!(announced.home.project.is_none());
+    assert!(announced.seed.is_none());
+    assert!(!announced.home.channel.is_empty());
+    tx.rollback().await.expect("rollback");
+    let names: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM git_repo_names WHERE community_id = $1")
+            .bind(h.community().as_uuid())
+            .fetch_one(&h.pool)
+            .await
+            .expect("repo names");
+    assert_eq!(names, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_failed_context_seed_stays_pending() {
+    let h = harness().await;
+    let item = Uuid::new_v4();
+    let mut tx = h
+        .state
+        .db
+        .begin_event_write_transaction()
+        .await
+        .expect("tx");
+    store::insert_ledger(
+        &mut tx,
+        h.community(),
+        &store::LedgerEntry {
+            at: chrono::Utc::now(),
+            actor: store::LEDGER_ACTOR_RELAY.to_owned(),
+            verb: "context_seed".into(),
+            object_type: "work_item".into(),
+            object_id: item.to_string(),
+            receipt_event_id: None,
+            detail: serde_json::json!({
+                "repo_id": "",
+                "owner": "zz",
+                "readme": "x",
+                "decisions": "y",
+                "links": "z",
+            }),
+        },
+    )
+    .await
+    .expect("insert seed");
+    tx.commit().await.expect("commit seed");
+    super::home_repo::retry_pending(&h.state, &h.tenant)
+        .await
+        .expect("retry");
+    let verbs = h.ledger_verbs().await;
+    assert!(verbs.contains(&"context_seed".to_owned()));
+    assert!(
+        !verbs.iter().any(|verb| verb == "context_seeded"),
+        "a failed seed leaves the retry row: {verbs:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_suggested_dri_who_agreed_holds_the_project() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let (_, held) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Make hypha great","brief":"Hold it","due_at":1800000000,"suggested_dri":"{owner_hex}"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(held.state, WorkItemState::Accepted);
+    assert_eq!(held.dri.as_deref(), Some(owner_hex.as_str()));
+    assert!(held.offered_to.is_none());
+    assert!(held.offered_by.is_none());
+    let room = Uuid::parse_str(held.home.as_ref().unwrap().channel.as_str()).unwrap();
+    let roster = h.roster(room).await;
+    assert!(
+        roster
+            .iter()
+            .any(|(pubkey, role)| pubkey == &owner_hex && role == "admin"),
+        "the agreeing holder is the home admin: {roster:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_holder_github_clone_lands_on_the_project() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let owner_hex = h.owner.public_key().to_hex();
+    let (_, held) = h
+        .pass_project(
+            &h.owner,
+            &format!(
+                r#"{{"title":"Weekday hall","brief":"Book it","due_at":1800000000,"suggested_dri":"{owner_hex}"}}"#
+            ),
+        )
+        .await;
+    assert_eq!(held.state, WorkItemState::Accepted);
+    let project = held
+        .home
+        .as_ref()
+        .and_then(|home| home.project.clone())
+        .expect("home.project");
+    let slug = project.rsplit(':').next().expect("slug").to_owned();
+
+    let credential = "https://user:token@github.com/hypha/weekday";
+    let blocked = signed(
+        &h.owner,
+        KIND_GIT_REPO_ANNOUNCEMENT,
+        vec![
+            tag(["d", "weekday-private"]),
+            tag(["clone", credential]),
+            tag(["web", credential]),
+            tag(["buzz-org", &held.id]),
+        ],
+        "",
+    );
+    announce_repo(&h, blocked.clone())
+        .await
+        .expect("a credentialed announcement is still stored");
+    let blocked_tags = live_project_tags(&h, &slug).await;
+    assert!(
+        blocked_tags.iter().all(|row| {
+            row.iter()
+                .all(|part| !part.contains("weekday-private") && !part.contains("token"))
+        }),
+        "a credentialed URL does not land on the 30621: {blocked_tags:?}"
+    );
+
+    let github = "https://github.com/hypha/weekday";
+    let linked = signed(
+        &h.owner,
+        KIND_GIT_REPO_ANNOUNCEMENT,
+        vec![
+            tag(["d", "weekday"]),
+            tag(["clone", github]),
+            tag(["web", github]),
+            tag(["buzz-org", &held.id]),
+        ],
+        "",
+    );
+    announce_repo(&h, linked)
+        .await
+        .expect("public GitHub announcement");
+    let tags = live_project_tags(&h, &slug).await;
+    let coord = format!("{KIND_GIT_REPO_ANNOUNCEMENT}:{owner_hex}:weekday");
+    assert!(
+        tags.iter()
+            .any(|row| { row.len() >= 3 && row[0] == "a" && row[1] == coord && row[2] == github }),
+        "30621 carries the public GitHub coordinate: {tags:?}"
+    );
+}
+
+async fn announce_repo(h: &Harness, event: Event) -> Result<String, IngestError> {
+    let auth = IngestAuth::Http {
+        pubkey: h.owner.public_key(),
+        scopes: vec![Scope::ReposWrite],
+        auth_method: HttpAuthMethod::Nip98,
+    };
+    ingest_event(&h.state, &h.tenant, event, auth)
+        .await
+        .map(|result| {
+            assert!(result.accepted, "an Ok ingest result must be accepted");
+            result.message
+        })
+}
+
+async fn live_project_tags(h: &Harness, slug: &str) -> Vec<Vec<String>> {
+    let tags: serde_json::Value = sqlx::query(
+        "SELECT tags FROM events \
+         WHERE community_id = $1 AND kind = $2 AND d_tag = $3 AND deleted_at IS NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(h.community().as_uuid())
+    .bind(KIND_PROJECT as i32)
+    .bind(slug)
+    .fetch_one(&h.pool)
+    .await
+    .expect("live 30621")
+    .get("tags");
+    tags.as_array()
+        .expect("tags")
+        .iter()
+        .map(|tag| {
+            tag.as_array()
+                .expect("tag")
+                .iter()
+                .map(|part| part.as_str().unwrap_or("").to_owned())
+                .collect()
+        })
+        .collect()
 }
 
 #[tokio::test]
@@ -2962,6 +3435,20 @@ async fn release_returns_children_and_set_due_follows_authority() {
     h.accept_item(&other, &held_child)
         .await
         .expect("other holds the rota");
+    h.set_due_item(&other, &held_child, 1_800_000_400, "{}")
+        .await
+        .expect("the ticket holder moves the due date");
+    assert_eq!(
+        h.work_item(&held_child).await.expect("holder due").due_at,
+        1_800_000_400
+    );
+    h.set_due_item(&member, &held_child, 1_800_000_450, "{}")
+        .await
+        .expect("the ticket creator moves the due date");
+    assert_eq!(
+        h.work_item(&held_child).await.expect("creator due").due_at,
+        1_800_000_450
+    );
 
     let parent = h.work_item(&mid).await.expect("mid before release");
     assert_eq!(parent.children.open, 1);
@@ -3013,7 +3500,7 @@ async fn release_returns_children_and_set_due_follows_authority() {
     );
     assert_eq!(
         rejected(h.set_due_item(&other, &mid, 1_900_000_000, "{}").await),
-        "restricted: not the holder"
+        "restricted: not the holder or the creator"
     );
     let live_before = h.live_work_count().await;
     let ledger_before = h.ledger_verbs().await.len();
@@ -3241,4 +3728,159 @@ async fn bootstrap_backfills_existing_rooms_and_shapers_agent_moves_every_row() 
         assert!(members.contains(&new_hex), "the new key is in every room");
         assert!(!members.contains(&agent_hex), "the old key is in no room");
     }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn revising_an_open_proposal_clears_votes_and_stays_open() {
+    let h = harness().await;
+    h.bootstrap().await;
+    let second = Keys::generate();
+    h.add_shaper(&h.owner, &[], &second).await;
+    let outsider = Keys::generate();
+    h.member(&outsider).await;
+
+    let opened = h
+        .direction(
+            &h.owner,
+            "vision",
+            0,
+            r#"{"body":"a hall the neighborhood uses"}"#,
+            false,
+        )
+        .await
+        .expect("open vision");
+    assert_eq!(opened["status"], "open");
+    let waiting = opened["proposal"].as_str().expect("id").to_owned();
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("first agree")["status"],
+        "open"
+    );
+    assert_eq!(h.proposal(&waiting).await.votes.len(), 1);
+
+    assert_eq!(
+        rejected(
+            h.send(
+                &outsider,
+                KIND_IO_DIRECTION_PROPOSE,
+                vec![
+                    tag(["d", "vision"]),
+                    tag(["base", "0"]),
+                    tag(["e", &waiting, "", "revises"]),
+                ],
+                r#"{"body":"a hall the neighborhood uses, with a garden"}"#,
+            )
+            .await
+        ),
+        "restricted: not a Shaper"
+    );
+
+    let revised = h
+        .send(
+            &second,
+            KIND_IO_DIRECTION_PROPOSE,
+            vec![
+                tag(["d", "vision"]),
+                tag(["base", "0"]),
+                tag(["e", &waiting, "", "revises"]),
+            ],
+            r#"{"body":"a hall the neighborhood uses, with a garden"}"#,
+        )
+        .await
+        .expect("revise vision");
+    let revised: serde_json::Value = serde_json::from_str(&revised).expect("json");
+    assert_eq!(revised["proposal"], waiting);
+    assert_eq!(revised["status"], "open");
+    let proposal = h.proposal(&waiting).await;
+    assert_eq!(proposal.status, ProposalStatus::Open);
+    assert!(
+        proposal.votes.is_empty(),
+        "the earlier agree does not carry"
+    );
+    assert_eq!(h.votes(&waiting).await.len(), 0);
+    assert_eq!(
+        proposal.payload["body"],
+        "a hall the neighborhood uses, with a garden"
+    );
+    assert_eq!(
+        h.vote(&h.owner, &waiting, "agree", "{}")
+            .await
+            .expect("agree again")["status"],
+        "open"
+    );
+    assert_eq!(
+        h.vote(&second, &waiting, "agree", "{}")
+            .await
+            .expect("second agree")["status"],
+        "passed"
+    );
+    let passed = h.proposal(&waiting).await;
+    assert_eq!(
+        passed.payload["body"],
+        "a hall the neighborhood uses, with a garden"
+    );
+    assert_eq!(
+        rejected(
+            h.send(
+                &second,
+                KIND_IO_DIRECTION_PROPOSE,
+                vec![
+                    tag(["d", "vision"]),
+                    tag(["base", "1"]),
+                    tag(["e", &waiting, "", "revises"]),
+                ],
+                r#"{"body":"too late"}"#,
+            )
+            .await
+        ),
+        "invalid: proposal is not open"
+    );
+
+    let project = h
+        .project(
+            &h.owner,
+            r#"{"title":"Weekday hall","brief":"Book the hall","due_at":1800000000}"#,
+            false,
+        )
+        .await
+        .expect("open project");
+    assert_eq!(project["status"], "open");
+    let project_id = project["proposal"].as_str().expect("id").to_owned();
+    h.vote(&h.owner, &project_id, "agree", "{}")
+        .await
+        .expect("project agree");
+    let project_revised = h
+        .send(
+            &second,
+            KIND_IO_PROJECT_PROPOSE,
+            vec![tag(["e", &project_id, "", "revises"])],
+            r#"{"title":"Weekday hall","brief":"Book the hall and the garden","due_at":1800000000}"#,
+        )
+        .await
+        .expect("revise project");
+    let project_revised: serde_json::Value = serde_json::from_str(&project_revised).expect("json");
+    assert_eq!(project_revised["proposal"], project_id);
+    assert_eq!(project_revised["status"], "open");
+    assert!(h.proposal(&project_id).await.votes.is_empty());
+    assert_eq!(
+        h.proposal(&project_id).await.payload["brief"],
+        "Book the hall and the garden"
+    );
+    h.vote(&h.owner, &project_id, "agree", "{}")
+        .await
+        .expect("project agree again");
+    let done = h
+        .vote(&second, &project_id, "agree", "{}")
+        .await
+        .expect("project passes");
+    assert_eq!(done["status"], "passed");
+    assert!(
+        h.proposal(&project_id)
+            .await
+            .executed
+            .is_some_and(|executed| !executed.id.is_empty()),
+        "a passed project proposal names the work item"
+    );
 }

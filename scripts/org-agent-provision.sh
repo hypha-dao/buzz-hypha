@@ -10,8 +10,8 @@
 #   2. NIP-43 add via `buzz-admin add-member` (kind:13534 roster).
 #   3. Publish kind:0 `{"name":"Org agent"}`.
 #   4. Write the `io_hosted_agents` row (`buzz-admin org hosted-agent set`).
-#   5. Launch `buzz-org-agent run` with env (A-1 run exits after the skeleton
-#      check — it does not open a live RelayIo socket).
+#   5. Launch `buzz-org-agent run` in the background. It stays connected and
+#      talks in each member's DM with the org agent.
 #
 # Operator store (secrets never printed):
 #   ${ORG_AGENT_STORE:-${XDG_STATE_HOME:-$HOME/.local/state}/buzz/org-agents}/<community>
@@ -129,14 +129,26 @@ BUZZ_PRIVATE_KEY="$(cat "${STORE}/secret")"
 export BUZZ_PRIVATE_KEY
 export BUZZ_RELAY_URL="${BUZZ_RELAY_URL:-${RELAY_URL:-ws://localhost:3000}}"
 export IO_TIMEZONE="${IO_TIMEZONE:-UTC}"
-# BUZZ_AUTH_TAG and provider variables are inherited when set.
+# BUZZ_AUTH_TAG and provider variables (OPENAI_COMPAT_*) are inherited when set.
 
-set +e
-LAUNCH_OUT="$("${AGENT_BIN}" run 2>&1)"
-LAUNCH_CODE=$?
-set -e
-echo "launch: ${LAUNCH_OUT}"
-if [[ "${LAUNCH_CODE}" -ne 0 ]]; then
-  echo "error: buzz-org-agent run exited ${LAUNCH_CODE}" >&2
-  exit "${LAUNCH_CODE}"
+PID_FILE="${STORE}/run.pid"
+LOG_FILE="${STORE}/run.log"
+if [[ -f "${PID_FILE}" ]]; then
+  OLD_PID="$(cat "${PID_FILE}")"
+  if [[ -n "${OLD_PID}" ]] && kill -0 "${OLD_PID}" 2>/dev/null; then
+    echo "launch: already running"
+    exit 0
+  fi
 fi
+
+# `run` stays up and talks in the agent DM. Detach it; the pid file is how a
+# later provision (and the test harness) finds it. The log is operator-local.
+nohup "${AGENT_BIN}" run >>"${LOG_FILE}" 2>&1 &
+LAUNCH_PID=$!
+echo "${LAUNCH_PID}" >"${PID_FILE}"
+sleep 0.4
+if ! kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+  echo "error: buzz-org-agent run exited immediately (see ${LOG_FILE})" >&2
+  exit 1
+fi
+echo "launch: started"

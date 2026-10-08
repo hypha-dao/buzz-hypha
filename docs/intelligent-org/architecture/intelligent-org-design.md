@@ -59,7 +59,7 @@ The chosen design — four layers, from
 | ------ | --------- | ------------------------------------------------------------------------ | -------------------------------- | -------------------------------------- |
 | **L1** | Substrate | every message, transcript, file                                          | machines, automatically          | never directly — searched for evidence |
 | **L2** | Ledger    | typed facts: _ticket done_, _project approved_                           | the relay, on state change       | as aggregates                          |
-| **L3** | Beliefs   | mission, vision, objectives, strategy — four short texts                 | **humans confirm every version** | always, in full                        |
+| **L3** | Beliefs   | mission, vision, situation, objectives, strategy — five short texts      | **humans confirm every version** | always, in full                        |
 | **L4** | Outcomes  | suggestion → decision → what happened                                    | the relay and the agent          | selectively                            |
 
 L3 is small enough to always sit in the prompt — no retrieval lottery for what the org
@@ -112,10 +112,11 @@ the queries reviews and health need. Completeness is enforced by construction: t
 executor's single `apply()` helper is the only path that touches an `io_*` table, and it will
 not commit a projection change without its command or ledger row. (Protocol §6.1–6.2.)
 
-**L3 — beliefs.** Four relay-signed addressable events, `kind:39100` with
-`d ∈ {mission, vision, objectives, strategy}`, one head each, replaced on every confirmed
-version. They replace the "org brief" of earlier drafts: Overview renders them, and every
-agent call loads all four heads in full. The only other human-confirmed artifact is the
+**L3 — beliefs.** Five relay-signed addressable events, `kind:39100` with
+`d ∈ {mission, vision, situation, objectives, strategy}`, one head each, replaced on every
+confirmed version. They replace the "org brief" of earlier drafts: Overview renders them, and
+every agent call loads all five heads in full. The situation — where the org stands today — is
+the Shapers' confirmed reading, not a live number; the tree and the ledger hold those. The only other human-confirmed artifact is the
 **org profile**, `kind:39105`, one per member, `d = <pubkey>`: about, skills, and a self-set
 open limit, written only by that member (`io_profile_set`). It is a belief about a person
 stated by the person, which is why it may be a receipt; the agent reads it when it names a
@@ -598,7 +599,7 @@ not the design.
 
 ## Surfaces
 
-Five doors in the desktop, one feature folder: `desktop/src/features/org/`. Routes under
+The org doors in the desktop live in one feature folder: `desktop/src/features/org/`. Routes under
 `/org`, a primary-menu group in the sidebar beside Inbox, Projects (git), Agents, and
 Workflows. The Agents door is unchanged except that it seeds no sample personas, offers the
 **Work sync** template, and never lists the org agent (§ Where it runs — _Members' own agents
@@ -611,7 +612,8 @@ new Tauri data commands beyond signing.
 | **Overview**   | `/org`                | the four `39100` heads (empty slots shown as such), `39103`, root `39101`s, members. Each direction card opens `/org/direction/$slug`: full text, every confirmed version (passed `direction` proposals), and per line the **proofs** — ledger facts that bear on it, each linking to its receipt. The agent's read is shown as the agent's, never as fact. |
 | **Work**       | `/org/work`, `/org/work/$itemId` | roots with their subtree, DRI or _open_, dates, _last moved_; an item page with children, trail, the **work log** (`50102` notes with commits linked into the repo browser), **Open in editor** and **Open room** from `home`, and (roots) the latest `50101` health read |
 | **Decisions**  | `/org/decisions`      | `39102` open and decided, filters Work / Direction / Shapers (Money and Join when they land); _n of needed_ and vote buttons for Shapers |
-| **My Work**    | `/org/my-work`        | `39101` where I am `dri` or offered; `50100` where `needs` is me (or `shaper` if I am one); open `39102` where I am eligible or the offered seat. Three columns: Needs your answer, You hold, You offered. |
+| **My Work**    | `/org/my-work`        | `39101` where I am `dri` or offered, and — for a Shaper — a project still `open` with no DRI; `50100` where `needs` is me (or `shaper` if I am one); open `39102` where I am eligible or the offered seat. Columns: Needs your answer, You hold, You offered, Finished. |
+| **My drafts**  | `/org/my-drafts`      | Chat drafts the viewer asked the org agent for, before anyone publishes them. Each card opens `/org/draft/$messageId`. |
 | **My Profile** | existing profile view | extends `features/profile` with **About & skills** (my `39105`; an editable form that sends `io_profile_set`, read-only on others' profiles), current work, earlier work, recent decisions; paid (settled `money` where I am payee) when the treasury lands |
 
 The Buzz **Inbox** (Home) also carries the cards: `needs_action` gains open offers naming me,

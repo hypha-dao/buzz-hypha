@@ -44,7 +44,7 @@ function seedEvent(
   };
 }
 
-/** Three confirmed heads + one empty slot (strategy). */
+/** Four confirmed heads + one empty slot (strategy). */
 export function createOverviewSeedEvents(): SeedEvent[] {
   return [
     seedEvent(
@@ -77,6 +77,22 @@ export function createOverviewSeedEvents(): SeedEvent[] {
       },
       [
         ["d", "vision"],
+        ["version", "1"],
+        ["p", OVERVIEW_VIEWER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "3".repeat(64),
+      39100,
+      {
+        slug: "situation",
+        version: 1,
+        body: "Running one season: the Saturday stall every week since March, three growers selling. We have never run a weekday night, and the hall has no evening licence yet.",
+        confirmed_by: OVERVIEW_VIEWER_PUBKEY,
+        confirmed_at: 1_742_000_000,
+      },
+      [
+        ["d", "situation"],
         ["version", "1"],
         ["p", OVERVIEW_VIEWER_PUBKEY],
       ],
@@ -194,6 +210,80 @@ export function createOverviewSeedEvents(): SeedEvent[] {
         ["week", TALLY_WEEK],
       ],
       ORG_AGENT_PUBKEY,
+    ),
+  ];
+}
+
+/** Objectives carry done-when. Situation is absent, so Context marks it missing. */
+export function createContextGapEvents(): SeedEvent[] {
+  return [
+    seedEvent(
+      "a".repeat(64),
+      39100,
+      {
+        slug: "mission",
+        version: 1,
+        body: "Feed the Saturday market every week.",
+        confirmed_by: OVERVIEW_CONFIRMER_PUBKEY,
+        confirmed_at: 1_750_000_000,
+      },
+      [
+        ["d", "mission"],
+        ["version", "1"],
+        ["p", OVERVIEW_CONFIRMER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "c".repeat(64),
+      39100,
+      {
+        slug: "objectives",
+        version: 1,
+        body: "Book the weekday hall.",
+        lines: [
+          {
+            n: 1,
+            id: "l_7f3a",
+            text: "Weekday hall booked",
+            date: 1_780_000_000,
+            done_when: "the hall has hosted a weekday night",
+          },
+        ],
+        confirmed_by: OVERVIEW_CONFIRMER_PUBKEY,
+        confirmed_at: 1_745_000_000,
+      },
+      [
+        ["d", "objectives"],
+        ["version", "1"],
+        ["p", OVERVIEW_CONFIRMER_PUBKEY],
+      ],
+    ),
+    seedEvent(
+      "d".repeat(64),
+      39100,
+      {
+        slug: "strategy",
+        version: 1,
+        body: "How the hall gets booked.",
+        lines: [
+          {
+            n: 1,
+            id: "s_bet",
+            text: "Try one Thursday before any build",
+            type: "bet",
+          },
+          {
+            n: 2,
+            id: "s_no",
+            text: "No brand money",
+            type: "refusal",
+          },
+        ],
+      },
+      [
+        ["d", "strategy"],
+        ["version", "1"],
+      ],
     ),
   ];
 }

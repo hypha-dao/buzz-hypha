@@ -7,18 +7,19 @@ Personal Assistant → Shaper → bootstrap flow before staging (O-2).
 
 1. New communities seed **only** `#welcome-everyone` (no `#general`, no
    private Block-era **Welcome** channel).
-2. After create / first-run — and once per session when PA is still missing —
-   desktop creates a **Personal Assistant** managed agent and opens that DM.
-   Failure surfaces a toast with Retry (no silent Welcome fallback).
-3. Guide panel: congratulate → sole Shaper vs others (board-like explanation)
-   → **Bootstrap as first Shaper** publishes real `50001` (relay creates
-   `#shapers`) → alone continues direction in chat / Overview; others mint
-   an invite.
+2. After create / first-run, desktop bootstraps the founder (`50001`) if
+   `#shapers` does not exist yet, then opens the **org agent** DM. That
+   agent is the hosted one (`39103.agent`), not a member-owned assistant.
+   Failure surfaces a toast with Retry (no silent Welcome fallback, no
+   Personal Assistant).
+3. The org agent opens by saying what it can do, then replies.
+   There is no guide card under the composer. The operator's model key
+   (`OPENAI_COMPAT_*`, or `VENICE_API_KEY`) is enough — members do not
+   configure a runtime.
 4. `org` preview feature is **on by default** (`preview-features.json`).
 5. Org agent stays unlisted (Agents door); Agents still seeds no sample
-   personas. The PA is the founder's own buzz-acp agent, marked with env
-   `BUZZ_HYPHA_PERSONAL_ASSISTANT=1` (not a teams-store `teamId` — that was
-   rejected by `create_managed_agent` and caused the Welcome fallback).
+   personas. Launch it with `scripts/org-agent-provision.sh` (or the
+   operator supervisor in production). `run` stays connected.
 
 ## How to try (Vlad's machine)
 
@@ -32,10 +33,10 @@ just relay             # ws://localhost:3000
 just desktop-dev       # or full `just dev`
 ```
 
-### AI keys (Personal Assistant chat)
+### AI keys (org agent chat)
 
-Desktop agent defaults / onboarding must have a working runtime. For the
-bundled **buzz-agent** sidecar typically:
+The hosted `buzz-org-agent run` process reads the operator environment.
+Members never set these. For the bundled chat path:
 
 | Provider   | Env |
 | ---------- | --- |
@@ -43,11 +44,10 @@ bundled **buzz-agent** sidecar typically:
 | OpenAI-compat | `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_MODEL`, optional `OPENAI_COMPAT_BASE_URL` |
 | OpenRouter | `OPENROUTER_API_KEY` |
 
-Set these in the desktop agent env (Settings → Agents defaults, or shell
-env before `just desktop-dev`). See `crates/buzz-agent/README.md`.
+Set these in the relay operator's `.env` before
+`scripts/org-agent-provision.sh`. See `crates/buzz-agent/README.md`.
 
-Without a runtime/key, create still lands on `#welcome-everyone` / private
-Welcome fallback; the org guide will not open.
+Without a hosted agent, create still lands on `#welcome-everyone`.
 
 ### Optional: hosted org agent + `#shapers` agent row
 
@@ -66,9 +66,15 @@ Then in the PA guide tap **Bootstrap as first Shaper**, or:
 buzz org bootstrap
 ```
 
-## Protocol tension (intentional)
+## Protocol
 
-Design § Personal Assistant says the PA **is** the org agent's DM. Phase 0
-has no HEAR, so O-3a uses a member-owned buzz-acp PA for live local AI and
-keeps the org agent separate / unlisted. When A-2+ HEAR lands, fold this
-guide into the org-agent DM and retire the temporary managed agent.
+Design § Personal Assistant says that DM **is** the org agent. `buzz-org-agent run`
+posts the opening lines and answers in that DM with the operator's model.
+In that DM, and in `#shapers` as soon as the room exists, it can tag a
+direction proposal, a project proposal, a ticket, done, or a DRI. With one
+Shaper it answers every message in `#shapers`. With more than one it hears
+every message and answers when the line asks it something or is about
+direction or work. The member's client signs the command. THINK / JUDGE /
+ROUTE stay on their own slices.
+The temporary member-owned Personal Assistant is retired on the next
+desktop session: autostart is turned off and a running copy is stopped.

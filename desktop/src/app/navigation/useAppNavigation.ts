@@ -138,6 +138,33 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goOrgMyDrafts = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation(
+        {
+          to: "/org/my-drafts",
+        },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
+  const goOrgProfile = React.useCallback(
+    (pubkey?: string, behavior?: NavigationBehavior) =>
+      commitNavigation(
+        pubkey
+          ? {
+              params: { pubkey },
+              to: "/org/profile/$pubkey",
+            }
+          : {
+              to: "/org/profile",
+            },
+        behavior,
+      ),
+    [commitNavigation],
+  );
+
   const goOrgDirection = React.useCallback(
     (slug: string, behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -524,7 +551,9 @@ export function useAppNavigation() {
     goNewMessage,
     goOrg,
     goOrgDirection,
+    goOrgMyDrafts,
     goOrgMyWork,
+    goOrgProfile,
     goOrgWork,
     goOrgWorkItem,
     goNewWorkflow,

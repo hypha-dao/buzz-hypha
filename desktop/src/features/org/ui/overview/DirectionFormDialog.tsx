@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -11,7 +12,12 @@ import {
 } from "@/shared/ui/dialog";
 import { Textarea } from "@/shared/ui/textarea";
 
+import { ORG_PAPER_CLASS } from "../orgPaper";
 import type { DirectionSlug } from "../../commands";
+import {
+  linesForDirectionPropose,
+  strategyDisplayText,
+} from "../../directionLines";
 import { useOrgCommands } from "../../useOrgCommands";
 
 import { DIRECTION_LABEL } from "./overviewCopy";
@@ -31,17 +37,14 @@ export function DirectionFormDialog({
 }: DirectionFormDialogProps) {
   const commands = useOrgCommands();
   const [body, setBody] = React.useState("");
-  const [why, setWhy] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const label = DIRECTION_LABEL[slug];
   const bodyId = `org-direction-body-${slug}`;
-  const whyId = `org-direction-why-${slug}`;
 
   React.useEffect(() => {
     if (!open) return;
     setBody("");
-    setWhy("");
     setError(null);
     setBusy(false);
   }, [open]);
@@ -51,13 +54,27 @@ export function DirectionFormDialog({
     setBusy(true);
     setError(null);
     try {
+      const lined = slug === "objectives" || slug === "strategy";
+      const parsed = lined ? linesForDirectionPropose(slug, body) : null;
+      if (parsed && "error" in parsed) {
+        setError(parsed.error);
+        return;
+      }
+      const publishBody =
+        slug === "strategy"
+          ? body
+              .split("\n")
+              .map((line) => strategyDisplayText(line))
+              .join("\n")
+              .trim()
+          : body;
       await commands.publish(
         commands.buildIoDirectionPropose({
           slug,
           base,
-          body,
-          why: why.trim() || undefined,
-          voteAgree: true,
+          body: publishBody,
+          lines: parsed && "lines" in parsed ? parsed.lines : undefined,
+          voteAgree: false,
         }),
       );
       onOpenChange(false);
@@ -70,7 +87,7 @@ export function DirectionFormDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={cn("max-w-lg", ORG_PAPER_CLASS)}>
         <DialogHeader>
           <DialogTitle>Propose a new {label.title.toLowerCase()}</DialogTitle>
           <DialogDescription>
@@ -90,18 +107,6 @@ export function DirectionFormDialog({
               required
               rows={6}
               value={body}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor={whyId}>
-              Why
-            </label>
-            <Textarea
-              data-testid={`org-direction-why-${slug}`}
-              id={whyId}
-              onChange={(event) => setWhy(event.target.value)}
-              rows={2}
-              value={why}
             />
           </div>
           {error ? (

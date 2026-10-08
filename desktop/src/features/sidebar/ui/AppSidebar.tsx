@@ -14,9 +14,9 @@ import { useActiveWorkingChannelsById } from "@/features/sidebar/lib/useActiveWo
 import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
 import { sortDmChannelsForSidebar } from "@/features/sidebar/lib/dmSidebarSort";
 import { pinOrgAgentDmFirst } from "@/features/org/orgAgent";
-import { pinPersonalAssistantDmFirst } from "@/features/org/personalAssistant";
-import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
+import { isPersonalAssistantDm } from "@/features/org/personalAssistant";
 import { usePersonalAssistantPubkey } from "@/features/org/usePersonalAssistant";
+import { useOrgAgentPubkey } from "@/features/org/useOrgAgent";
 import {
   sectionSortGroupKey,
   sortChannelsForSidebar,
@@ -158,9 +158,19 @@ export function AppSidebar({
   const showSidebarUpdateCard =
     canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
   const [dmActionsMenuOpen, setDmActionsMenuOpen] = React.useState(false);
+  const personalAssistantPubkey = usePersonalAssistantPubkey();
   const allDirectMessages = React.useMemo(
-    () => channels.filter((channel) => channel.channelType === "dm"),
-    [channels],
+    () =>
+      channels.filter(
+        (channel) =>
+          channel.channelType === "dm" &&
+          !isPersonalAssistantDm(
+            channel,
+            personalAssistantPubkey,
+            currentPubkey ?? null,
+          ),
+      ),
+    [channels, currentPubkey, personalAssistantPubkey],
   );
   const directMessages = useProtectedVisibleDirectMessages(
     allDirectMessages,
@@ -394,31 +404,25 @@ export function AppSidebar({
     immediate: isSelectedDirectMessage,
     timeoutMs: 400,
   });
+  const orgAgentPubkey = useOrgAgentPubkey();
   const { dmChannelLabels, dmParticipantsByChannelId, dmPresenceByChannelId } =
     useDmSidebarMetadata({
       currentPubkey,
       directMessages,
       enabled: shouldLoadDmMetadata,
       fallbackDisplayName,
+      orgAgentPubkey,
       profileDisplayName: profile?.displayName,
     });
-  const orgAgentPubkey = useOrgAgentPubkey();
-  const personalAssistantPubkey = usePersonalAssistantPubkey();
-  // Personal Assistant (local buzz-acp guide) leads the DM list; the org
-  // agent's DM (Design § Personal Assistant, once HEAR lands) pins next.
   const sortedDirectMessages = React.useMemo(
     () =>
-      pinPersonalAssistantDmFirst(
-        pinOrgAgentDmFirst(
-          sortDmChannelsForSidebar(
-            directMessages,
-            dmChannelLabels,
-            sortModeFor("dms"),
-          ),
-          orgAgentPubkey,
-          currentPubkey ?? null,
+      pinOrgAgentDmFirst(
+        sortDmChannelsForSidebar(
+          directMessages,
+          dmChannelLabels,
+          sortModeFor("dms"),
         ),
-        personalAssistantPubkey,
+        orgAgentPubkey,
         currentPubkey ?? null,
       ),
     [
@@ -426,7 +430,6 @@ export function AppSidebar({
       directMessages,
       dmChannelLabels,
       orgAgentPubkey,
-      personalAssistantPubkey,
       sortModeFor,
     ],
   );

@@ -3,14 +3,26 @@ import test from "node:test";
 
 import {
   assembleWorkDoor,
+  canChangeTicketDue,
   childrenOf,
+  countsForList,
   formatChildrenCounts,
+  formatReviewDate,
+  contextPaths,
   homeChannel,
   itemById,
+  linkedRepositories,
+  projectCoordinate,
+  SEEDED_CONTEXT_PATHS,
   latestHealth,
+  latestWorkPrompt,
+  openTicketDrafts,
+  parseOfferedTicket,
   parseWorkItem,
   stateChipLabel,
   trailForItem,
+  workBoardColumn,
+  workPromptIsStale,
 } from "./model.ts";
 
 const ROOT = "11111111-1111-4111-8111-111111111111";
@@ -115,17 +127,92 @@ const grandEvent = itemEvent(
   ],
 );
 
-test("assembleWorkDoor is roots plus one level — depth 3 stays off the door", () => {
-  const tree = assembleWorkDoor([rootEvent, childEvent, grandEvent]);
+test("assembleWorkDoor lists projects and leaves tickets off the door", () => {
+  const loose = "77777777-7777-4777-8777-777777777777";
+  const looseTicket = itemEvent(
+    loose,
+    {
+      id: loose,
+      parent: null,
+      root: loose,
+      title: "Loose ticket",
+      state: "open",
+    },
+    [
+      ["s", "open"],
+      ["t", "ticket"],
+    ],
+  );
+  const tree = assembleWorkDoor([
+    rootEvent,
+    childEvent,
+    grandEvent,
+    looseTicket,
+  ]);
   assert.equal(tree.length, 1);
   assert.equal(tree[0].item.title, "Weekday hall");
-  assert.deepEqual(
-    tree[0].children.map((row) => row.title),
-    ["Electrics"],
+  assert.equal(tree[0].item.type, "project");
+  assert.deepEqual(tree[0].children, []);
+  assert.equal(
+    tree.some((row) => row.item.id === CHILD || row.item.id === GRAND),
+    false,
   );
   assert.equal(
-    tree[0].children.some((row) => row.id === GRAND),
+    tree.some((row) => row.item.id === loose),
     false,
+  );
+});
+
+test("withdrawn work leaves the live board", () => {
+  const gone = "55555555-5555-4555-8555-555555555555";
+  const withdrawnChild = itemEvent(
+    gone,
+    {
+      id: gone,
+      parent: ROOT,
+      root: ROOT,
+      title: "Old tiles",
+      state: "withdrawn",
+    },
+    [
+      ["s", "withdrawn"],
+      ["u", ROOT],
+      ["t", "ticket"],
+    ],
+  );
+  const withdrawnRoot = itemEvent(
+    "66666666-6666-4666-8666-666666666666",
+    {
+      id: "66666666-6666-4666-8666-666666666666",
+      parent: null,
+      root: "66666666-6666-4666-8666-666666666666",
+      title: "Duplicate hall",
+      state: "withdrawn",
+    },
+    [
+      ["s", "withdrawn"],
+      ["t", "project"],
+    ],
+  );
+  const tree = assembleWorkDoor([
+    rootEvent,
+    childEvent,
+    withdrawnChild,
+    withdrawnRoot,
+  ]);
+  assert.deepEqual(
+    tree.map((row) => row.item.title),
+    ["Weekday hall"],
+  );
+  assert.deepEqual(tree[0].children, []);
+  assert.equal(
+    tree.some((row) => row.item.title === "Electrics"),
+    false,
+  );
+  assert.equal(childrenOf([withdrawnChild], ROOT).length, 0);
+  assert.equal(
+    stateChipLabel({ state: "withdrawn", type: "ticket" }),
+    "removed",
   );
 });
 
@@ -158,6 +245,53 @@ test("a rewritten parent 39101 is the children-counter source", () => {
     formatChildrenCounts(item.children),
     "0 open · 1 offered · 1 accepted · 3 done",
   );
+});
+
+test("a project page lists the three context files and a public GitHub link", () => {
+  assert.deepEqual(SEEDED_CONTEXT_PATHS, [
+    "context/README.md",
+    "context/decisions.md",
+    "context/links.md",
+  ]);
+  assert.equal(
+    SEEDED_CONTEXT_PATHS.some((path) => path.includes("drafts")),
+    false,
+  );
+  const owner = "ab".repeat(32);
+  const withRepo = parseWorkItem(
+    itemEvent(
+      ROOT,
+      {
+        ...JSON.parse(rootEvent.content),
+        home: {
+          channel: "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50",
+          repo: `30617:${owner}:weekday-hall`,
+          project: `30621:${owner}:weekday-hall`,
+        },
+      },
+      rootEvent.tags,
+    ),
+  );
+  assert.deepEqual(contextPaths(withRepo), SEEDED_CONTEXT_PATHS);
+  assert.deepEqual(contextPaths(parseWorkItem(rootEvent)), []);
+  assert.deepEqual(projectCoordinate(`30621:${owner}:weekday-hall`), {
+    owner,
+    slug: "weekday-hall",
+  });
+  assert.equal(projectCoordinate("30617:aa:slug"), null);
+  const repos = linkedRepositories([
+    ["d", "weekday-hall"],
+    ["a", `30617:${owner}:weekday-hall`],
+    ["a", `30617:${HOLDER}:weekday`, "https://github.com/hypha/weekday"],
+    ["a", `30617:${HOLDER}:weekday`, "https://github.com/hypha/other"],
+  ]);
+  assert.deepEqual(repos, [
+    { coordinate: `30617:${owner}:weekday-hall`, url: null },
+    {
+      coordinate: `30617:${HOLDER}:weekday`,
+      url: "https://github.com/hypha/weekday",
+    },
+  ]);
 });
 
 test("homeChannel is absent until 39101.home.channel is set", () => {
@@ -263,4 +397,149 @@ test("latestHealth is the newest 50101 for that item", () => {
   const health = latestHealth([stale, fresh], ROOT);
   assert.equal(health?.band, "wobbly");
   assert.equal(health?.sentences[0]?.rows[1], "row-2");
+});
+
+test("review dates read as day month year", () => {
+  assert.equal(formatReviewDate(1_785_000_000), "25 Jul 2026");
+});
+
+test("a ticket due date moves for the holder and the creator", () => {
+  const held = parseWorkItem(childEvent);
+  assert.equal(held?.type, "ticket");
+  assert.equal(canChangeTicketDue(held, HOLDER), true);
+  assert.equal(canChangeTicketDue(held, "c".repeat(64)), false);
+  assert.equal(canChangeTicketDue(parseWorkItem(rootEvent), HOLDER), false);
+
+  const creator = "c".repeat(64);
+  const offered = parseWorkItem(
+    itemEvent(
+      CHILD,
+      {
+        id: CHILD,
+        parent: ROOT,
+        root: ROOT,
+        depth: 1,
+        path: [ROOT],
+        title: "Electrics",
+        brief: "Wire it.",
+        state: "offered",
+        dri: null,
+        created_by: creator,
+        children: { open: 0, offered: 0, accepted: 0, done: 0 },
+      },
+      [
+        ["s", "offered"],
+        ["root", ROOT],
+        ["u", ROOT],
+        ["t", "ticket"],
+      ],
+    ),
+  );
+  assert.equal(canChangeTicketDue(offered, creator), true);
+  assert.equal(canChangeTicketDue(offered, HOLDER), false);
+  assert.ok(held);
+  assert.equal(canChangeTicketDue({ ...held, state: "done" }, HOLDER), false);
+});
+
+test("a prompt is stale when the ticket version or the commit moved", () => {
+  const older = "aa".repeat(32);
+  const newer = "bb".repeat(32);
+  const prompt = {
+    id: "p1",
+    pubkey: RELAY,
+    created_at: 20,
+    kind: 50104,
+    tags: [
+      ["i", CHILD],
+      ["based_on", older, "abc1234"],
+    ],
+    content: "Goal\nWrite the note\n",
+    sig: "s".repeat(128),
+  };
+  const other = { ...prompt, id: "p0", created_at: 10, content: "old" };
+  const latest = latestWorkPrompt([other, prompt], CHILD);
+  assert.equal(latest?.content, "Goal\nWrite the note\n");
+  assert.equal(latest?.basedOn, older);
+  assert.equal(latest?.commit, "abc1234");
+  assert.equal(workPromptIsStale(latest, older, "abc1234"), false);
+  assert.equal(workPromptIsStale(latest, newer, "abc1234"), true);
+  assert.equal(workPromptIsStale(latest, older, "def5678"), true);
+});
+
+test("an open ticket draft is listed under its project as offered", () => {
+  const draftId = "cd".repeat(32);
+  const draft = event({
+    id: draftId,
+    kind: 50100,
+    tags: [
+      ["t", "ticket"],
+      ["u", ROOT],
+      ["n", HOLDER],
+    ],
+    content: JSON.stringify({
+      parent: ROOT,
+      title: "Define how the AI picks the next task",
+      brief: "Write the rule in one paragraph.",
+      how: ["Write the rule.", "Name what the screen shows."],
+      done_when: ["the rule is written"],
+      due_at: 1_792_087_012,
+      suggested_holder: HOLDER,
+    }),
+  });
+  const offered = parseOfferedTicket(draft);
+  assert.equal(offered?.id, draftId);
+  assert.equal(offered?.state, "offered");
+  assert.equal(offered?.parent, ROOT);
+  assert.equal(offered?.how, "Write the rule.\nName what the screen shows.");
+  assert.deepEqual(offered?.doneWhen, ["the rule is written"]);
+
+  const listed = openTicketDrafts([draft], [], ROOT, []);
+  assert.deepEqual(
+    listed.map((row) => row.title),
+    ["Define how the AI picks the next task"],
+  );
+  assert.equal(
+    countsForList({ open: 0, offered: 0, accepted: 0, done: 0 }, listed)
+      .offered,
+    1,
+  );
+
+  const declined = event({
+    id: "ef".repeat(32),
+    kind: 39104,
+    tags: [
+      ["d", draftId],
+      ["s", "declined"],
+    ],
+  });
+  assert.equal(openTicketDrafts([draft], [declined], ROOT, []).length, 0);
+
+  const live = itemEvent(
+    CHILD,
+    {
+      id: CHILD,
+      parent: ROOT,
+      root: ROOT,
+      title: "Define how the AI picks the next task",
+      state: "accepted",
+    },
+    [
+      ["s", "accepted"],
+      ["u", ROOT],
+      ["t", "ticket"],
+    ],
+  );
+  const child = parseWorkItem(live);
+  assert.equal(
+    openTicketDrafts([draft], [], ROOT, child ? [child] : []).length,
+    0,
+  );
+});
+
+test("open and offered sit in not-accepted; held work is ongoing", () => {
+  assert.equal(workBoardColumn({ state: "open" }), "waiting");
+  assert.equal(workBoardColumn({ state: "offered" }), "waiting");
+  assert.equal(workBoardColumn({ state: "accepted" }), "ongoing");
+  assert.equal(workBoardColumn({ state: "in_review" }), "ongoing");
+  assert.equal(workBoardColumn({ state: "done" }), "ongoing");
 });

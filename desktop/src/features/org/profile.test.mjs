@@ -10,8 +10,10 @@ import {
   addSkillLabel,
   buildValidatedProfileSet,
   newestOrgProfile,
+  normalizeSocials,
   parseOpenLimitInput,
   parseOrgProfileContent,
+  parseSocialsTag,
   PROFILE_ABOUT_MAX_CHARS,
   PROFILE_MAX_SKILLS,
   PROFILE_SKILL_LABEL_MAX_CHARS,
@@ -61,11 +63,13 @@ test("parseOrgProfileContent treats missing or invalid content as empty", () => 
     about: "",
     openLimit: null,
     skills: [],
+    socials: [],
   });
   assert.deepEqual(parseOrgProfileContent("[]"), {
     about: "",
     openLimit: null,
     skills: [],
+    socials: [],
   });
   assert.equal(
     parseOrgProfileContent(JSON.stringify({ open_limit: 0 })).openLimit,
@@ -90,6 +94,7 @@ test("newestOrgProfile is the latest 39105 for that d tag", () => {
     about: "",
     openLimit: null,
     skills: [],
+    socials: [],
   });
 });
 
@@ -163,4 +168,31 @@ test("validateProfileSet refuses over-long about and a bad limit", () => {
   assert.equal(parseOpenLimitInput("51").ok, false);
   assert.deepEqual(parseOpenLimitInput(""), { ok: true });
   assert.deepEqual(parseOpenLimitInput("3"), { ok: true, openLimit: 3 });
+});
+
+test("social links are https and match the network", () => {
+  const parsed = parseOrgProfileContent(
+    JSON.stringify({
+      about: "I wire halls.",
+      skills: [],
+      socials: [
+        { network: "GitHub", url: "https://GitHub.com/travolta" },
+        { network: "github", url: "https://evil.example/phish" },
+        { network: "website", url: "http://example.com" },
+      ],
+    }),
+  );
+  assert.deepEqual(parsed.socials, [
+    { network: "github", url: "https://github.com/travolta" },
+  ]);
+  assert.deepEqual(
+    parseSocialsTag(
+      JSON.stringify([{ network: "x", url: "https://x.com/travolta" }]),
+    ),
+    [{ network: "x", url: "https://x.com/travolta" }],
+  );
+  assert.deepEqual(
+    normalizeSocials([{ network: "github", url: "https://evil.example/x" }]),
+    [],
+  );
 });

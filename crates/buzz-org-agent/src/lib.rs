@@ -8,13 +8,22 @@
 
 #![forbid(unsafe_code)]
 
+mod chat_act;
+pub mod compile;
 pub mod config;
+pub mod dm_chat;
 pub mod error;
 pub mod inbound;
+pub mod jobs;
 pub mod jobs_impl;
 pub mod judge;
 pub mod pipeline;
+pub mod plan;
+mod profile_fit;
+mod project_fit;
+pub mod prompt;
 pub mod relay;
+pub mod review;
 pub mod route;
 pub mod state;
 pub mod think;

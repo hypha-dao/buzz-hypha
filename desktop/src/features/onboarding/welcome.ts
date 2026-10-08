@@ -137,6 +137,30 @@ export function isWelcomeChannel(channel: Channel | null | undefined) {
   );
 }
 
+const omittedPrivateWelcomeChannelIds = new Set<string>();
+
+/** True when this id was dropped as the private Block-era Welcome channel. */
+export function isOmittedPrivateWelcomeChannelId(channelId: string) {
+  return omittedPrivateWelcomeChannelIds.has(channelId);
+}
+
+/**
+ * Removes the private Welcome channel from a desktop channel list. That room
+ * is not part of this app; callers still record its id so an open route can
+ * leave it.
+ */
+export function omitPrivateWelcomeChannels(channels: Channel[]) {
+  const kept: Channel[] = [];
+  for (const channel of channels) {
+    if (isWelcomeChannel(channel)) {
+      omittedPrivateWelcomeChannelIds.add(channel.id);
+      continue;
+    }
+    kept.push(channel);
+  }
+  return kept;
+}
+
 export function isStarterWelcomeChannel(channel: Channel | null | undefined) {
   return (
     channel !== null &&
@@ -148,14 +172,27 @@ export function isStarterWelcomeChannel(channel: Channel | null | undefined) {
 }
 
 /**
- * Channels that get the welcome experience (intro action cards, guide
- * composer banner, chat-first agent creation): the starter
- * #welcome-everyone channel, plus the legacy private Welcome channel.
+ * Channels that get the welcome intro cards and chat-first agent creation:
+ * the starter #welcome-everyone channel, plus the legacy private Welcome
+ * channel. The sample-agent composer hint is separate — see
+ * `showsSampleAgentComposerGuide`.
  */
 export function isWelcomeExperienceChannel(
   channel: Channel | null | undefined,
 ) {
   return isWelcomeChannel(channel) || isStarterWelcomeChannel(channel);
+}
+
+/**
+ * The composer hint that names Block's sample agents (Fizz, and the rotation
+ * that used to include Honey and Pollen). A new org lands on
+ * `#welcome-everyone` and must not show it. Only the legacy private Welcome
+ * room still does.
+ */
+export function showsSampleAgentComposerGuide(
+  channel: Channel | null | undefined,
+) {
+  return isWelcomeChannel(channel);
 }
 
 function isPrivateWelcomeChannelCandidate(channel: Channel) {

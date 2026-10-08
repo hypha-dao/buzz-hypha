@@ -92,16 +92,21 @@
     },
     "strategy": {
       "version": 3,
-      "event": "dfe42e62cd0c6e58679191ebad250bd34fafd3305299e4d492894cf4ed754c23",
+      "event": "cfd7b1fbcc4ae776a437ffbff976cadad3a6f1c8188e8e65558d6927f9c59c60",
       "lines": {
         "l_0ff922df": "Pilots before promotion — every claim backed by a live community.",
         "l_057c9598": "We handle the complexity; communities just enjoy cheaper, cleaner energy.",
         "l_ffb42d4b": "Publish the research free; sell the operating, not the knowledge."
       }
     },
+    "situation": {
+      "version": 1,
+      "event": "a9cc4b3563c0ac08145dd75f697733e67793d1c37a45a3554aff1ab4bcddf94d",
+      "lines": {}
+    },
     "objectives": {
       "version": 6,
-      "event": "2b3bff33186b97f07514f4a3bed79abf510a29345f2e3ba9be31b3ea9880da20",
+      "event": "7b1b3b7752a72b387f7a5bf1789cd2ed4cda96d932c24ecee0be73d8b985ddca",
       "lines": {
         "l_639f3d11": "Six Iberian communities are ready for EECF round 2 by spring.",
         "l_8e3f7ad6": "The Nordpool connector is live for the pilots by Q3.",
@@ -186,6 +191,11 @@
       "kind": "direction",
       "status": "passed"
     },
+    "direction-situation-v1": {
+      "id": "d1dcadb5-5382-40fe-858a-87409d295a60",
+      "kind": "direction",
+      "status": "passed"
+    },
     "direction-strategy-v2": {
       "id": "d7150f79-5e7a-4fc2-9043-1744941eb6cb",
       "kind": "direction",
@@ -247,16 +257,16 @@
     "13534": 3,
     "39000": 26,
     "39002": 26,
-    "39100": 9,
+    "39100": 10,
     "39101": 223,
-    "39102": 60,
+    "39102": 64,
     "39103": 5,
     "39104": 21,
     "39105": 12,
     "41010": 2,
     "50001": 3,
-    "50002": 9,
-    "50003": 27,
+    "50002": 10,
+    "50003": 29,
     "50004": 6,
     "50005": 34,
     "50006": 30,

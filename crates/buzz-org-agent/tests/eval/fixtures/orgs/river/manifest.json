@@ -72,9 +72,14 @@
       "event": "9b6e70e563a411086a240cf1d202504f66a19b3f73994bea36a2ec9701c742a4",
       "lines": {}
     },
+    "situation": {
+      "version": 1,
+      "event": "368ef49e0fb16a3aa35fe74c004452c3f4f44c3068a4ac6e949aadbe15d5c587",
+      "lines": {}
+    },
     "objectives": {
       "version": 3,
-      "event": "cd992ce50f32c16ea3e7bb8811471912ced40f3652e538e777e3ed24e6d7d8b9",
+      "event": "25d55bea2cceaf1feae352fff597bc1dc4ebd80fdf22b36dc82a526886644752",
       "lines": {
         "l_b26b2527": "The Saturday stall runs every week, all season.",
         "l_84c9b3c2": "A weekday hall is open before August.",
@@ -83,7 +88,7 @@
     },
     "strategy": {
       "version": 4,
-      "event": "ca156d13bc0067e1ba7542700025a8c83cbc5565a1387a307174a2d5edbeda5b",
+      "event": "932427df217d204fec5e2ff7613cb83ac48b23b724645512baa520e9820a5cf9",
       "lines": {
         "l_ea714a27": "Small money, many hands — the stall funds the hall, not a grant round.",
         "l_0f1c6a11": "No restaurant. Two days a week, not a fleet.",
@@ -135,6 +140,11 @@
     "shapers-add-Sam": {
       "id": "5f547b34-dc2b-472b-acd7-21716217fbb0",
       "kind": "shapers",
+      "status": "passed"
+    },
+    "direction-situation-v1": {
+      "id": "408a9c4b-f6b1-4ec1-a6d9-42a20442f46d",
+      "kind": "direction",
       "status": "passed"
     },
     "direction-objectives-v1": {
@@ -203,16 +213,16 @@
     "13534": 2,
     "39000": 22,
     "39002": 22,
-    "39100": 9,
+    "39100": 10,
     "39101": 140,
-    "39102": 50,
+    "39102": 54,
     "39103": 3,
     "39104": 19,
     "39105": 6,
     "41010": 2,
     "50001": 2,
-    "50002": 9,
-    "50003": 20,
+    "50002": 10,
+    "50003": 22,
     "50004": 5,
     "50005": 20,
     "50006": 18,

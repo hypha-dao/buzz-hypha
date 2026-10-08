@@ -5,7 +5,13 @@
  */
 
 import type { RelayEvent } from "@/shared/api/types";
-import { KIND_IO_HEALTH, KIND_IO_WORK_ITEM } from "@/shared/constants/kinds";
+import {
+  KIND_IO_DRAFT,
+  KIND_IO_DRAFT_OUTCOME,
+  KIND_IO_HEALTH,
+  KIND_IO_WORK_ITEM,
+  KIND_IO_WORK_PROMPT,
+} from "@/shared/constants/kinds";
 
 import { IO_COMMAND_KINDS } from "../hooks/filters";
 import { TAG_ITEM, TAG_PARENT, TAG_STATUS, TAG_TYPE } from "../tags";
@@ -16,6 +22,7 @@ export const WORK_ITEM_STATES = [
   "accepted",
   "in_review",
   "done",
+  "withdrawn",
 ] as const;
 
 export type WorkItemState = (typeof WORK_ITEM_STATES)[number];
@@ -49,11 +56,23 @@ export type WorkItem = {
   dri: string | null;
   offeredTo: string | null;
   offeredBy: string | null;
+  createdBy: string | null;
+  offeredByMember: string | null;
   dueAt: number | null;
   approvedAt: number | null;
   children: WorkChildrenCounts;
   home: WorkItemHome | null;
   lastProgress: string | null;
+  /** Original content when it carries a change plan. */
+  planContent: string | null;
+  /** How to do this ticket. Empty on a project. */
+  how: string | null;
+  /** Checks that say the ticket is done. */
+  doneWhen: string[];
+  /** Piece titles this ticket waits on. */
+  waitsOn: string[];
+  /** `50100` this ticket was agreed from, when the relay stored it. */
+  sourceDraftId: string | null;
 };
 
 export type WorkHealthSentence = {
@@ -113,6 +132,8 @@ const COMMAND_LABELS: Record<number, string> = {
   50019: "io_shaper_accept",
   50020: "io_shaper_step_down",
   50021: "io_profile_set",
+  50022: "io_withdraw",
+  50023: "io_withdraw_propose",
 };
 
 function tagValue(tags: readonly string[][], name: string): string | null {
@@ -258,11 +279,186 @@ export function parseWorkItem(event: RelayEvent): WorkItem | null {
     dri,
     offeredTo,
     offeredBy: asString(content.offered_by),
+    createdBy: asString(content.created_by),
+    offeredByMember: asString(content.offered_by_member),
     dueAt: asUnix(content.due_at),
     approvedAt: asUnix(content.approved_at),
     children,
     home,
     lastProgress: asString(content.last_progress),
+    planContent:
+      content.plan !== undefined || content.change !== undefined
+        ? event.content
+        : null,
+    how: joinedLines(content.how),
+    doneWhen: linesOf(content.done_when),
+    waitsOn: [],
+    sourceDraftId: asString(content.draft),
+  };
+}
+
+function linesOf(value: unknown): string[] {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return [value.trim()];
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function joinedLines(value: unknown): string | null {
+  const lines = linesOf(value);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/**
+ * An open ticket draft (`50100` `t=ticket`) as an offered ticket.
+ * Its id is the draft event id, which is the ticket page until it is agreed.
+ */
+export function parseOfferedTicket(event: RelayEvent): WorkItem | null {
+  if (event.kind !== KIND_IO_DRAFT) return null;
+  if (tagValue(event.tags, TAG_TYPE) !== "ticket") return null;
+
+  let content: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(event.content || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      content = parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  const parent =
+    asString(content.parent) ?? tagValue(event.tags, TAG_PARENT) ?? null;
+  if (!parent) return null;
+  const title = asString(content.title);
+  if (!title) return null;
+  const brief = typeof content.brief === "string" ? content.brief : "";
+  const how = joinedLines(content.how) ?? (brief.length > 0 ? brief : null);
+  const offeredTo =
+    asString(content.suggested_holder) ??
+    taggedValues(event.tags, "p", "suggested")[0] ??
+    null;
+
+  return {
+    id: event.id,
+    eventId: event.id,
+    createdAt: event.created_at,
+    parent,
+    root: parent,
+    depth: 1,
+    path: [],
+    title,
+    brief,
+    state: "offered",
+    type: "ticket",
+    dri: null,
+    offeredTo,
+    offeredBy: "agent",
+    createdBy: null,
+    offeredByMember: null,
+    dueAt: asUnix(content.due_at),
+    approvedAt: null,
+    children: EMPTY_COUNTS,
+    home: null,
+    lastProgress: null,
+    planContent: null,
+    how,
+    doneWhen: linesOf(content.done_when),
+    waitsOn: waitsOnOf(content, title),
+    sourceDraftId: event.id,
+  };
+}
+
+function waitsOnOf(content: Record<string, unknown>, title: string): string[] {
+  const named = linesOf(content.waits_on);
+  if (named.length > 0) return named;
+  if (!Array.isArray(content.coverage)) return [];
+  for (const row of content.coverage) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    if (asString(record.piece) !== title) continue;
+    return linesOf(record.after);
+  }
+  return [];
+}
+
+/** Newest `39104` status per draft id. Missing means still open. */
+export function draftOutcomeStatus(
+  events: readonly RelayEvent[],
+): Map<string, string> {
+  const latest = new Map<string, { at: number; id: string; status: string }>();
+  for (const event of events) {
+    if (event.kind !== KIND_IO_DRAFT_OUTCOME) continue;
+    const draftId = tagValue(event.tags, "d");
+    const status = tagValue(event.tags, TAG_STATUS);
+    if (!draftId || !status) continue;
+    const current = latest.get(draftId);
+    if (
+      !current ||
+      event.created_at > current.at ||
+      (event.created_at === current.at && event.id > current.id)
+    ) {
+      latest.set(draftId, {
+        at: event.created_at,
+        id: event.id,
+        status,
+      });
+    }
+  }
+  return new Map([...latest].map(([id, row]) => [id, row.status]));
+}
+
+/**
+ * Ticket drafts under a project that are still waiting for a yes.
+ * A draft whose title is already a live child stays off the list.
+ */
+export function openTicketDrafts(
+  drafts: readonly RelayEvent[],
+  outcomes: readonly RelayEvent[],
+  parentId: string,
+  liveChildren: readonly WorkItem[],
+): WorkItem[] {
+  const titles = new Set(liveChildren.map((child) => child.title));
+  const status = draftOutcomeStatus(outcomes);
+  return drafts
+    .map(parseOfferedTicket)
+    .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.parent === parentId)
+    .filter((item) => !titles.has(item.title))
+    .filter((item) => {
+      const outcome = status.get(item.id);
+      return outcome === undefined || outcome === "open";
+    })
+    .sort((left, right) => left.title.localeCompare(right.title));
+}
+
+/** Relay counters, raised to whatever the page is actually listing. */
+export function countsForList(
+  relay: WorkChildrenCounts,
+  children: readonly WorkItem[],
+): WorkChildrenCounts {
+  const listed: WorkChildrenCounts = {
+    open: 0,
+    offered: 0,
+    accepted: 0,
+    done: 0,
+  };
+  for (const child of children) {
+    if (child.state === "open") listed.open += 1;
+    else if (child.state === "offered") listed.offered += 1;
+    else if (child.state === "accepted" || child.state === "in_review") {
+      listed.accepted += 1;
+    } else if (child.state === "done") listed.done += 1;
+  }
+  return {
+    open: Math.max(relay.open, listed.open),
+    offered: Math.max(relay.offered, listed.offered),
+    accepted: Math.max(relay.accepted, listed.accepted),
+    done: Math.max(relay.done, listed.done),
   };
 }
 
@@ -272,29 +468,19 @@ export function isRootItem(item: WorkItem): boolean {
   );
 }
 
-/** Roots + one level — the Work door. Deeper rows stay for the item page. */
+/** Projects on the Work door. Tickets stay on the project page. */
 export function assembleWorkDoor(
   events: readonly RelayEvent[],
 ): WorkTreeNode[] {
-  const items = [...latestWorkItems(events).values()]
+  return [...latestWorkItems(events).values()]
     .map(parseWorkItem)
-    .filter((item): item is WorkItem => item !== null);
-  const byParent = new Map<string, WorkItem[]>();
-  for (const item of items) {
-    if (!item.parent) continue;
-    const siblings = byParent.get(item.parent) ?? [];
-    siblings.push(item);
-    byParent.set(item.parent, siblings);
-  }
-  for (const siblings of byParent.values()) {
-    siblings.sort((left, right) => left.title.localeCompare(right.title));
-  }
-  return items
+    .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.state !== "withdrawn" && item.type === "project")
     .filter(isRootItem)
     .sort((left, right) => left.title.localeCompare(right.title))
     .map((item) => ({
       item,
-      children: byParent.get(item.id) ?? [],
+      children: [],
     }));
 }
 
@@ -305,6 +491,7 @@ export function childrenOf(
   return [...latestWorkItems(events).values()]
     .map(parseWorkItem)
     .filter((item): item is WorkItem => item !== null)
+    .filter((item) => item.state !== "withdrawn")
     .filter((item) => item.parent === parentId)
     .sort((left, right) => left.title.localeCompare(right.title));
 }
@@ -329,6 +516,8 @@ export function stateChipLabel(item: Pick<WorkItem, "state" | "type">): string {
       return "waiting on a yes";
     case "open":
       return item.type === "project" ? "needs a DRI" : "open";
+    case "withdrawn":
+      return "removed";
     default:
       return item.state;
   }
@@ -441,6 +630,122 @@ export function homeChannel(item: WorkItem | null): string | null {
   return channel && channel.length > 0 ? channel : null;
 }
 
+/** The three files H-1 seeds. Project beliefs stay out of this list. */
+export const SEEDED_CONTEXT_PATHS = [
+  "context/README.md",
+  "context/decisions.md",
+  "context/links.md",
+] as const;
+
+/** How, done-when, and waits from the draft the ticket was agreed from. */
+export function withDraftDetail(
+  item: WorkItem,
+  draft: WorkItem | null,
+): WorkItem {
+  if (!draft) return item;
+  return {
+    ...item,
+    brief: item.brief.length > 0 ? item.brief : draft.brief,
+    how: item.how ?? draft.how,
+    doneWhen: item.doneWhen.length > 0 ? item.doneWhen : draft.doneWhen,
+    waitsOn: item.waitsOn.length > 0 ? item.waitsOn : draft.waitsOn,
+  };
+}
+
+/** The newest `50104` for a ticket. */
+export type WorkPrompt = {
+  content: string;
+  basedOn: string | null;
+  commit: string | null;
+  createdAt: number;
+};
+
+/** Newest `50104` whose `#i` is this ticket or the draft it was agreed from. */
+export function latestWorkPrompt(
+  events: readonly RelayEvent[],
+  itemId: string | readonly string[],
+): WorkPrompt | null {
+  const ids = new Set(typeof itemId === "string" ? [itemId] : itemId);
+  let best: RelayEvent | null = null;
+  for (const event of events) {
+    if (event.kind !== KIND_IO_WORK_PROMPT) continue;
+    const tagged = tagValue(event.tags, TAG_ITEM);
+    if (!tagged || !ids.has(tagged)) continue;
+    if (
+      !best ||
+      event.created_at > best.created_at ||
+      (event.created_at === best.created_at && event.id > best.id)
+    ) {
+      best = event;
+    }
+  }
+  if (!best) return null;
+  const based = best.tags.find((tag) => tag[0] === "based_on");
+  return {
+    content: best.content,
+    basedOn: based?.[1] ?? null,
+    commit: based?.[2] ?? null,
+    createdAt: best.created_at,
+  };
+}
+
+/**
+ * Stale when `based_on` is not the current ticket event, or its commit is
+ * not the repository commit we have now.
+ */
+export function workPromptIsStale(
+  prompt: Pick<WorkPrompt, "basedOn" | "commit">,
+  ticketEventId: string,
+  repoCommit: string | null,
+): boolean {
+  if (prompt.basedOn !== ticketEventId) return true;
+  if (prompt.commit && repoCommit && prompt.commit !== repoCommit) return true;
+  return false;
+}
+
+/** Paths to list when the project has a home repository. */
+export function contextPaths(item: WorkItem | null): readonly string[] {
+  if (item?.type !== "project" || !item.home?.repo) return [];
+  return SEEDED_CONTEXT_PATHS;
+}
+
+/** `30621:<owner>:<slug>` from `39101.home.project`. */
+export function projectCoordinate(
+  project: string | null | undefined,
+): { owner: string; slug: string } | null {
+  if (!project) return null;
+  const parts = project.split(":");
+  if (parts.length !== 3) return null;
+  const [kind, owner, slug] = parts;
+  if (kind !== "30621" || owner.length !== 64 || slug.length === 0) return null;
+  return { owner, slug };
+}
+
+export type LinkedRepository = {
+  coordinate: string;
+  url: string | null;
+};
+
+/** `a` tags on the project's `30621`. A public GitHub hint is the link. */
+export function linkedRepositories(
+  tags: readonly (readonly string[])[],
+): LinkedRepository[] {
+  const seen = new Set<string>();
+  const repos: LinkedRepository[] = [];
+  for (const tag of tags) {
+    const coordinate = tag[1];
+    if (tag[0] !== "a" || !coordinate?.startsWith("30617:")) continue;
+    if (seen.has(coordinate)) continue;
+    seen.add(coordinate);
+    const hint = tag[2];
+    repos.push({
+      coordinate,
+      url: hint?.startsWith("https://github.com/") ? hint : null,
+    });
+  }
+  return repos;
+}
+
 export function canMarkDone(item: WorkItem, viewer: string | null): boolean {
   if (!viewer) return false;
   if (item.state !== "accepted" && item.state !== "in_review") return false;
@@ -451,10 +756,47 @@ export function canRelease(item: WorkItem, viewer: string | null): boolean {
   return canMarkDone(item, viewer);
 }
 
+/**
+ * A ticket's due date can move while it is still live.
+ * The holder and the person who created it may change it.
+ */
+export function canChangeTicketDue(
+  item: WorkItem,
+  viewer: string | null,
+): boolean {
+  if (!viewer || item.type !== "ticket") return false;
+  if (item.state === "done" || item.state === "withdrawn") return false;
+  const me = viewer.toLowerCase();
+  const holds =
+    (item.state === "accepted" || item.state === "in_review") &&
+    (item.dri ?? "").toLowerCase() === me;
+  const created = (item.createdBy ?? "").toLowerCase() === me;
+  return holds || created;
+}
+
 export function formatWorkDate(unix: number): string {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   }).format(new Date(unix * 1000));
+}
+
+/** Review line on the Work board. `due_at` is the review date, shown in UTC so every member sees the same day. */
+export function formatReviewDate(unix: number): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(unix * 1000));
+}
+
+/** Open and offered projects have not been accepted yet. */
+export function workBoardColumn(
+  item: Pick<WorkItem, "state">,
+): "waiting" | "ongoing" {
+  return item.state === "open" || item.state === "offered"
+    ? "waiting"
+    : "ongoing";
 }

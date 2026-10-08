@@ -20,6 +20,7 @@ export const TAG_TX = "tx";
 
 export const MARKER_DRAFT = "draft";
 export const MARKER_RECEIPT = "receipt";
+export const MARKER_REVISES = "revises";
 
 export const NEEDS_SHAPER = "shaper";
 export const TYPE_PROJECT = "project";
@@ -30,6 +31,11 @@ export const SHAPERS_D_TAG = "shapers";
 /** `["e", <draft>, "", "draft"]` — the command settles that draft (§3.2). */
 export function draftTag(draftId: string): string[] {
   return ["e", draftId, "", MARKER_DRAFT];
+}
+
+/** `["e", <proposal>, "", "revises"]` — replace an open proposal (§5.3). */
+export function revisesTag(proposalId: string): string[] {
+  return ["e", proposalId, "", MARKER_REVISES];
 }
 
 /** `["e", <message-id>, "", "receipt"]` — a done-from-talk receipt (§5.5). */

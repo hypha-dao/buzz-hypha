@@ -13,11 +13,11 @@ use buzz_core::kind::{
     KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE, KIND_IO_DIRECTION,
     KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
     KIND_IO_DRAFT_OUTCOME, KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE,
-    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
-    KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
+    KIND_IO_JOIN_PROPOSE, KIND_IO_KNOWLEDGE_SET, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
+    KIND_IO_OFFER, KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
     KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
-    KIND_IO_WORK_ITEM,
+    KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE, KIND_IO_WORK_ITEM,
 };
 use buzz_sdk::{
     build_io_accept, build_io_agent_note, build_io_decline, build_io_direction_propose,
@@ -66,6 +66,9 @@ const IO_COMMAND_KINDS: &[u32] = &[
     KIND_IO_SHAPER_ACCEPT,
     KIND_IO_SHAPER_STEP_DOWN,
     KIND_IO_PROFILE_SET,
+    KIND_IO_WITHDRAW,
+    KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_KNOWLEDGE_SET,
 ];
 
 /// Wave 6 — `org progress note` is C-4. Do not change this string.
@@ -664,6 +667,7 @@ fn plan_profile(cmd: &ProfileCmd, me: &str) -> Result<OrgPlan, CliError> {
             let content = ProfileSetContent {
                 about: about.clone(),
                 skills: skill.clone(),
+                socials: Vec::new(),
                 open_limit: *limit,
             };
             write(build_io_profile_set(&content, draft_id(draft.as_deref())?))
@@ -719,6 +723,7 @@ impl super::DirectionSlugArg {
         match self {
             Self::Mission => "mission",
             Self::Vision => "vision",
+            Self::Situation => "situation",
             Self::Objectives => "objectives",
             Self::Strategy => "strategy",
         }
@@ -728,6 +733,7 @@ impl super::DirectionSlugArg {
         match self {
             Self::Mission => DirectionSlug::Mission,
             Self::Vision => DirectionSlug::Vision,
+            Self::Situation => DirectionSlug::Situation,
             Self::Objectives => DirectionSlug::Objectives,
             Self::Strategy => DirectionSlug::Strategy,
         }

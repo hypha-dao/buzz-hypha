@@ -460,10 +460,15 @@ fn gate_sequence(
     if !d.requires.is_empty() && d.suggested_holder.is_none() && d.unfilled.is_none() {
         return Err(JudgeReason::Unfilled);
     }
-    if d.coverage
-        .iter()
-        .any(|c| c.piece == d.covers && c.held.is_some())
-    {
+    // A waiting step is still a ticket. Sequence fails when it does not
+    // name what it waits on.
+    if d.coverage.iter().any(|c| {
+        c.piece == d.covers
+            && c.held.is_some()
+            && c.after.is_empty()
+            && d.waits_on.is_empty()
+            && d.after.is_empty()
+    }) {
         return Err(JudgeReason::Sequence);
     }
     for after in &d.after {

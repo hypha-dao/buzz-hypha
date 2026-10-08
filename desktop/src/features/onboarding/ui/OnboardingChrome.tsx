@@ -1,11 +1,12 @@
 import { HyphaMark } from "@/shared/ui/hypha-logo/HyphaMark";
 
 /**
- * Positions in the first-launch flow: landing, identity/key, harness setup,
- * default config, community choice, community profile, meet the team. Password
- * backup is an optional subview of identity/key, not another position.
+ * Positions in the first-launch flow: landing, identity/key, community choice,
+ * community profile. Harness choice and the sample-agent intro are not part of
+ * this flow. Password backup is an optional subview of identity/key, not
+ * another position.
  */
-export const TOTAL_ONBOARDING_PAGES = 7;
+export const TOTAL_ONBOARDING_PAGES = 4;
 
 /** Shared pill shape (38px tall) for every onboarding primary CTA. */
 const ONBOARDING_CTA_SHAPE = "h-[2.375rem] rounded-full px-6";

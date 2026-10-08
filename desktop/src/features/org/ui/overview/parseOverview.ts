@@ -7,6 +7,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_IO_AGENT_NOTE,
   KIND_IO_DIRECTION,
+  KIND_IO_KNOWLEDGE,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_WORK_ITEM,
@@ -19,6 +20,7 @@ import { SHAPERS_D_TAG, TAG_STATUS, TAG_TYPE, TYPE_PROJECT } from "../../tags";
 export const DIRECTION_SLUGS: readonly DirectionSlug[] = [
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ];
@@ -28,6 +30,8 @@ export type DirectionLine = {
   id: string;
   text: string;
   date?: number;
+  doneWhen?: string;
+  lineType?: "bet" | "rule" | "refusal";
 };
 
 export type DirectionHead = {
@@ -59,6 +63,20 @@ export type ShapersState = {
   agentHosted: boolean;
   decisionWindowSecs: number | null;
   offerWindowSecs: number | null;
+  /** `#shapers` channel id (`39103.room`). */
+  room: string | null;
+};
+
+export type CodebaseLink = {
+  id: string;
+  kind: "repository" | "site";
+  name: string;
+  url: string;
+  about: string;
+  /** Commit the file list was read from. Absent when the repo was not read. */
+  commit?: string;
+  /** Paths a code step may name. Absent when the repo was not read. */
+  files?: string[];
 };
 
 export type ProjectHold = {
@@ -154,7 +172,15 @@ function parseLines(value: unknown): DirectionLine[] {
     const text = asString(row.text);
     if (n === null || !id || !text) continue;
     const date = asNumber(row.date);
-    lines.push(date === null ? { n, id, text } : { n, id, text, date });
+    const doneWhen = asString(row.done_when);
+    const lineType = asString(row.type);
+    const line: DirectionLine = { n, id, text };
+    if (date !== null) line.date = date;
+    if (doneWhen) line.doneWhen = doneWhen;
+    if (lineType === "bet" || lineType === "rule" || lineType === "refusal") {
+      line.lineType = lineType;
+    }
+    lines.push(line);
   }
   return lines.sort((left, right) => left.n - right.n);
 }
@@ -181,6 +207,57 @@ function parseDirectionHead(event: RelayEvent): DirectionHead | null {
     confirmedBy,
     confirmedAt: asNumber(content?.confirmed_at),
   };
+}
+
+function digestFiles(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const files = value
+    .filter(
+      (path): path is string =>
+        typeof path === "string" &&
+        path.trim().length > 0 &&
+        !path.includes(".."),
+    )
+    .slice(0, 80);
+  return files.length > 0 ? files : undefined;
+}
+
+/** Newest `39106` `d=codebases` list. `null` when the org has not stored one. */
+export function parseCodebases(
+  events: readonly Pick<
+    RelayEvent,
+    "kind" | "tags" | "content" | "created_at"
+  >[],
+): CodebaseLink[] | null {
+  const newest = newestByCreatedAt(
+    events.filter(
+      (event) =>
+        event.kind === KIND_IO_KNOWLEDGE &&
+        event.tags.some((tag) => tag[0] === "d" && tag[1] === "codebases"),
+    ),
+  );
+  if (!newest) return null;
+  const content = parseJson(newest.content);
+  if (!Array.isArray(content?.items)) return [];
+  const items: CodebaseLink[] = [];
+  for (const entry of content.items) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const kind = asString(row.kind);
+    if (kind !== "repository" && kind !== "site") continue;
+    const files = digestFiles(row.files);
+    const commit = asString(row.commit);
+    items.push({
+      id: asString(row.id) ?? `${kind}-${items.length + 1}`,
+      kind,
+      name: asString(row.name) ?? "",
+      url: asString(row.url) ?? "",
+      about: asString(row.about) ?? "",
+      ...(commit ? { commit } : {}),
+      ...(files ? { files } : {}),
+    });
+  }
+  return items;
 }
 
 /** One slot per slug; the newest `39100` per `d` is the head. */
@@ -258,6 +335,7 @@ export function parseShapersState(
     agentHosted: content?.agent_hosted === true,
     decisionWindowSecs: asNumber(content?.decision_window_secs),
     offerWindowSecs: asNumber(content?.offer_window_secs),
+    room: asString(content?.room),
   };
 }
 
@@ -313,7 +391,13 @@ export function projectHolds(
   }
   return [...byId.values()]
     .map((entry) => entry.hold)
-    .sort((left, right) => left.title.localeCompare(right.title));
+    .filter((hold) => hold.state !== "withdrawn")
+    .sort((left, right) => {
+      const leftOpen = left.dri ? 0 : 1;
+      const rightOpen = right.dri ? 0 : 1;
+      if (leftOpen !== rightOpen) return leftOpen - rightOpen;
+      return left.title.localeCompare(right.title);
+    });
 }
 
 function parseCounts(value: unknown): Record<string, number> {

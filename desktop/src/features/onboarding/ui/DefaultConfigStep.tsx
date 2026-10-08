@@ -298,9 +298,9 @@ function AgentDefaultsSection({
 }
 
 /**
- * Machine onboarding page 4 — default model configuration. Presents the
- * global agent defaults (provider, model, effort, env vars) centered under
- * the mock's "Configure your default model settings" heading.
+ * Default harness and model form. First-run onboarding does not mount this;
+ * members choose a harness later in Settings. The shared defaults form is
+ * still exercised here with the onboarding disclosure preset.
  */
 export function DefaultConfigStep({
   actions,

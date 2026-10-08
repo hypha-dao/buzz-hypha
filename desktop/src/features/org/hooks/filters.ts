@@ -8,11 +8,13 @@ import {
   KIND_IO_DIRECTION,
   KIND_IO_DRAFT,
   KIND_IO_HEALTH,
+  KIND_IO_KNOWLEDGE,
   KIND_IO_PROFILE,
   KIND_IO_PROGRESS,
   KIND_IO_PROPOSAL,
   KIND_IO_SHAPERS,
   KIND_IO_WORK_ITEM,
+  KIND_STREAM_MESSAGE,
 } from "@/shared/constants/kinds";
 
 import {
@@ -32,7 +34,7 @@ export const ORG_HISTORY_LIMIT = 500;
 
 /** Every person-signed command kind — the item-page trail (§6.5). */
 export const IO_COMMAND_KINDS: number[] = Array.from(
-  { length: 21 },
+  { length: 23 },
   (_, index) => 50001 + index,
 );
 
@@ -42,12 +44,14 @@ function history(
   return { ...filter, limit: ORG_HISTORY_LIMIT };
 }
 
-/** Overview: `{kinds:[39100]}`, `{kinds:[39103]}`, `{kinds:[39101], "#t":["project"]}`. */
+/** Overview: direction, codebases, shapers, project roots, and profiles. */
 export function overviewFilters(): RelaySubscriptionFilter[] {
   return [
     history({ kinds: [KIND_IO_DIRECTION] }),
+    history({ kinds: [KIND_IO_KNOWLEDGE], "#d": ["codebases"] }),
     history({ kinds: [KIND_IO_SHAPERS], "#d": [SHAPERS_D_TAG] }),
     history({ kinds: [KIND_IO_WORK_ITEM], [`#${TAG_TYPE}`]: [TYPE_PROJECT] }),
+    history({ kinds: [KIND_IO_PROFILE] }),
   ];
 }
 
@@ -72,7 +76,9 @@ export function workFilters(
 
 /**
  * Item page: `{kinds:[39101], "#d":[id]}`, `{kinds:[39101], "#u":[id]}`,
- * `{kinds:[50001–50021], "#i":[id]}`, `{kinds:[50102], "#i":[id]}`.
+ * `{kinds:[50001–50023], "#i":[id]}`, `{kinds:[50102], "#i":[id]}`,
+ * ticket drafts under this item (`50100` `#u` `#t ticket`), and the
+ * draft itself when `id` is that event.
  */
 export function workItemFilters(itemId: string): RelaySubscriptionFilter[] {
   return [
@@ -89,15 +95,24 @@ export function workItemFilters(itemId: string): RelaySubscriptionFilter[] {
       kinds: [KIND_IO_PROGRESS],
       [`#${TAG_ITEM}`]: [itemId],
     }),
+    history({
+      kinds: [KIND_IO_DRAFT],
+      [`#${TAG_PARENT}`]: [itemId],
+      [`#${TAG_TYPE}`]: ["ticket"],
+    }),
+    history({ ids: [itemId], kinds: [KIND_IO_DRAFT] }),
   ];
 }
 
 /**
  * My Work: `{kinds:[39101], "#p":[me]}`, `{kinds:[50100], "#n":[me]}`,
- * `{kinds:[39102], "#p":[me], "#s":["open"]}`. Shapers add
- * `{kinds:[50100], "#n":["shaper"]}`. `39103` is the live read that tells
- * the hook whether to add that last filter — same event D-5 already
- * watches for `agent`.
+ * `{kinds:[39102], "#p":[me], "#s":["open"]}`, and
+ * `{kinds:[39102], "#t":["project"], "#p":[me], "#s":["passed"]}` so a
+ * project this person already agreed to can be recorded as held.
+ * Shapers add `{kinds:[50100], "#n":["shaper"]}` and
+ * `{kinds:[39101], "#t":["project"], "#s":["open"]}` — a root that still
+ * needs a DRI (Journey 2.5). `39103` is the live read that tells the
+ * hook whether to add those filters.
  */
 export function myWorkFilters(
   pubkey: string,
@@ -112,13 +127,35 @@ export function myWorkFilters(
       "#p": [pubkey],
       [`#${TAG_STATUS}`]: [STATUS_OPEN],
     }),
+    history({
+      kinds: [KIND_IO_PROPOSAL],
+      "#p": [pubkey],
+      [`#${TAG_TYPE}`]: [TYPE_PROJECT],
+      [`#${TAG_STATUS}`]: ["passed"],
+    }),
   ];
   if (includeShaperDrafts) {
     filters.push(
       history({ kinds: [KIND_IO_DRAFT], [`#${TAG_NEEDS}`]: [NEEDS_SHAPER] }),
+      history({
+        kinds: [KIND_IO_WORK_ITEM],
+        [`#${TAG_TYPE}`]: [TYPE_PROJECT],
+        [`#${TAG_STATUS}`]: [STATUS_OPEN],
+      }),
     );
   }
   return filters;
+}
+
+/**
+ * Your drafts: the org agent's chat lines in every room you can read
+ * (`{kinds:[9], authors:[agent]}`). The relay scopes a REQ without `#h` to
+ * your channels and DMs; drafts are the lines that carry a draft tag.
+ */
+export function myDraftFilters(
+  orgAgentPubkey: string,
+): RelaySubscriptionFilter[] {
+  return [history({ kinds: [KIND_STREAM_MESSAGE], authors: [orgAgentPubkey] })];
 }
 
 /**
@@ -127,4 +164,18 @@ export function myWorkFilters(
  */
 export function profileFilters(pubkey: string): RelaySubscriptionFilter[] {
   return [history({ kinds: [KIND_IO_PROFILE], "#d": [pubkey] })];
+}
+
+/**
+ * Recent org actions this person signed, plus proposals so a vote can name
+ * what it was for. Bounded by the door history page.
+ */
+export function memberActivityFilters(
+  pubkey: string,
+): RelaySubscriptionFilter[] {
+  return [
+    history({ kinds: IO_COMMAND_KINDS, authors: [pubkey] }),
+    history({ kinds: [KIND_IO_PROGRESS], authors: [pubkey] }),
+    history({ kinds: [KIND_IO_PROPOSAL] }),
+  ];
 }

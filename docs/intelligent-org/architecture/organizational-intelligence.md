@@ -65,7 +65,7 @@ ever allowed near the AI's context.
 | ------ | --------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------- | ---------------------- |
 | **L1** | Substrate       | chat messages, forum posts, call transcripts, uploaded files                                           | millions of tokens, grows forever | machines, automatically                       | **never directly**     |
 | **L2** | Activity ledger | typed timestamped facts: _ticket done_, _project approved_, _offer declined_, _proposal settled_       | large, grows forever              | the relay, on every state change              | **only as aggregates** |
-| **L3** | Semantic memory | what the organization believes: **mission, vision, objectives, strategy** — four short, versioned texts | **small — four documents**        | humans confirm every version; AI only drafts  | **always, in full**    |
+| **L3** | Semantic memory | what the organization believes: **mission, vision, situation, objectives, strategy** — five short, versioned texts | **small — five documents**        | humans confirm every version; AI only drafts  | **always, in full**    |
 | **L4** | Decision memory | recommendation → action → outcome chains; what we tried, what happened, what we now think instead      | medium                            | the relay, on state change                    | **selectively**        |
 
 Where we stand on Buzz: **L1 exists** — the relay's event store already holds every message,
@@ -152,9 +152,11 @@ Two properties every belief carries:
 > **L3 must stay small enough that a person could read all of it in an afternoon.**
 
 This is not an efficiency target, it is what makes the memory trustworthy. A corpus nobody can
-audit is a corpus nobody should rely on. The current model fixes L3 at four org artifacts and
-asks that `objectives` hold three to seven lines. If a community wants a fifth artifact, that
-is a protocol change to argue for, not a slot to fill. The one per-person artifact — the org
+audit is a corpus nobody should rely on. The current model fixes L3 at five org artifacts and
+asks that `objectives` hold three to seven lines. The fifth, `situation` — where the org stands
+today, one paragraph — was argued for this way: objectives drafted without it start from the
+wrong place, and a chat window is not a home for it. If a community wants a sixth artifact,
+that is a protocol change to argue for, not a slot to fill. The one per-person artifact — the org
 profile, `kind:39105`: about, skills, a self-set limit — is bounded the same way (a thousand
 characters, twenty skills) and is written by nobody but its subject.
 
@@ -165,8 +167,9 @@ characters, twenty skills) and is written by nobody but its subject.
 We do not "search a big pile." We **spend a fixed budget** on every turn, filled in a defined
 order. The ordering is the design.
 
-With L3 fixed at four short texts, the first rule is simple: **the whole of L3 is always in the
-prompt.** Four artifacts of a page or two each are 2,000–6,000 tokens. There is no retrieval
+With L3 fixed at five short texts, the first rule is simple: **the whole of L3 is always in the
+prompt.** Four artifacts of a page or two each plus a one-paragraph situation are 2,000–6,000
+tokens. There is no retrieval
 lottery for what the organization believes.
 
 The subtler rule — the one that answers most of the difficulty — governs everything else:
@@ -185,7 +188,7 @@ A typical turn, budgeted:
 | Slice                                                                 | Tokens       | Always present? |
 | --------------------------------------------------------------------- | ------------ | --------------- |
 | System prompt for the move being run                                  | 2,000        | yes             |
-| The four direction heads, in full                                     | 4,000        | yes             |
+| The five direction heads, in full                                     | 4,000        | yes             |
 | Current state — open work aggregates, Shapers, offers pending         | 700          | yes             |
 | What changed since the last run of this move (ledger since)           | 1,000        | yes             |
 | The trigger's context — a channel window, a subtree, a diff           | 4,000        | per trigger     |
@@ -196,7 +199,7 @@ A typical turn, budgeted:
 The first four slices are stable between runs, which makes them ideal for prompt caching (cached
 reads run 60–80% cheaper on most hosts).
 
-If L3 ever outgrows "four short texts", the index-then-select pattern returns: send one line per
+If L3 ever outgrows "five short texts", the index-then-select pattern returns: send one line per
 artifact, load bodies by name. Nothing else in the design changes.
 
 ---
@@ -205,8 +208,8 @@ artifact, load bodies by name. Nothing else in the design changes.
 
 This is the question that most needs a real answer, so here is the arithmetic.
 
-**The curated memory of an organization is small.** Four artifacts of a page or two each. Even a
-generous reading of "what we believe" — the four heads plus their last few versions and the
+**The curated memory of an organization is small.** Five artifacts of a page or two at most. Even a
+generous reading of "what we believe" — the five heads plus their last few versions and the
 decisions that produced them — is tens of thousands of tokens. Every current frontier model has a
 context window several times larger than that. So yes: technically, we could put the
 organization's entire belief system into every single request, and we do.
@@ -250,7 +253,7 @@ inference were free tomorrow, this architecture would not change.
 Relevance is decided in a fixed order, cheapest and most reliable signals first. A memorable
 shorthand: **pinned, changed, nearby, named, fresh, similar.**
 
-1. **Pinned** — the four direction heads are always in context. Not a ranking decision.
+1. **Pinned** — the five direction heads are always in context. Not a ranking decision.
 2. **Changed** — the ledger says what actually moved since the last run, weighted by whether it
    touches an open item or an objective near its date. This is deterministic, and it is where
    most genuinely useful drafts come from. _Trend beats snapshot._
@@ -284,7 +287,7 @@ explicit about how the work divides:
 | Job                                  | Do it with                          | Because                                                             |
 | ------------------------------------ | ----------------------------------- | ------------------------------------------------------------------- |
 | Detect that something changed        | relay state events and ledger rules | must be reproducible, auditable, and cheap enough to run constantly |
-| Decide whether it matters            | rules plus the four direction heads | needs to be inspectable when it gets it wrong                       |
+| Decide whether it matters            | rules plus the five direction heads | needs to be inspectable when it gets it wrong                       |
 | Explain what it means and what to do | the language model                  | requires judgment and phrasing, which is what models are for        |
 
 The mistake to avoid is using a model as the trigger, which is non-deterministic, unauditable,
@@ -321,7 +324,7 @@ Each of these is a plausible, popular design that we are consciously rejecting.
 - **A model as the proactive trigger.** Non-deterministic, unexplainable, and costly to run
   continuously. Rules trigger; models explain.
 - **Unbounded accumulation.** "Store everything, retrieve later" produces a corpus nobody trusts
-  and a retrieval problem that gets harder forever. L3 is four texts.
+  and a retrieval problem that gets harder forever. L3 is five texts.
 - **Numbers inside memory documents.** Guarantees confident stale answers. Volatile state is always
   fetched live.
 - **Notification per event.** Destroys the attention budget. Buzz's default is zero
@@ -412,7 +415,7 @@ the request:
   follows from the new objective, not the other way round.
 
 So one vote on "this project, this end date, this objective" retires dozens of future votes.
-Projects are the compression mechanism for governance in the same way that four short artifacts
+Projects are the compression mechanism for governance in the same way that five short artifacts
 are the compression mechanism for memory. Money is not on the project — it is a separate,
 out-only decision when a piece of work is done — which is what removes the two hardest
 questions (how budgets cascade, salary vs. per-piece) from the model entirely.

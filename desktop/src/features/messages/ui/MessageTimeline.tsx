@@ -11,6 +11,7 @@ import { preloadTimelineImages } from "@/features/messages/lib/timelineImagePrel
 import type { TimelineMessage } from "@/features/messages/types";
 import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 import type { ChannelWindowThreadSummary } from "@/features/messages/lib/channelWindowStore";
+import type { DirectMessageIntro } from "@/features/channels/lib/dmParticipantDisplay";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { ChannelType } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
@@ -27,10 +28,7 @@ import type { TimelineVirtualizerApi } from "./TimelineMessageList";
 import { useAnchoredScroll } from "./useAnchoredScroll";
 import { useLoadOlderOnScroll } from "./useLoadOlderOnScroll";
 import { useBufferedTimelineMessages } from "./useBufferedTimelineMessages";
-import {
-  DirectMessageIntroAvatarStack,
-  type DirectMessageIntroParticipant,
-} from "./DirectMessageIntroAvatarStack";
+import { DirectMessageIntroBlock } from "./DirectMessageIntroBlock";
 import { useSettleGatedPrependMessages } from "./useSettleGatedPrependMessages";
 
 export type MessageTimelineHandle = {
@@ -50,10 +48,7 @@ type MessageTimelineProps = {
   /** Relay thread summaries (root id → summary) for the deferred-pass entry
    *  fallback, so badge rows survive while a scrollback page commits. */
   threadSummaries?: ReadonlyMap<string, ChannelWindowThreadSummary>;
-  directMessageIntro?: {
-    displayName: string;
-    participants: DirectMessageIntroParticipant[];
-  } | null;
+  directMessageIntro?: DirectMessageIntro | null;
   isError?: boolean;
   isLoading?: boolean;
   onRetry?: () => void;
@@ -624,24 +619,10 @@ const MessageTimelineBase = React.forwardRef<
       ) : activeChannelIntro ? (
         <ChannelIntroBlock className="pb-4 pt-2" intro={activeChannelIntro} />
       ) : activeDirectMessageIntro ? (
-        <div
-          className="mb-2 flex w-full flex-col items-start px-3 pb-2 pt-2 text-left"
-          data-testid="message-dm-intro"
-        >
-          <DirectMessageIntroAvatarStack
-            participants={activeDirectMessageIntro.participants}
-          />
-          <p className="mt-4 max-w-full truncate text-xl font-semibold leading-7 tracking-tight text-foreground">
-            {activeDirectMessageIntro.displayName}
-          </p>
-          <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
-            This is the beginning of your direct message with{" "}
-            <span className="font-medium text-foreground">
-              {activeDirectMessageIntro.displayName}
-            </span>
-            .
-          </p>
-        </div>
+        <DirectMessageIntroBlock
+          className="mb-2 pb-2 pt-2"
+          intro={activeDirectMessageIntro}
+        />
       ) : null,
     [activeChannelIntro, activeDirectMessageIntro, activePinnedIntro],
   );
@@ -815,24 +796,10 @@ const MessageTimelineBase = React.forwardRef<
                   <MessageTimelineErrorCard onRetry={onRetry} />
                 ) : null}
                 {activeDirectMessageIntro ? (
-                  <div
-                    className="mt-auto flex w-full flex-col items-start px-3 py-2 text-left"
-                    data-testid="message-dm-intro"
-                  >
-                    <DirectMessageIntroAvatarStack
-                      participants={activeDirectMessageIntro.participants}
-                    />
-                    <p className="mt-4 max-w-full truncate text-xl font-semibold leading-7 tracking-tight text-foreground">
-                      {activeDirectMessageIntro.displayName}
-                    </p>
-                    <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
-                      This is the beginning of your direct message with{" "}
-                      <span className="font-medium text-foreground">
-                        {activeDirectMessageIntro.displayName}
-                      </span>
-                      .
-                    </p>
-                  </div>
+                  <DirectMessageIntroBlock
+                    className="mt-auto py-2"
+                    intro={activeDirectMessageIntro}
+                  />
                 ) : null}
 
                 {activePinnedIntro ? (

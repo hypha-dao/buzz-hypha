@@ -21,6 +21,7 @@ import {
   KIND_IO_DRI_PROPOSE,
   KIND_IO_HEALTH_RATE,
   KIND_IO_JOIN_PROPOSE,
+  KIND_IO_KNOWLEDGE_SET,
   KIND_IO_MONEY_PROPOSE,
   KIND_IO_MONEY_RELEASED,
   KIND_IO_OFFER,
@@ -34,12 +35,15 @@ import {
   KIND_IO_SHAPERS_PROPOSE,
   KIND_IO_TICKET_CREATE,
   KIND_IO_VOTE,
+  KIND_IO_WITHDRAW,
+  KIND_IO_WITHDRAW_PROPOSE,
 } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import {
   draftTag,
   receiptTag,
+  revisesTag,
   TAG_BAND,
   TAG_BASE,
   TAG_DUE,
@@ -58,7 +62,12 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ISO_WEEK = /^[0-9]{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$/;
 
-export type DirectionSlug = "mission" | "vision" | "objectives" | "strategy";
+export type DirectionSlug =
+  | "mission"
+  | "vision"
+  | "situation"
+  | "objectives"
+  | "strategy";
 export type VoteChoice = "agree" | "decline";
 export type ShapersOp = "add" | "remove" | "rules" | "agent";
 export type DraftDecision = "accept" | "decline";
@@ -125,6 +134,12 @@ function optionalVoteAgree(tags: string[][], voteAgree?: boolean): void {
   if (voteAgree) tags.push([TAG_VOTE, "agree"]);
 }
 
+function optionalRevises(tags: string[][], proposalId?: string): void {
+  if (proposalId !== undefined) {
+    tags.push(revisesTag(requireUuid(proposalId, "revises")));
+  }
+}
+
 export type ShapersProposal =
   | { op: "add" | "remove"; pubkey: string; why?: string }
   | {
@@ -171,12 +186,14 @@ export function buildIoDirectionPropose(input: {
   why?: string;
   draftId?: string;
   voteAgree?: boolean;
+  revises?: string;
 }): UnsignedOrgCommand {
   const tags: string[][] = [
     ["d", input.slug],
     [TAG_BASE, String(input.base)],
   ];
   optionalDraft(tags, input.draftId);
+  optionalRevises(tags, input.revises);
   optionalVoteAgree(tags, input.voteAgree);
   const content: Record<string, unknown> = {
     body: requireNonEmpty(input.body, "body"),
@@ -226,12 +243,16 @@ export function buildIoProjectPropose(input: {
   dueAt: number;
   objectiveRef?: string;
   suggestedDri?: string;
+  change?: unknown;
+  plan?: unknown;
   draftId?: string;
   voteAgree?: boolean;
+  revises?: string;
 }): UnsignedOrgCommand {
   requireNonEmpty(input.title, "title");
   const tags: string[][] = [];
   optionalDraft(tags, input.draftId);
+  optionalRevises(tags, input.revises);
   optionalVoteAgree(tags, input.voteAgree);
   const content: Record<string, unknown> = {
     title: input.title,
@@ -243,6 +264,8 @@ export function buildIoProjectPropose(input: {
   if (input.suggestedDri !== undefined) {
     content.suggested_dri = requireHex64(input.suggestedDri, "suggested_dri");
   }
+  if (input.change !== undefined) content.change = input.change;
+  if (input.plan !== undefined) content.plan = input.plan;
   return {
     kind: KIND_IO_PROJECT_PROPOSE,
     tags,
@@ -464,9 +487,27 @@ export function buildIoHealthRate(input: {
   };
 }
 
+export function buildIoKnowledgeSet(input: {
+  items: {
+    kind: "repository" | "site";
+    name: string;
+    url: string;
+    about: string;
+    commit?: string;
+    files?: string[];
+  }[];
+}): UnsignedOrgCommand {
+  return {
+    kind: KIND_IO_KNOWLEDGE_SET,
+    tags: [],
+    content: JSON.stringify({ slug: "codebases", items: input.items }),
+  };
+}
+
 export function buildIoProfileSet(input: {
   about: string;
   skills: string[];
+  socials?: { network: string; url: string }[];
   openLimit?: number;
   draftId?: string;
 }): UnsignedOrgCommand {
@@ -476,8 +517,35 @@ export function buildIoProfileSet(input: {
     about: input.about,
     skills: input.skills,
   };
+  if (input.socials && input.socials.length > 0)
+    content.socials = input.socials;
   if (input.openLimit !== undefined) content.open_limit = input.openLimit;
   return { kind: KIND_IO_PROFILE_SET, tags, content: JSON.stringify(content) };
+}
+
+export function buildIoWithdraw(input: {
+  item: string;
+  why?: string;
+}): UnsignedOrgCommand {
+  return {
+    kind: KIND_IO_WITHDRAW,
+    tags: [[TAG_ITEM, requireUuid(input.item, "i")]],
+    content: whyJson(input.why),
+  };
+}
+
+export function buildIoWithdrawPropose(input: {
+  item: string;
+  why?: string;
+  voteAgree?: boolean;
+}): UnsignedOrgCommand {
+  const tags: string[][] = [[TAG_ITEM, requireUuid(input.item, "i")]];
+  optionalVoteAgree(tags, input.voteAgree);
+  return {
+    kind: KIND_IO_WITHDRAW_PROPOSE,
+    tags,
+    content: whyJson(input.why),
+  };
 }
 
 /**

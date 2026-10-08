@@ -291,6 +291,8 @@ fn gate_redraw_shape() {
                     id: "l1".into(),
                     text: "line".into(),
                     date: None,
+                    done_when: None,
+                    line_type: None,
                 }],
                 confirmed_by: "aa".repeat(32),
                 confirmed_at: 1,

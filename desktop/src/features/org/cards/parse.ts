@@ -28,7 +28,12 @@ import {
   firstTag,
   parseJsonObject,
 } from "./tags";
-import type { DraftKind, OrgEventLike, OrgReceipt } from "./types";
+import type {
+  DraftKind,
+  OrgEventLike,
+  OrgReceipt,
+  WorkCardKind,
+} from "./types";
 
 const DRAFT_KINDS = new Set<DraftKind>([
   "project",
@@ -128,6 +133,32 @@ export function workOfferedBy(event: OrgEventLike): string | null {
   return normalizePubkey(content);
 }
 
+/** End date (project) or estimated completion (ticket). `0` means unset. */
+export function dueAtOf(event: OrgEventLike): number | null {
+  const fromContent = asNumber(parseJsonObject(event.content)?.due_at);
+  if (fromContent !== null && fromContent > 0) return fromContent;
+  const tagged = anyTag(event.tags, "due");
+  if (!tagged) return null;
+  const parsed = Number(tagged);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** `t` tag, else a parent means a ticket and a root means a project. */
+export function workKindOf(event: OrgEventLike): WorkCardKind | null {
+  if (event.kind !== KIND_IO_WORK_ITEM) return null;
+  const tagged = anyTag(event.tags, TAG_TYPE);
+  if (tagged === "project" || tagged === "ticket") return tagged;
+  return workParentId(event) ? "ticket" : "project";
+}
+
+export function workParentId(event: OrgEventLike): string | null {
+  if (event.kind !== KIND_IO_WORK_ITEM) return null;
+  return (
+    anyTag(event.tags, TAG_PARENT) ??
+    asString(parseJsonObject(event.content)?.parent)
+  );
+}
+
 export function proposalIdOf(event: OrgEventLike): string | null {
   return anyTag(event.tags, "d");
 }
@@ -153,6 +184,24 @@ export function proposalIsOpen(event: OrgEventLike): boolean {
     (anyTag(event.tags, TAG_STATUS) ??
       asString(parseJsonObject(event.content)?.status)) === STATUS_OPEN
   );
+}
+
+/** One mark per Shaper who may vote. `cast` is how many have voted. */
+export function proposalVoteMarks(
+  event: OrgEventLike,
+): { cast: number; seats: number } | null {
+  if (event.kind !== KIND_IO_PROPOSAL) return null;
+  const eligible = proposalEligible(event);
+  const content = parseJsonObject(event.content);
+  const votes = Array.isArray(content?.votes) ? content.votes : [];
+  const cast = votes.filter((vote) => {
+    if (typeof vote !== "object" || vote === null) return false;
+    return typeof (vote as { vote?: unknown }).vote === "string";
+  }).length;
+  const seats =
+    eligible.length > 0 ? eligible.length : (asNumber(content?.needed) ?? 0);
+  if (seats <= 0) return null;
+  return { cast: Math.min(cast, seats), seats };
 }
 
 export function proposalEligible(event: OrgEventLike): string[] {
@@ -188,6 +237,19 @@ export function receiptsOf(event: OrgEventLike): OrgReceipt[] {
   return receipts;
 }
 
+export function reviewSentences(
+  content: Record<string, unknown> | null,
+): string[] {
+  const brief = content?.brief;
+  if (!Array.isArray(brief)) return [];
+  return brief
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      return asString((row as Record<string, unknown>).text);
+    })
+    .filter((text): text is string => text !== null);
+}
+
 export function claimOf(event: OrgEventLike): string {
   const content = parseJsonObject(event.content);
   if (event.kind === KIND_IO_DRAFT) {
@@ -196,7 +258,11 @@ export function claimOf(event: OrgEventLike): string {
     const why = asString(content?.why);
     const brief = asString(content?.brief);
     if (kind === "done") return why ?? "Mark this done?";
-    if (kind === "review") return brief ?? why ?? "What next for this project?";
+    if (kind === "review") {
+      const sentences = reviewSentences(content);
+      if (sentences.length > 0) return sentences.join(" ");
+      return "What next for this project?";
+    }
     if (kind === "dri") return why ?? "A holder for this work";
     if (kind === "profile") return asString(content?.about) ?? "About & skills";
     if (kind === "direction" || kind === "objectives") {

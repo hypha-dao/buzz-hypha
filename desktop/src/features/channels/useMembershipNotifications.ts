@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { channelsQueryKey } from "@/features/channels/hooks";
+import { useChannelListRefresh } from "@/features/channels/useChannelListRefresh";
 import { getChannelIdFromTags } from "@/features/messages/lib/threading";
 import { relayClient } from "@/shared/api/relayClient";
 import type { RelayEvent } from "@/shared/api/types";
@@ -15,13 +15,14 @@ const MEMBERSHIP_NOTIFICATION_RETRY_MAX_MS = 30_000;
 
 export function useMembershipNotifications(currentPubkey?: string) {
   const queryClient = useQueryClient();
+  const refreshChannelList = useChannelListRefresh();
   const normalizedCurrentPubkey = currentPubkey?.trim().toLowerCase() ?? "";
 
   const handleMembershipNotification = React.useEffectEvent(
     (event: RelayEvent) => {
       const channelId = getChannelIdFromTags(event.tags);
 
-      void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+      refreshChannelList();
       if (!channelId) {
         return;
       }

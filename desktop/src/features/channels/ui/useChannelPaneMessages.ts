@@ -7,18 +7,27 @@ import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types"
 import { buildMainTimelineEntries } from "@/features/messages/lib/threadPanel";
 import { getRecentMentionPubkeys } from "@/features/messages/lib/recentMentionPubkeys";
 import { isWelcomeExperienceChannel } from "@/features/onboarding/welcome";
+import { isOrgAgentDm } from "@/features/org/orgAgent";
+import { isCannedOrgAgentOpening } from "@/features/org/orgAgentOpening";
 
 type ChannelPaneMessagesOptions = Pick<
   ChannelPaneProps,
-  "activeChannel" | "messages" | "profiles" | "threadSummaries"
+  | "activeChannel"
+  | "currentPubkey"
+  | "messages"
+  | "profiles"
+  | "threadSummaries"
 > & {
   isHuddleTranscript: boolean;
+  orgAgentPubkey?: string | null;
 };
 
 export function useChannelPaneMessages({
   activeChannel,
+  currentPubkey,
   isHuddleTranscript,
   messages,
+  orgAgentPubkey = null,
   profiles,
   threadSummaries,
 }: ChannelPaneMessagesOptions) {
@@ -26,13 +35,26 @@ export function useChannelPaneMessages({
     const withoutWelcomeSetup = isWelcomeExperienceChannel(activeChannel)
       ? messages.filter((message) => !isWelcomeSetupSystemMessage(message))
       : messages;
+    const withoutCannedOpening =
+      activeChannel &&
+      isOrgAgentDm(activeChannel, orgAgentPubkey, currentPubkey ?? null)
+        ? withoutWelcomeSetup.filter(
+            (message) => !isCannedOrgAgentOpening(message, orgAgentPubkey),
+          )
+        : withoutWelcomeSetup;
 
     return isHuddleTranscript
-      ? withoutWelcomeSetup.filter(
+      ? withoutCannedOpening.filter(
           (message) => !isChannelCreatedSystemMessage(message),
         )
-      : withoutWelcomeSetup;
-  }, [activeChannel, isHuddleTranscript, messages]);
+      : withoutCannedOpening;
+  }, [
+    activeChannel,
+    currentPubkey,
+    isHuddleTranscript,
+    messages,
+    orgAgentPubkey,
+  ]);
 
   const mainTimelineEntries = React.useMemo(
     () =>

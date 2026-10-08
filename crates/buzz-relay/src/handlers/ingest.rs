@@ -543,7 +543,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
         // Intelligent organization commands (50001–50021) and the agent-facing
-        // reads R-7 ingests (50100 / 50101 / 50103): community-global writes.
+        // reads (50100 / 50101 / 50103 / 50104): community-global writes.
         // Scope proves the transport may submit; §3.2 / §3.3 role checks live
         // in `handlers/intelligent_org`. `50102` stays unknown until Work sync.
         k if buzz_core::kind::is_intelligent_org_command_kind(k)
@@ -552,6 +552,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
                 buzz_core::kind::KIND_IO_DRAFT
                     | buzz_core::kind::KIND_IO_HEALTH
                     | buzz_core::kind::KIND_IO_AGENT_NOTE
+                    | buzz_core::kind::KIND_IO_WORK_PROMPT
             ) =>
         {
             Ok(Scope::MessagesWrite)
@@ -2312,6 +2313,7 @@ async fn ingest_event_inner(
         buzz_core::kind::KIND_IO_DRAFT
             | buzz_core::kind::KIND_IO_HEALTH
             | buzz_core::kind::KIND_IO_AGENT_NOTE
+            | buzz_core::kind::KIND_IO_WORK_PROMPT
     ) {
         return super::intelligent_org::handle_read(tenant, state, &event, &auth).await;
     }
@@ -3881,7 +3883,7 @@ mod postgres_tests {
             );
         }
         // Neighbours outside the registered set are untouched.
-        for kind in [39099, 39106, 50000, 50022, 50099, 50104] {
+        for kind in [39099, 39107, 50000, 50025, 50099, 50105] {
             assert!(!is_global_only_kind(kind), "kind {kind} is not registered");
         }
     }

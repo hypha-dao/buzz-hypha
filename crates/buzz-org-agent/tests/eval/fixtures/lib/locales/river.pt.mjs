@@ -153,4 +153,11 @@ export const RIVER_PT = {
   "The last open piece — the cash box taking RIVER — is held and due 28 Jun, with the hosts being taught this week; the lid card under it has gone five people deep and every piece has a name.":
     "A última peça aberta — a caixa aceitar RIVER — tem dono e prazo 28 jun, com quem recebe a ser ensinado esta semana; o cartão da tampa por baixo dela já vai cinco pessoas fundo e cada peça tem um nome.",
   "One payment so far — Priya’s — through a proposal.": "Um pagamento até agora — o da Priya — por proposta.",
+  // Situation
+  "A Saturday stall that has run every week since March, with three growers selling and no weekday night yet.":
+    "Uma banca ao sábado que funciona todas as semanas desde março, com três produtores a vender e ainda sem noite durante a semana.",
+  "The stage is a running stall, not a hall. What exists is the Saturday market and the three growers we already buy from. What is proven is that neighbours come on Saturday and growers are paid the week they sell. What is stuck is the weekday hall: we have never run a weekday night and we have no evening licence. The one thing we must learn next is whether weekday buyers will come.":
+    "A fase é uma banca a funcionar, não um salão. O que existe é o mercado de sábado e os três produtores a quem já compramos. O que está provado é que os vizinhos vêm ao sábado e os produtores são pagos na semana em que vendem. O que está parado é o salão durante a semana: nunca fizemos uma noite de semana e não temos licença para a noite. A única coisa que temos de aprender a seguir é se os compradores de dia de semana vão aparecer.",
+  "Written with the mission, the day the space opened: where the stall stands, and the weekday question.":
+    "Escrita com a missão, no dia em que o espaço abriu: onde está a banca, e a pergunta do dia de semana.",
 };

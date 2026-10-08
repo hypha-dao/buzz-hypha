@@ -131,6 +131,30 @@ pub fn get_media_proxy_port(state: State<'_, AppState>) -> u16 {
         .load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Sign a client-built event, keeping a `p` tag that names the signer.
+///
+/// nostr 0.44 strips a self `p` unless the builder calls
+/// [`EventBuilder::allow_self_tagging`]. The owner's bootstrap
+/// `io_shapers_propose` (`op=add` naming themselves) is rejected as
+/// `invalid: op=add and op=remove need a p tag` when that tag is dropped.
+fn sign_client_event(
+    keys: &Keys,
+    kind: u16,
+    content: String,
+    created_at: Option<u64>,
+    tags: Vec<Tag>,
+) -> Result<Event, String> {
+    let mut builder = EventBuilder::new(Kind::Custom(kind), content)
+        .tags(tags)
+        .allow_self_tagging();
+    if let Some(created_at) = created_at {
+        builder = builder.custom_created_at(Timestamp::from(created_at));
+    }
+    builder
+        .sign_with_keys(keys)
+        .map_err(|error| format!("sign failed: {error}"))
+}
+
 #[tauri::command]
 pub async fn sign_event(
     kind: u16,
@@ -147,15 +171,7 @@ pub async fn sign_event(
             .map(|tag| Tag::parse(tag).map_err(|error| format!("invalid tag: {error}")))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut builder = EventBuilder::new(Kind::Custom(kind), content).tags(nostr_tags);
-        if let Some(created_at) = created_at {
-            builder = builder.custom_created_at(Timestamp::from(created_at));
-        }
-
-        let event = builder
-            .sign_with_keys(&keys)
-            .map_err(|error| format!("sign failed: {error}"))?;
-
+        let event = sign_client_event(&keys, kind, content, created_at, nostr_tags)?;
         Ok(event.as_json())
     })
     .await
@@ -809,6 +825,39 @@ mod nostr_identity_binding_tests {
         .unwrap_err();
 
         assert_eq!(error, "expires_at is expired");
+    }
+}
+
+#[cfg(test)]
+mod sign_client_event_tests {
+    use super::sign_client_event;
+    use nostr::{Keys, Tag};
+
+    #[test]
+    fn keeps_the_signers_own_p_tag() {
+        let keys = Keys::generate();
+        let me = keys.public_key().to_hex();
+        let event = sign_client_event(
+            &keys,
+            50001,
+            "{}".into(),
+            None,
+            vec![
+                Tag::parse(["op", "add"]).expect("op tag"),
+                Tag::parse(["p", me.as_str()]).expect("p tag"),
+            ],
+        )
+        .expect("sign");
+
+        let tags: Vec<Vec<String>> = event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags,
+            vec![vec!["op".to_string(), "add".into()], vec!["p".into(), me]]
+        );
     }
 }
 

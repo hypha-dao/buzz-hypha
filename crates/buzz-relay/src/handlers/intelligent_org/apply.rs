@@ -107,6 +107,16 @@ pub enum Projection {
     HealthRating(HealthRatingRow),
     /// A member's org profile (`39105`, `io_profiles`).
     Profile(OrgProfile),
+    /// The codebases list (`39106`, `d` = `codebases`). The event is the
+    /// record; there is no second table.
+    Knowledge {
+        /// `codebases`.
+        d_tag: String,
+        /// Next version of that section.
+        version: u32,
+        /// Canonical content, already serialized.
+        content: String,
+    },
 }
 
 /// One vote the command cast, for its `io_votes` row: the `Vote` in the
@@ -134,6 +144,11 @@ impl Projection {
             Self::WorkItem { item, receipt } => state::work_item(item, receipt),
             Self::Draft { outcome, .. } => state::draft_outcome(outcome),
             Self::Profile(profile) => state::profile(profile),
+            Self::Knowledge {
+                d_tag,
+                version,
+                content,
+            } => state::knowledge(d_tag, *version, content.clone()),
             Self::Health(_) | Self::HealthRating(_) => Err(IngestError::Internal(
                 "error: health projection has no state event".into(),
             )),
@@ -477,6 +492,7 @@ pub async fn apply(
             Projection::Profile(profile) => {
                 write_profile(tx, ctx, profile, &event_id, created_at).await?;
             }
+            Projection::Knowledge { .. } => {}
             Projection::Health(_) | Projection::HealthRating(_) => {}
         }
 

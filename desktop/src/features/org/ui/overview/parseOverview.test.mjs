@@ -5,6 +5,7 @@ import {
   collectOverviewPubkeys,
   directionHistory,
   directionSlots,
+  parseCodebases,
   parseShapersState,
   parseTallyNote,
   projectHolds,
@@ -79,7 +80,7 @@ test("directionSlots fills four slugs and keeps the newest head", () => {
   ]);
   assert.deepEqual(
     slots.map((slot) => slot.slug),
-    ["mission", "vision", "objectives", "strategy"],
+    ["mission", "vision", "situation", "objectives", "strategy"],
   );
   assert.equal(slots[0].head?.version, 3);
   assert.equal(slots[0].head?.confirmedBy, CONFIRMER);
@@ -178,9 +179,57 @@ test("projectHolds reads root 39101s and skips tickets", () => {
   assert.deepEqual(
     holds.map((hold) => [hold.title, hold.dri]),
     [
-      ["Harvest", null],
       ["Weekday hall", HOLDER],
+      ["Harvest", null],
     ],
+  );
+});
+
+test("projectHolds drops a project that was withdrawn", () => {
+  const holds = projectHolds([
+    event(
+      39101,
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Weekday hall",
+        dri: HOLDER,
+        state: "accepted",
+      },
+      [
+        ["t", "project"],
+        ["s", "accepted"],
+      ],
+      1,
+    ),
+    event(
+      39101,
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Weekday hall",
+        state: "withdrawn",
+      },
+      [
+        ["t", "project"],
+        ["s", "withdrawn"],
+      ],
+      2,
+    ),
+    event(
+      39101,
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        title: "Still live",
+        state: "open",
+      },
+      [
+        ["t", "project"],
+        ["s", "open"],
+      ],
+    ),
+  ]);
+  assert.deepEqual(
+    holds.map((hold) => hold.title),
+    ["Still live"],
   );
 });
 
@@ -297,4 +346,103 @@ test("collectOverviewPubkeys unions confirmer, shapers, holder, agent", () => {
   assert.ok(pubkeys.includes(CONFIRMER));
   assert.ok(pubkeys.includes(ME));
   assert.ok(pubkeys.includes(HOLDER));
+});
+
+test("an objectives line keeps done when and a missing situation stays missing", () => {
+  const events = [
+    event(
+      39100,
+      {
+        slug: "objectives",
+        version: 1,
+        body: "Book the hall.",
+        lines: [
+          {
+            n: 1,
+            id: "l_7f3a",
+            text: "Weekday hall booked",
+            date: 1_780_000_000,
+            done_when: "the hall has hosted a weekday night",
+          },
+        ],
+      },
+      [
+        ["d", "objectives"],
+        ["version", "1"],
+      ],
+    ),
+  ];
+  const slots = directionSlots(events);
+  const line = slots.find((slot) => slot.slug === "objectives")?.head?.lines[0];
+  assert.equal(line?.doneWhen, "the hall has hosted a weekday night");
+  const situation = slots.find((slot) => slot.slug === "situation");
+  assert.equal(situation?.head, null);
+});
+
+test("codebases is its own list and the newest head wins", () => {
+  assert.equal(parseCodebases([]), null);
+  const items = parseCodebases([
+    event(
+      39106,
+      {
+        slug: "codebases",
+        version: 1,
+        items: [
+          {
+            id: "old",
+            kind: "repository",
+            name: "old",
+            url: "https://github.com/hypha-dao/old",
+            about: "retired",
+          },
+        ],
+      },
+      [["d", "codebases"]],
+      10,
+    ),
+    event(
+      39106,
+      {
+        slug: "codebases",
+        version: 2,
+        items: [
+          {
+            id: "buzz-hypha",
+            kind: "repository",
+            name: "buzz-hypha",
+            url: "https://github.com/hypha-dao/buzz-hypha",
+            about: "The product",
+          },
+          {
+            id: "site",
+            kind: "site",
+            name: "",
+            url: "",
+            about: "no landing page yet",
+          },
+        ],
+      },
+      [["d", "codebases"]],
+      20,
+    ),
+    event(39100, { slug: "strategy", version: 1, body: "How." }, [
+      ["d", "strategy"],
+    ]),
+  ]);
+  assert.deepEqual(items, [
+    {
+      id: "buzz-hypha",
+      kind: "repository",
+      name: "buzz-hypha",
+      url: "https://github.com/hypha-dao/buzz-hypha",
+      about: "The product",
+    },
+    {
+      id: "site",
+      kind: "site",
+      name: "",
+      url: "",
+      about: "no landing page yet",
+    },
+  ]);
 });

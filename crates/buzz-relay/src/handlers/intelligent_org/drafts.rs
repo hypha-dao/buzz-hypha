@@ -41,7 +41,7 @@ fn parse_hex32(value: &str, what: &str) -> Result<Vec<u8>, IngestError> {
     hex::decode(value).map_err(|_| invalid(&format!("{what} must be a 64-char lowercase hex id")))
 }
 
-fn draft_marker(event: &Event) -> Result<Option<Vec<u8>>, IngestError> {
+pub(super) fn draft_marker(event: &Event) -> Result<Option<Vec<u8>>, IngestError> {
     for t in event.tags.iter() {
         let parts = t.as_slice();
         if parts.len() >= 4 && parts[0] == "e" && parts[3] == tag::MARKER_DRAFT {
@@ -647,6 +647,55 @@ pub(super) async fn ingest_note(cmd: &Command<'_>) -> Result<IngestResult, Inges
         vec![],
         rows,
         serde_json::json!({ "note": verb }).to_string(),
+        None,
+    )
+    .await
+}
+
+const PROMPT_MAX_BYTES: usize = 16 * 1024;
+
+/// Store a `50104` from `39103.agent`. `#i` is a ticket. `based_on` is the
+/// ticket event the prompt was compiled from. The event does not change state.
+pub(super) async fn ingest_work_prompt(cmd: &Command<'_>) -> Result<IngestResult, IngestError> {
+    let mut tx = match begin(cmd).await? {
+        Persisted::Replay(result) => return Ok(result),
+        Persisted::Open(tx) => tx,
+    };
+    let shapers = current_shapers(&mut tx, cmd)
+        .await?
+        .ok_or_else(|| IngestError::Rejected("restricted: not the org agent".into()))?;
+    authorize::require_agent(shapers.agent.as_deref(), &cmd.actor_hex)?;
+
+    let item = uuid_tag(cmd.event, tag::ITEM)?.ok_or_else(|| invalid("missing i tag (ticket)"))?;
+    let based_on =
+        tag_value(cmd.event, "based_on").ok_or_else(|| invalid("missing based_on tag"))?;
+    parse_hex32(based_on, "based_on")?;
+    if cmd.event.content.trim().is_empty() {
+        return Err(invalid("empty work prompt"));
+    }
+    if cmd.event.content.len() > PROMPT_MAX_BYTES {
+        return Err(invalid("work prompt is too long"));
+    }
+    let row = store::get_work_item(&mut tx, cmd.tenant.community(), item)
+        .await
+        .map_err(|e| internal("read work item", e))?
+        .ok_or_else(|| invalid("unknown ticket"))?;
+    if row.content.parent.is_none() {
+        return Err(invalid("work prompt names a project, not a ticket"));
+    }
+
+    let rows = vec![cmd.ledger(
+        "work_prompt",
+        object::WORK_ITEM,
+        &item.to_string(),
+        serde_json::json!({ "based_on": based_on }),
+    )?];
+    persist_write(
+        cmd,
+        tx,
+        vec![],
+        rows,
+        serde_json::json!({ "item": item }).to_string(),
         None,
     )
     .await

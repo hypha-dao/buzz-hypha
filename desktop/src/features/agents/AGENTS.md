@@ -76,22 +76,14 @@ with a TypeScript lookup table or an id comparison in a component.
    via `synthesizeEmptyDiscoveryStatus()` and is intentionally **not cached**
    so that closing → reopening the dialog re-runs discovery after the user
    installs or signs into the CLI (`isCacheableDiscoveryResponse()`).
-7. **Onboarding setup detects readiness; it does not select defaults.** The
-   setup page derives visible and ready harnesses from the runtime catalog and
-   only offers install or sign-in actions. The following defaults page is the
-   sole onboarding surface that chooses `preferred_runtime`. Its complete draft
-   lives in machine-onboarding session state, so Back performs no write and
-   restores even incomplete edits when the user returns. Skip abandons that
-   draft and advances with zero config writes. Next is the only persistence
-   boundary: it consumes the shared renderer's `onValidityChange` signal,
-   disables editing while awaiting `set_global_agent_config`, advances only on
-   success, and leaves the draft in place with a retryable inline error on
-   failure. A harness selection alone does not enable Next when the harness
-   requires provider/model/credential config (e.g. buzz-agent with no
-   provider). Baked build env and runtime-file config satisfy the gate. Drafts
-   intentionally do not survive an app restart.
-   `onboarding-agent-defaults.spec.ts` is the acceptance gate for anything
-   touching this flow or the shared renderer.
+7. **First-run onboarding does not choose a harness.** Machine onboarding
+   ends at the identity key. Installing a harness and choosing a default model
+   happen later in Settings → Agents (`AgentDefaultsEditor`), not on a setup
+   or defaults page at the start of the flow. Do not put that choice back on
+   the first-run path. The shared renderer still gates Next/Save on
+   `onValidityChange` wherever a harness form is shown: a harness selection
+   alone is not a working default when the harness requires provider, model,
+   or credential config.
 8. **Omit the Model control only after a confirmed successful empty
    discovery on an optional-model harness.** When the field model marks model
    as `acpNative` (Claude Code / Codex), `shouldRenderModelControl` hides the
@@ -100,9 +92,8 @@ with a TypeScript lookup table or an id comparison in a component.
    A thrown or unavailable discovery keeps the control so #2246 failure UI can
    render, and must not heal/clear persisted model or effort. Full disclosure
    still shows the control when Custom model is available. Required-model
-   harnesses always keep the field. Gate: `defaults hides model when optional
-   harness has empty discovery` (and the failed-discovery counterpart) in
-   `onboarding-agent-defaults.spec.ts`.
+   harnesses always keep the field. Gate:
+   `shouldRenderModelControl` in `ui/agentConfigFieldsContract.test.mjs`.
 9. **The defaults modal is progressively disclosed.** An unset global config
    starts on the Buzz Agent-first deployment fallback and carries that visible
    harness into the next saved edit. The `progressive-defaults` disclosure
@@ -366,10 +357,6 @@ buzz messages send --channel <channel-id> --reply-to <thread-root-id> \
   option/preselect compute, plus `effortSelectionToPersistedValue` sentinel →
   null. This is where the v4 provider regression is pinned: the write control
   must never render for a provider backend.
-- `desktop/tests/e2e/onboarding-agent-defaults.spec.ts` — onboarding behavior
-  acceptance coverage for readiness, failure states, defaults, session-draft
-  restoration, zero-write Skip, Next save failure/retry, navigation, and
-  successful-empty vs failed optional-model discovery.
 - `desktop/tests/e2e/agents.spec.ts` — community catalog descriptions remain
   visible in the list and full detail before Add agent, including long
   unbroken Unicode text without horizontal overflow.

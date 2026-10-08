@@ -87,12 +87,13 @@ Rules that follow from the shape:
 
 | Kind      | `d`                                            | Object                                    |
 | --------- | ---------------------------------------------- | ----------------------------------------- |
-| `39100`   | `mission` \| `vision` \| `objectives` \| `strategy` | Latest confirmed **direction** artifact |
+| `39100`   | `mission` \| `vision` \| `situation` \| `objectives` \| `strategy` | Latest confirmed **direction** artifact |
 | `39101`   | item UUID                                      | One **work item**                         |
 | `39102`   | proposal UUID                                  | One **proposal** and its votes            |
 | `39103`   | `shapers`                                      | The **Shaper set** and decision rules     |
 | `39104`   | draft event id                                 | The **outcome** of one draft (L4)         |
 | `39105`   | member pubkey                                  | One member's **org profile** — about, skills, limit |
+| `39106`   | `codebases`                                    | The org **codebases** list — repositories and the landing page. A repository may also carry `commit` and `files` (at most 80 paths, no `..`). That list is the digest a code step may name |
 
 All are `is_relay_only_kind`: a client `EVENT` of these kinds is rejected.
 All are `is_global_only_kind`. Tags on each state event are chosen so that
@@ -116,7 +117,7 @@ without a new HTTP endpoint (see §6).
 | `50009` | `io_done`             | the `dri`; or the org agent relaying the `dri`'s signed message (§5.5) | item → `done` unless an open child exists      |
 | `50010` | `io_release`          | the `dri`                                            | item → `open`; children returned to the item's parent holder |
 | `50018` | `io_reopen`           | the `dri` of a `done` item, within 7 days            | item → `accepted`; undoes a done (typically one relayed from talk) |
-| `50011` | `io_set_due`          | a Shaper (root); holder of the parent (child)        | new `due_at`; on a root past its last fifth, cancels the scheduled close |
+| `50011` | `io_set_due`          | a Shaper (project review date); the holder, the creator, or the parent holder (ticket) | new `due_at`; on a root past its last fifth, cancels the scheduled close |
 | `50012` | `io_draft_decide`     | the draft's `needs` party                            | record decline (or a standalone accept) of a draft (39104)   |
 | `50013` | `io_money_propose`    | _reserved — next version_: the item's `dri`, or the holder of its parent, or a Shaper | open a `money` proposal; item must be `done`  |
 | `50014` | `io_money_released`   | _reserved — next version_: the treasury bridge (the relay's contract watcher) | passed `money` proposal → `settled`, with the chain receipt |
@@ -124,6 +125,9 @@ without a new HTTP endpoint (see §6).
 | `50016` | `io_join_propose`     | _reserved — later_: a member, or the relay from an inbound join request | open a `join` proposal for pubkey `p`              |
 | `50017` | `io_health_rate`      | a Shaper                                             | record a blind band for an item and week (L4)                |
 | `50021` | `io_profile_set`      | any member, for themselves only                      | replace their own org profile — about, skills, limit; emit 39105 |
+| `50022` | `io_withdraw`         | the only seated Shaper, for a project; a ticket's creator or the person who offered it | item and its descendants → `withdrawn`; the project's home room is archived; events stay |
+| `50023` | `io_withdraw_propose` | a Shaper, and only when more than one Shaper is seated | open a `withdraw` proposal for a project (39102); uses the `project` decision rule |
+| `50024` | `io_knowledge_set`    | a seated Shaper                                      | open a `codebases` proposal (`39102`). The direction rule decides it. Passing replaces the codebases list (`39106`, `d` = `codebases`). It does not version strategy |
 
 `50013`/`50014` and `50016` are **not implemented in the first version**:
 the relay rejects them with `restricted: money not enabled` /
@@ -214,8 +218,15 @@ Tags: `["d", "<slug>"]`, `["version", "<n>"]`, `["p", <confirmed_by>]`,
 ```
 
 `lines[].id` is stable across versions when the line is carried forward and
-fresh when it is added; it is the `objective_ref` target. A `mission` or
-`vision` artifact has no `lines`.
+fresh when it is added; it is the `objective_ref` target. A `mission`,
+`vision`, or `situation` artifact has no `lines`; the relay rejects a
+`50002` that carries them.
+
+`situation` is where the org stands today — stage, what exists, what is
+proven, what is stuck — written as one paragraph. It is interpretation the
+Shapers confirm, never a live reading: counts and dates stay in the work
+tree and the ledger. It sits between `vision` and `objectives` because the
+objectives are only as good as the agent's read of where the org starts.
 
 ### 4.2 `kind:39101` — work item
 
@@ -240,7 +251,9 @@ produced this version.
   "offered_to": null,
   "offered_by": null,              // pubkey, or "agent"
   "offered_at": null,
-  "due_at": 1785000000,            // end date (root) / estimated completion (child)
+  "created_by": null,              // the member who created a ticket; absent on a project
+  "offered_by_member": null,       // last human offerer; survives accept, so they can still withdraw
+  "due_at": 1785000000,            // review date (project, set when Shapers create it) / estimated completion (ticket)
   "approved_at": 1757900000,       // when the root went live (roots only)
   "objective_ref": "objectives@3#l_7f3a",
   "created_from": "<event-id>",    // the command that created it; the proposal for a root
@@ -318,13 +331,19 @@ their shape is fixed here:
   "suggested_holder": "<pubkey>|null",
   "unfilled": "one line — why nobody here fits|null",    // required when requires is non-empty and suggested_holder is null
   "covers": "the phrase in the parent brief this answers to",
-  "after": ["<sibling-uuid>"],                            // live or done siblings this piece follows; [] when it can start now
+  "after": ["<sibling-uuid>"],                            // live siblings this piece follows; [] until those siblings exist
+  "waits_on": ["<piece title>"],                          // steps this ticket waits on; names, not ids
+  "how": ["<imperative line>"],                           // two to four lines
+  "done_when": ["<check>"],
+  "kind": "code|research|writing|outreach|design|ops",
+  "files": ["<path>"],                                    // code tickets; paths from the digest
   "gate": false,                                          // true when its outcome decides what the later pieces are
   "coverage": [ { "piece": "", "covered_by": "<item-uuid>|null",
                   "order": 1, "after": ["<piece>"], "held": "after <piece>|null" } ] }
-// `coverage` is the whole ordered plan for the parent brief; a piece is `held` when a predecessor
-// is neither live nor done, and a held piece is never a draft in this batch. `after` on the draft
-// carries into the item's `after` on promotion (§4.2). `requires` names what the piece needs;
+// `coverage` is the whole ordered plan for the parent brief. Accepting a project
+// drafts every step, including a step whose `held` names a predecessor.
+// `waits_on` is those piece titles. `after` carries sibling ids into the item
+// when those siblings already exist (§4.2). `requires` names what the piece needs;
 // `matched` on the holder is the evidence it is met — `requires` without a matching `matched` skill
 // is a stretch and says so in `why`.
 
@@ -351,6 +370,7 @@ their shape is fixed here:
 // kind = profile   (the agent proposing a member's own About & skills from their DM;
 //                   needs = that member; settles through io_profile_set)
 { "pubkey": "<pubkey>", "about": "", "skills": ["hosting-events", "spanish"],
+  "socials": [ { "network": "github", "url": "https://github.com/lea" } ],
   "open_limit": 3 | null, "heard": ["<event-id>"] }
 
 // kind = money
@@ -370,7 +390,7 @@ filter by `#p`), `["i", <uuid>]` when about an item,
 ```jsonc
 {
   "id": "<uuid>",
-  "kind": "money",                 // direction | project | dri | money | join | shapers
+  "kind": "money",                 // direction | project | dri | money | join | shapers | withdraw
   "status": "open",                // open | passed | rejected | expired | settled (money only)
   "opened_by": "<pubkey>",
   "opened_at": 0,
@@ -415,11 +435,13 @@ Tags: `["d", "shapers"]`, one `["p", <pubkey>]` per Shaper.
 ```
 
 `rules` values: `majority` (more than half of `eligible`), `all` (every
-eligible Shaper), or an integer `N ≥ 1` (at least N of `eligible`; capped at
-`eligible.len()` when resolved). `majority` is the default for every kind.
-The relay resolves the rule to `needed` when the proposal opens and stores
-it; a Shaper change afterwards does not move the bar. With one eligible
-Shaper every rule resolves to 1.
+eligible Shaper), an integer `N ≥ 1` (at least N of `eligible`; capped at
+`eligible.len()` when resolved), or a share `"3/5"` (that fraction of whoever
+is seated when a proposal opens, rounded up). `majority` is the default for
+every kind. The relay resolves the rule to `needed` when the proposal opens
+and stores it; a Shaper change afterwards does not move the bar on that open
+proposal. The next proposal resolves the same share against the new count.
+With one eligible Shaper every rule resolves to 1.
 
 A change to `rules`, `decision_window_secs`, or `offer_window_secs` is a
 `shapers` proposal with `op=rules`, and it **always** passes under `all`,
@@ -591,6 +613,7 @@ skill (so `{kinds:[39105], "#k":["rust"]}` answers "who can do X"),
   "about": "I run the Tuesday kitchen and can write a grant if someone checks my numbers.",
   "skills": [ { "slug": "grant-writing", "label": "grant writing" },
               { "slug": "hosting-events", "label": "hosting events" } ],
+  "socials": [ { "network": "github", "url": "https://github.com/lea" } ],
   "open_limit": 3,               // self-set: how many open pieces at once; null = no limit
   "updated_at": 0,
   "receipt": "<io_profile_set event id>" }
@@ -598,7 +621,11 @@ skill (so `{kinds:[39105], "#k":["rust"]}` answers "who can do X"),
 
 Limits (rejected with `invalid:` beyond them): `about` ≤ 1 000 chars;
 ≤ 20 skills; each label ≤ 40 chars; `slug` is the relay's kebab-case of
-the label, deduplicated; `open_limit` 1–50 or null. The whole object is
+the label, deduplicated; `open_limit` 1–50 or null; ≤ 8 `socials`, each an
+`https` URL ≤ 200 chars on a known network (`website`, `github`, `x`,
+`linkedin`, `nostr`, `mastodon`, `telegram`, `discord`, `youtube`,
+`instagram`, `bluesky`), one link per named network and at most three
+`website` links. A named network must use that network's host. The whole object is
 replaced on every `io_profile_set` — there is no partial update, which is
 what lets a DM-drafted `profile` card settle by ordinary draft-on-command
 (§3.2). Free text only; the relay does no matching. Skills are the person's
@@ -618,11 +645,11 @@ Commands are small. Tags name the target; content carries the rest.
 | Kind    | Tags                                                                 | Content                                                        |
 | ------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `50001` | `["op", "add"\|"remove"\|"rules"\|"agent"]`, `["p", <pubkey>]` for add/remove, and for agent when naming a self-run agent (absent = back to hosted), `["vote", "agree"]`? (D1) | `{ why?: "" }` for add/remove/agent; `{ rules, decision_window_secs?, offer_window_secs? }` for rules |
-| `50002` | `["d", <slug>]`, `["base", "<version>"]`, `["e", <draft>, "", "draft"]`?, `["vote", "agree"]`? (D1) | `{ body, lines?, why? }` — the whole new version               |
+| `50002` | `["d", <slug>]`, `["base", "<version>"]`, `["e", <draft>, "", "draft"]`?, `["e", <proposal>, "", "revises"]`?, `["vote", "agree"]`? (D1) | `{ body, lines?, why? }` — the whole new version               |
 | `50003` | `["e", <proposal-uuid>]`, `["vote", "agree"\|"decline"]`             | `{ reason?: "" }` (a decline reason of direction may trigger a strategy draft) |
 | `50019` | `["e", <proposal-uuid>]`                                             | `{}` — the seat the passed `shapers/add` offered                |
 | `50020` | —                                                                    | `{ why?: "" }`                                                 |
-| `50004` | `["e", <draft>, "", "draft"]`?, `["vote", "agree"]`? (D1)             | `{ title, brief, due_at, objective_ref?, suggested_dri? }`     |
+| `50004` | `["e", <draft>, "", "draft"]`?, `["e", <proposal>, "", "revises"]`?, `["vote", "agree"]`? (D1) | `{ title, brief, due_at, objective_ref?, suggested_dri? }`     |
 | `50005` | `["u", <uuid>]`, `["p", <offer_to>]`?, `["e", <draft>, "", "draft"]`? | `{ title, brief, due_at, after?: ["<sibling-uuid>"] }`   |
 | `50006` | `["i", <uuid>]`, `["p", <pubkey>]`, `["e", <draft>, "", "draft"]`? | `{}`                                                          |
 | `50007` | `["i", <uuid>]`                                                   | `{}`                                                           |
@@ -637,7 +664,9 @@ Commands are small. Tags name the target; content carries the rest.
 | `50016` | `["p", <pubkey>]`                                                    | `{ note?: "" }`                                                |
 | `50017` | `["i", <uuid>]`, `["week", "<iso-week>"]`, `["band", <band>]`    | `{}`                                                           |
 | `50018` | `["i", <uuid>]`                                                   | `{ why?: "" }`                                                 |
-| `50021` | `["e", <draft>, "", "draft"]`?                                       | `{ about, skills: [""], open_limit?: n }` — the whole profile; `pubkey` is the signer, never a tag |
+| `50021` | `["e", <draft>, "", "draft"]`?                                       | `{ about, skills: [""], socials?: [{ network, url }], open_limit?: n }` — the whole profile; `pubkey` is the signer, never a tag |
+| `50022` | `["i", <uuid>]`                                                      | `{ why?: "" }` — take the item off the live board |
+| `50023` | `["i", <uuid>]`, `["vote", "agree"]`? (D1)                           | `{ why?: "" }` — open a `withdraw` proposal; payload stored with `i` and `title` `Remove {item title}` |
 
 ---
 
@@ -671,6 +700,14 @@ Commands are small. Tags name the target; content carries the rest.
   review draft.
 - `done` — closed. `closed_by` says how: `dri` (an `io_done`), `rule` (a
   root that reached `due_at`), `release` is not a close.
+- `withdrawn` — taken off the live board. The command, the `39101`, and the
+  ledger row stay. Descendants withdraw with the item (at most 200 nodes).
+  A project is withdrawn by the only seated Shaper (`50022`), or by a passed
+  `withdraw` proposal (`50023`) when more than one Shaper is seated. A ticket
+  is withdrawn by its creator (`created_by`, or the author of `created_from`
+  when that field is absent) or by `offered_by_member`. Withdrawing a project
+  archives its home room in the same write, so the room leaves the live
+  channel list. Withdrawing a ticket does not archive the project's room.
 
 Invariants enforced in the executor, not the UI:
 
@@ -729,7 +766,15 @@ same transaction as the opening (ledger `vote_cast`, `detail.with_open =
 true`) and evaluates the rule at once, so a one-Shaper community passes its
 own proposal in one act and the review card's _Open the follow-up_ is one
 tap. The tag from a non-eligible opener is ignored, not rejected. (Readiness
-D1.) `expired` is a scheduler
+D1.) A seated Shaper may replace an open `direction` or `project` proposal
+instead of opening a second one: the same command carries
+`["e", <proposal-uuid>, "", "revises"]`. The relay keeps the proposal id,
+writes the new payload, clears every vote (ledger `proposal_revised`), and
+restarts the decision window from that command. It stays `open`. An agree
+tag on that command counts only after the clear. The command is refused
+when the proposal is not `open`, the signer is not a Shaper, or the kind
+does not match — a direction revise must also name the same slug and a live
+`base`. `expired` is a scheduler
 transition at `expires_at` (§6.3) and notifies `opened_by`; an expired
 proposal may be reopened as a new one.
 
@@ -1000,7 +1045,7 @@ No new HTTP endpoint. The doors are REQ filters:
 | Work              | `{kinds:[39101]}` (tree assembled client-side from `root`/`parent`), `{kinds:[50101], "#i":[…]}`; `last_progress` on each row is enough for the _last moved_ column |
 | Item page         | `{kinds:[39101], "#d":[id]}`, `{kinds:[39101], "#u":[id]}`, `{kinds:[50001–50021], "#i":[id]}` for the trail, `{kinds:[50102], "#i":[id]}` for the **work log**; commits link into the repo browser at `home.repo` |
 | Decisions         | `{kinds:[39102]}` with `#t` / `#s`; each card renders `votes.len(agree)` of `needed` |
-| My Work           | `{kinds:[39101], "#p":[me]}`, `{kinds:[50100], "#n":[me]}`, `{kinds:[39102], "#p":[me], "#s":["open"]}` (as eligible voter or offered seat); Shapers add `{kinds:[50100], "#n":["shaper"]}` |
+| My Work           | `{kinds:[39101], "#p":[me]}`, `{kinds:[50100], "#n":[me]}`, `{kinds:[39102], "#p":[me], "#s":["open"]}` (as eligible voter or offered seat); Shapers add `{kinds:[50100], "#n":["shaper"]}` and `{kinds:[39101], "#t":["project"], "#s":["open"]}` (a root that still needs a DRI) |
 | Direction page    | `{kinds:[39100], "#d":[slug]}` plus `{kinds:[39102], "#t":["direction"], "#s":["passed"]}` for history |
 | Profile           | `{kinds:[39105], "#d":[pubkey]}`, `{kinds:[39101], "#p":[pubkey]}`, `{kinds:[39102], "#p":[pubkey]}`; "who can do X" is `{kinds:[39105], "#k":[slug]}` |
 

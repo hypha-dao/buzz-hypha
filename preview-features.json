@@ -34,7 +34,7 @@
     {
       "id": "org",
       "name": "Org",
-      "description": "Overview, Work, and My Work — the intelligent organization doors",
+      "description": "Overview, Work, My Work, and My drafts — the intelligent organization doors",
       "platforms": ["desktop"],
       "defaultEnabled": true
     }

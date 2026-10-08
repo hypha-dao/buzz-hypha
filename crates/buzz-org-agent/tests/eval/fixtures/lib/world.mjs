@@ -16,14 +16,58 @@ import { DAY, NOW, isoWeek, resolveDate } from "./dates.mjs";
 import { AGENT, KIND, Org, keyName, personKey, registerNames, slugify } from "./emit.mjs";
 import { lineIdFor } from "./nostr.mjs";
 
-const SLUGS = ["mission", "vision", "objectives", "strategy"];
+const SLUGS = ["mission", "vision", "situation", "objectives", "strategy"];
 const HOUR = 3600;
+
+// The prototype's `data.ts` still has four heads. The fifth is the situation:
+// stage, what exists, what is proven, what is stuck, and the one thing to learn.
+const SITUATIONS = {
+  river: {
+    version: 1,
+    text: "A Saturday stall that has run every week since March, with three growers selling and no weekday night yet.",
+    body: [
+      "The stage is a running stall, not a hall. What exists is the Saturday market and the three growers we already buy from. What is proven is that neighbours come on Saturday and growers are paid the week they sell. What is stuck is the weekday hall: we have never run a weekday night and we have no evening licence. The one thing we must learn next is whether weekday buyers will come.",
+    ],
+    history: [
+      {
+        version: 1,
+        confirmedBy: "Maya",
+        confirmedOn: "March",
+        change:
+          "Written with the mission, the day the space opened: where the stall stands, and the weekday question.",
+      },
+    ],
+  },
+  energy: {
+    version: 1,
+    text: "Three live pilots, a sandbox on Ameland, and no second community running the credits alone.",
+    body: [
+      "The stage is a set of pilots, not a grid. What exists is Iberia and the legal scaffolding for local ownership. What is proven is that communities keep the income when they co-own the assets. What is stuck is the next island: the sandbox credits are not yet a pattern another community can copy. The one thing we must learn next is whether a second community can run the credits without us in the room.",
+    ],
+    history: [
+      {
+        version: 1,
+        confirmedBy: "Alex",
+        confirmedOn: "Jan 2024",
+        change:
+          "Written with the mission in January 2024: where the pilots stand, and the question the next island has to answer.",
+      },
+    ],
+  },
+};
+
+function withSituation(specId, direction) {
+  if (direction.situation) return direction;
+  const situation = SITUATIONS[specId];
+  if (!situation) throw new Error(`no situation for ${specId}`);
+  return { ...direction, situation };
+}
 
 // The prototype's two worlds, keyed like `constants.mjs`.
 function sourceFor(spec) {
   if (spec.id === "river") {
     return {
-      direction: riverDirection,
+      direction: withSituation("river", riverDirection),
       projects: projectsData,
       tickets: ticketsData,
       ticketChildren: { prices: pricesChildren },
@@ -33,7 +77,7 @@ function sourceFor(spec) {
     };
   }
   return {
-    direction: energyOrg.direction,
+    direction: withSituation("energy", energyOrg.direction),
     projects: energyOrg.projects,
     tickets: energyOrg.tickets,
     ticketChildren: { "e-muni": energyOrg.tickets["e-muni"].children },
@@ -76,8 +120,9 @@ export function buildOrg(spec, T = (s) => s) {
   return { org, health, world };
 }
 
-// Cold start (Prototype map §3): one founder, four version-1 artifacts, one
-// `39103`, an empty tree, no profiles. Written from constants, not `data.ts`.
+// Cold start: one founder, five version-1 artifacts (mission, vision,
+// situation, objectives, strategy), one `39103`, an empty tree, no profiles.
+// Written from constants, not `data.ts`.
 export function buildCold(spec) {
   registerNames(spec.members);
   const org = new Org(spec.id, { members: spec.members });

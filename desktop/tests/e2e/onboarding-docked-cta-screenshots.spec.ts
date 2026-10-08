@@ -127,10 +127,10 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
   await expect(page.getByTestId("onboarding-page-backup")).toBeVisible();
   await page.getByTestId("onboarding-next").click();
   await expect(
-    page.getByRole("heading", { name: "Set up your agent harnesses" }),
+    page.getByRole("heading", { name: "Join or create a community" }),
   ).toBeVisible();
   await waitForAnimations(page);
-  await page.screenshot({ path: `${SHOT_DIR}/03-setup.png` });
+  await page.screenshot({ path: `${SHOT_DIR}/03-community-choice.png` });
 });
 
 test("machine key import remains usable in a short viewport", async ({

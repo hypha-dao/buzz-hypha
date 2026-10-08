@@ -2805,6 +2805,16 @@ pub(crate) async fn handle_git_repo_announcement_inner(
     serving_write.finish().await.map_err(|e| {
         anyhow::anyhow!("repo announcement lost community serving lease on release: {e}")
     })?;
+    if let Err(error) =
+        crate::handlers::intelligent_org::repo_link::link_announced_repo(state, tenant, event).await
+    {
+        warn!(
+            repo_id = %repo_id,
+            owner = %owner_hex,
+            error = %error,
+            "org project repo link was not applied"
+        );
+    }
     Ok(())
 }
 

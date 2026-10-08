@@ -6,20 +6,24 @@ import { installMockBridge } from "../helpers/bridge";
 import {
   CHILD_ID,
   GRAND_ID,
+  LINKED_GITHUB,
   OPEN_ROOT_ID,
+  PROMPT_TEXT,
   ROOT_ID,
   depth3WorkEvents,
+  promptCopyEvents,
+  promptStaleEvents,
+  projectFilesFixture,
 } from "./helpers/orgWork";
 
 /**
  * Plan slice D-3 — Work door and the item page (Phase 0 § Work, § Project /
  * ticket page; Prototype map § Work, § Ticket; Protocol §6.5 / §4.2 / §4.7):
  *
- *   - tree renders depth 3 from fixtures (roots + one level on the door;
- *     deeper on the item page);
+ *   - the door lists projects only; tickets open from the project page;
  *   - item page: brief, holder, dates, breadcrumb, children with state chips;
- *   - trail from `{kinds:[50001–50021], "#i":[id]}` newest first;
- *   - Open room from home.channel when present, hidden when absent;
+ *   - trail stays hidden;
+ *   - Open channel from home.channel when present, hidden when absent;
  *   - health card from the latest 50101; rows on hover;
  *   - Mark done emits 50009 on the same sign_event capture as D-0;
  *   - a11y (rule 7) + keyboard (rule 8).
@@ -40,24 +44,35 @@ test.describe("Org Work door and item page (D-3)", () => {
     await installMockBridge(page, { org: { events: depth3WorkEvents() } });
   });
 
-  test("01 — tree renders roots plus one level from fixtures", async ({
-    page,
-  }) => {
+  test("01 — door lists projects and hides tickets", async ({ page }) => {
     await openWork(page);
 
-    await expect(page.getByTestId(`org-work-row-${ROOT_ID}`)).toContainText(
+    await expect(page.getByTestId("org-work-column-ongoing")).toContainText(
       "Weekday hall",
     );
-    await expect(page.getByTestId(`org-work-row-${CHILD_ID}`)).toContainText(
-      "Electrics",
+    await expect(page.getByTestId("org-work-column-waiting")).toContainText(
+      "Cold storage",
     );
+    await expect(page.getByTestId(`org-work-row-holder-${ROOT_ID}`)).toHaveText(
+      "npub1mock...",
+    );
+    await expect(page.getByTestId(`org-work-row-${ROOT_ID}`)).not.toContainText(
+      "DRI:",
+    );
+    await expect(page.getByTestId(`org-work-row-due-${ROOT_ID}`)).toContainText(
+      "review",
+    );
+    await expect(
+      page.getByTestId(`org-work-row-review-${OPEN_ROOT_ID}`),
+    ).toHaveText("review not set");
+    await expect(page.getByTestId(`org-work-row-${CHILD_ID}`)).toHaveCount(0);
     await expect(page.getByTestId(`org-work-row-${GRAND_ID}`)).toHaveCount(0);
     await expect(
       page.getByTestId(`org-work-row-${OPEN_ROOT_ID}`),
     ).toContainText("Cold storage");
-    await expect(page.getByTestId(`org-children-counts-${ROOT_ID}`)).toHaveText(
-      "0 open · 1 offered · 1 accepted · 3 done",
-    );
+    await expect(
+      page.getByTestId(`org-children-counts-${ROOT_ID}`),
+    ).toHaveCount(0);
     await expect(
       page.getByTestId(`org-work-row-${ROOT_ID}`).getByTestId("org-state-chip"),
     ).toHaveText("in progress");
@@ -84,7 +99,9 @@ test.describe("Org Work door and item page (D-3)", () => {
       "Book the hall for weekday evenings.",
     );
     await expect(page.getByTestId("org-holder-name")).toHaveText("You");
+    await expect(page.getByTestId("org-item-facts")).toContainText("Review");
     await expect(page.getByTestId("org-item-due")).toBeVisible();
+    await expect(page.getByTestId("org-modify-due")).toHaveCount(0);
     await expect(page.getByTestId("org-item-approved")).toBeVisible();
     await expect(page.getByTestId("org-item-breadcrumb")).toContainText("Work");
     await expect(page.getByTestId(`org-item-child-${CHILD_ID}`)).toContainText(
@@ -109,7 +126,9 @@ test.describe("Org Work door and item page (D-3)", () => {
     page,
   }) => {
     await openWork(page);
-    await page.getByTestId(`org-work-row-${CHILD_ID}`).click();
+    await expect(page.getByTestId(`org-work-row-${CHILD_ID}`)).toHaveCount(0);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
 
     await expect(page.getByTestId("org-item-title")).toHaveText("Electrics");
     await expect(page.getByTestId("org-item-breadcrumb-parent")).toHaveText(
@@ -125,19 +144,15 @@ test.describe("Org Work door and item page (D-3)", () => {
     ).toHaveText("waiting on a yes");
   });
 
-  test("04 — trail is #i commands newest first", async ({ page }) => {
+  test("04 — trail stays hidden on the item page", async ({ page }) => {
     await openWork(page);
     await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
 
-    const labels = page.getByTestId("org-trail-row");
-    await expect(labels).toHaveCount(3);
-    await expect(labels.nth(0)).toContainText("io_set_due");
-    await expect(labels.nth(1)).toContainText("io_accept");
-    await expect(labels.nth(2)).toContainText("io_offer");
-    await expect(labels.nth(0)).toHaveAttribute("data-kind", "50011");
+    await expect(page.getByTestId("org-trail-row")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Trail" })).toHaveCount(0);
   });
 
-  test("05 — Open room follows home.channel and hides when missing", async ({
+  test("05 — Open channel follows home.channel and hides when missing", async ({
     page,
   }) => {
     await openWork(page);
@@ -227,13 +242,114 @@ test.describe("Org Work door and item page (D-3)", () => {
     await expect(page.getByRole("button", { name: "Mark done" })).toHaveCount(
       1,
     );
-    await expect(page.getByRole("button", { name: "Open room" })).toHaveCount(
-      1,
-    );
-    await expect(page.getByRole("button", { name: "Release" })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "Set due" })).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Open channel" }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Release" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Set due" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Modify due date" }),
+    ).toHaveCount(0);
     await expect(page.getByTestId("org-item-title")).toHaveAccessibleName(
       "Weekday hall",
     );
+  });
+
+  test("10 — ticket holder sets a due date from the due card", async ({
+    page,
+  }) => {
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
+
+    await expect(page.getByTestId("org-item-facts")).toContainText("Due");
+    await expect(page.getByTestId("org-item-due")).toHaveText("Not set");
+    await expect(page.getByRole("button", { name: "Release" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Trail" })).toHaveCount(0);
+
+    const modify = page.getByRole("button", { name: "Modify due date" });
+    await modify.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("org-set-due-date")).toBeVisible();
+    await page.getByTestId("org-set-due-date").fill("2026-10-12");
+    await page.getByRole("button", { name: "Save due date" }).click();
+
+    const signed = await page.evaluate(() => {
+      return (window.__BUZZ_E2E_SIGNED_EVENTS__ ?? []).filter(
+        (event) => event.kind === 50011,
+      );
+    });
+    expect(signed.length).toBeGreaterThan(0);
+    expect(signed[0]?.tags?.[0]).toEqual(["i", CHILD_ID]);
+    expect(signed[0]?.tags?.[1]?.[0]).toBe("due");
+    expect(Number(signed[0]?.tags?.[1]?.[1])).toBe(
+      Math.floor(Date.parse("2026-10-12T00:00:00Z") / 1000),
+    );
+  });
+});
+
+test.describe("Org project files (H-2)", () => {
+  test.beforeEach(async ({ page }) => {
+    const { events, announcement } = projectFilesFixture();
+    await page.addInitScript((extra) => {
+      (
+        window as Window & {
+          __BUZZ_E2E_EXTRA_PROJECT_EVENTS__?: unknown[];
+        }
+      ).__BUZZ_E2E_EXTRA_PROJECT_EVENTS__ = [extra];
+    }, announcement);
+    await installMockBridge(page, { org: { events } });
+  });
+
+  test("lists context files and the linked GitHub repository", async ({
+    page,
+  }) => {
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+
+    const files = page.getByTestId("org-project-files");
+    await expect(files).toContainText("context/README.md");
+    await expect(files).toContainText("context/decisions.md");
+    await expect(files).toContainText("context/links.md");
+    await expect(files).not.toContainText("context/drafts");
+    const link = page.getByRole("link", { name: LINKED_GITHUB });
+    await expect(link).toBeVisible();
+    await link.focus();
+    await expect(link).toBeFocused();
+  });
+});
+
+test.describe("Org work prompt (M-2)", () => {
+  test("copy puts the prompt on the clipboard and a newer ticket shows stale", async ({
+    page,
+  }) => {
+    await installMockBridge(page, { org: { events: promptCopyEvents() } });
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
+
+    await expect(page.getByTestId("org-item-title")).toHaveText("Electrics");
+    await expect(page.getByTestId("org-prompt-stale")).toHaveCount(0);
+    const copy = page.getByRole("button", { name: "Copy prompt" });
+    await expect(copy).toHaveCount(1);
+    await copy.focus();
+    await expect(copy).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => window.__BUZZ_E2E_LAST_CLIPBOARD__?.text ?? null),
+      )
+      .toBe(PROMPT_TEXT);
+
+    await installMockBridge(page, { org: { events: promptStaleEvents() } });
+    await page.reload();
+    await openWork(page);
+    await page.getByTestId(`org-work-row-${ROOT_ID}`).click();
+    await page.getByTestId(`org-item-child-${CHILD_ID}`).click();
+    await expect(page.getByTestId("org-item-title")).toHaveText("Electrics");
+    await expect(page.getByTestId("org-prompt-stale")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Copy prompt" }),
+    ).toBeVisible();
   });
 });

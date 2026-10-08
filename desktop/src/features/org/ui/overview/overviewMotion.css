@@ -1,0 +1,136 @@
+/*
+ * Overview card entrance, matched to the org-preview direction cards:
+ * the card settles, a rule draws under the title, and the footer stamp
+ * lands last. Copy stays visible the whole time — the entrance must not
+ * hide the text the door just loaded. Hover lifts the card on a wrapper
+ * so the settle transform does not cancel the lift.
+ */
+
+.org-overview-lift {
+  transition: transform 0.25s cubic-bezier(0.21, 0.6, 0.35, 1);
+}
+
+.org-overview-lift:hover,
+.org-overview-lift:focus-within {
+  transform: translateY(-0.125rem);
+}
+
+.org-overview-settle {
+  animation: org-dir-settle 0.35s cubic-bezier(0.21, 0.6, 0.35, 1) both;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.org-overview-lift:hover .org-overview-settle,
+.org-overview-lift:focus-within .org-overview-settle {
+  border-color: hsl(var(--foreground) / 0.28);
+  box-shadow: 0 1rem 2.25rem -1.25rem hsl(var(--foreground) / 0.35);
+}
+
+@keyframes org-dir-settle {
+  from {
+    transform: translateY(0.375rem);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+.org-dir-rule {
+  transform-origin: left;
+  animation: org-dir-draw-x 0.6s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes org-dir-draw-x {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.org-dir-line {
+  animation: org-dir-write 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes org-dir-write {
+  from {
+    transform: translateY(0.2rem);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+.org-dir-stamp {
+  animation: org-dir-stamp 0.45s cubic-bezier(0.34, 1.3, 0.64, 1) both;
+}
+
+@keyframes org-dir-stamp {
+  from {
+    transform: translateY(0.15rem);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+.org-dir-mark {
+  transition: transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.org-overview-lift:hover .org-dir-mark,
+.org-overview-lift:focus-within .org-dir-mark {
+  transform: rotate(8deg) scale(1.06);
+}
+
+.org-dir-mark path,
+.org-dir-mark circle,
+.org-dir-mark line {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: org-dir-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: inherit;
+}
+
+@keyframes org-dir-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-overview-lift,
+  .org-overview-lift:hover,
+  .org-overview-lift:focus-within {
+    transform: none;
+    transition: none;
+  }
+
+  .org-overview-settle,
+  .org-dir-rule,
+  .org-dir-line,
+  .org-dir-stamp,
+  .org-dir-mark path,
+  .org-dir-mark circle,
+  .org-dir-mark line {
+    animation: none;
+  }
+
+  .org-dir-mark path,
+  .org-dir-mark circle,
+  .org-dir-mark line {
+    stroke-dashoffset: 0;
+  }
+
+  .org-overview-lift:hover .org-dir-mark,
+  .org-overview-lift:focus-within .org-dir-mark {
+    transform: none;
+  }
+}

@@ -52,11 +52,11 @@ use buzz_core::intelligent_org::{
     ProjectDraft, ProjectProposeContent, TicketCreateContent, VoteChoice, VoteContent,
 };
 use buzz_core::kind::{
-    KIND_DM_OPEN, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE, KIND_IO_DIRECTION,
-    KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT, KIND_IO_DRAFT_DECIDE,
-    KIND_IO_DRAFT_OUTCOME, KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH, KIND_IO_HEALTH_RATE,
-    KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED, KIND_IO_OFFER,
-    KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
+    KIND_DM_OPEN, KIND_GIT_REPO_ANNOUNCEMENT, KIND_IO_ACCEPT, KIND_IO_AGENT_NOTE, KIND_IO_DECLINE,
+    KIND_IO_DIRECTION, KIND_IO_DIRECTION_PROPOSE, KIND_IO_DONE, KIND_IO_DRAFT,
+    KIND_IO_DRAFT_DECIDE, KIND_IO_DRAFT_OUTCOME, KIND_IO_DRI_PROPOSE, KIND_IO_HEALTH,
+    KIND_IO_HEALTH_RATE, KIND_IO_JOIN_PROPOSE, KIND_IO_MONEY_PROPOSE, KIND_IO_MONEY_RELEASED,
+    KIND_IO_OFFER, KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROJECT_PROPOSE, KIND_IO_PROPOSAL,
     KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS, KIND_IO_SHAPERS_PROPOSE,
     KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN, KIND_IO_TICKET_CREATE, KIND_IO_VOTE,
     KIND_IO_WORK_ITEM, KIND_NIP29_CREATE_GROUP,
@@ -1821,7 +1821,7 @@ async fn a_passed_direction_writes_39100_and_stale_base_is_rejected() {
             &c.owner,
             "objectives",
             0,
-            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+            r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
             false,
         )
         .await;
@@ -2019,7 +2019,7 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
         &c.owner,
         "objectives",
         0,
-        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall"}]}"#,
+        r#"{"body":"the lines","lines":[{"id":"l_7f3a","text":"Weekday hall","date":1780000000,"done_when":"the hall has hosted a weekday night"}]}"#,
         true,
     )
     .await;
@@ -2042,10 +2042,36 @@ async fn a_passed_project_opens_a_root_in_open_or_offered() {
     let root = content(&work[0]);
     assert_eq!(root["state"], "open");
     assert_eq!(root["title"], "Weekday hall");
-    let home = root.get("home").expect("R-9a writes home.channel");
+    let home = root.get("home").expect("pass writes home");
     assert!(home.get("channel").and_then(|c| c.as_str()).is_some());
-    assert!(home.get("repo").is_none(), "repo is R-9b");
-    assert!(home.get("project").is_none(), "project is R-9b");
+    let repo = home
+        .get("repo")
+        .and_then(|value| value.as_str())
+        .expect("home.repo");
+    let project = home
+        .get("project")
+        .and_then(|value| value.as_str())
+        .expect("home.project");
+    assert!(repo.starts_with("30617:"), "{repo}");
+    assert!(project.starts_with("30621:"), "{project}");
+    let slug = repo.rsplit(':').next().expect("slug");
+    let announced = c
+        .query(
+            &c.owner,
+            json!({ "kinds": [KIND_GIT_REPO_ANNOUNCEMENT], "#d": [slug] }),
+        )
+        .await;
+    assert_eq!(announced.len(), 1, "the relay-signed 30617 is readable");
+    let tags = announced[0]["tags"].as_array().expect("tags");
+    assert!(
+        tags.iter().any(|tag| {
+            tag.as_array().is_some_and(|parts| {
+                parts.first().and_then(|part| part.as_str()) == Some("buzz-protect")
+                    && parts.iter().any(|part| part.as_str() == Some("push:admin"))
+            })
+        }),
+        "main is push:admin"
+    );
     assert!(root.get("approved_at").is_some());
     let root_id = Uuid::parse_str(root["id"].as_str().expect("id")).expect("uuid");
     assert_eq!(c.item_row(root_id).await, Some(("open".into(), None, None)));
@@ -2866,7 +2892,9 @@ async fn protocol_section_9_direction_to_done_through_c1_builders() {
         lines: Some(vec![DirectionLineInput {
             id: Some("l_7f3a".into()),
             text: "Weekday hall".into(),
-            date: None,
+            date: Some(1_780_000_000),
+            done_when: Some("the hall has hosted a weekday night".into()),
+            line_type: None,
         }]),
         why: Some("first confirm".into()),
     };
@@ -2906,6 +2934,10 @@ async fn protocol_section_9_direction_to_done_through_c1_builders() {
         why: "gap on the hall line".into(),
         gaps: vec![],
         matched: None,
+        gap: None,
+        options: vec![],
+        change: None,
+        plan: vec![],
     });
     let draft_cmd = signed_sdk(
         &c.agent,

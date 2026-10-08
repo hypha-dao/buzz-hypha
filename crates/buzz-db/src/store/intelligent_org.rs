@@ -635,6 +635,22 @@ pub struct VoteRow {
     pub cast_at: DateTime<Utc>,
 }
 
+/// Drop every vote on a proposal. Used when a Shaper replaces an open
+/// proposal: the decision window starts over, so the previous agrees do not
+/// carry. The `io_proposals` row stays.
+pub async fn clear_votes(
+    conn: &mut PgConnection,
+    community_id: CommunityId,
+    proposal_id: Uuid,
+) -> Result<()> {
+    sqlx::query("DELETE FROM io_votes WHERE community_id = $1 AND proposal_id = $2")
+        .bind(community_id.as_uuid())
+        .bind(proposal_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 /// Record a vote; a voter's second vote on the same proposal overwrites the
 /// first (`vote_changed`). The `io_proposals` row must already exist.
 pub async fn upsert_vote(
@@ -1875,6 +1891,8 @@ mod postgres_tests {
             offered_to: matches!(state, WorkItemState::Offered).then(|| hex_id(4)),
             offered_by: None,
             offered_at: matches!(state, WorkItemState::Offered).then_some(1_700_000_100),
+            created_by: None,
+            offered_by_member: None,
             due_at: 1_700_600_000,
             approved_at: parent.is_none().then_some(1_700_000_000),
             objective_ref: Some("objectives@1#l_1".into()),
@@ -2000,6 +2018,8 @@ mod postgres_tests {
                     id: "l_1".into(),
                     text: "Ship".into(),
                     date: None,
+                    done_when: None,
+                    line_type: None,
                 }],
                 confirmed_by: hex_id(1),
                 confirmed_at: 1_700_000_000 + u64::from(n),
@@ -2064,6 +2084,7 @@ mod postgres_tests {
             WorkItemState::Accepted,
             WorkItemState::InReview,
             WorkItemState::Done,
+            WorkItemState::Withdrawn,
         ]
         .into_iter()
         .enumerate()
@@ -2184,6 +2205,7 @@ mod postgres_tests {
             ProposalKind::Shapers,
             ProposalKind::Money,
             ProposalKind::Join,
+            ProposalKind::Withdraw,
         ];
         for (i, (status, kind)) in statuses.iter().zip(kinds.iter().cycle()).enumerate() {
             let row = ProposalRow {
@@ -2475,6 +2497,7 @@ mod postgres_tests {
                         label: s.to_uppercase(),
                     })
                     .collect(),
+                socials: vec![],
                 open_limit: Some(2),
                 updated_at: 1_700_000_000,
                 receipt: hex_id(60 + pubkey),

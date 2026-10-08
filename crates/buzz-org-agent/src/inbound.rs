@@ -18,8 +18,9 @@ use buzz_core::kind::{
     KIND_IO_PROFILE, KIND_IO_PROFILE_SET, KIND_IO_PROGRESS, KIND_IO_PROJECT_PROPOSE,
     KIND_IO_PROPOSAL, KIND_IO_RELEASE, KIND_IO_REOPEN, KIND_IO_SET_DUE, KIND_IO_SHAPERS,
     KIND_IO_SHAPERS_PROPOSE, KIND_IO_SHAPER_ACCEPT, KIND_IO_SHAPER_STEP_DOWN,
-    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WORK_ITEM, KIND_NIP29_GROUP_MEMBERS,
-    KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST,
+    KIND_IO_TICKET_CREATE, KIND_IO_VOTE, KIND_IO_WITHDRAW, KIND_IO_WITHDRAW_PROPOSE,
+    KIND_IO_WORK_ITEM, KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
+    KIND_NIP43_MEMBERSHIP_LIST,
 };
 use buzz_core::Event;
 use serde::Serialize;
@@ -297,8 +298,10 @@ pub fn decode(event: &Event) -> Result<Decoded, ApplyError> {
                 ProposalKind::Shapers if subject.len() > 1 => {
                     return Err(t.err("a shapers proposal names at most one subject"));
                 }
-                ProposalKind::Direction | ProposalKind::Project if !subject.is_empty() => {
-                    return Err(t.err("a direction/project proposal has no subject"));
+                ProposalKind::Direction | ProposalKind::Project | ProposalKind::Codebases
+                    if !subject.is_empty() =>
+                {
+                    return Err(t.err("a direction, project, or codebases proposal has no subject"));
                 }
                 _ => {}
             }
@@ -534,6 +537,10 @@ fn decode_command(t: &Tags<'_>) -> Result<Decoded, ApplyError> {
             CommandContent::Empty(t.content()?)
         }
         KIND_IO_PROFILE_SET => CommandContent::ProfileSet(t.content()?),
+        KIND_IO_WITHDRAW | KIND_IO_WITHDRAW_PROPOSE => {
+            t.required("i")?;
+            CommandContent::Why(t.content()?)
+        }
         other => return Err(t.err(format!("command kind {other} has no content type"))),
     };
     Ok(Decoded::Command(t.kind, content))

@@ -15,8 +15,8 @@ use buzz_core::intelligent_org::{
     tag, DirectionArtifact, DraftOutcome, OrgProfile, Proposal, ProposalKind, Shapers, WorkItem,
 };
 use buzz_core::kind::{
-    KIND_IO_DIRECTION, KIND_IO_DRAFT_OUTCOME, KIND_IO_PROFILE, KIND_IO_PROPOSAL, KIND_IO_SHAPERS,
-    KIND_IO_WORK_ITEM,
+    KIND_IO_DIRECTION, KIND_IO_DRAFT_OUTCOME, KIND_IO_KNOWLEDGE, KIND_IO_PROFILE, KIND_IO_PROPOSAL,
+    KIND_IO_SHAPERS, KIND_IO_WORK_ITEM,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 
@@ -180,6 +180,12 @@ pub fn profile(p: &OrgProfile) -> Result<StateDraft, IngestError> {
     Ok(draft(KIND_IO_PROFILE, &p.pubkey, tags, content_of(p)?))
 }
 
+/// `kind:39106` — `["d", slug]`, `["version", n]`.
+pub fn knowledge(d_tag: &str, version: u32, content: String) -> Result<StateDraft, IngestError> {
+    let tags = vec![tag_of(["version", &version.to_string()])?];
+    Ok(draft(KIND_IO_KNOWLEDGE, d_tag, tags, content))
+}
+
 /// Sign `draft` with the relay key at `created_at`.
 ///
 /// `allow_self_tagging` keeps a `p` tag equal to the relay's own pubkey (the
@@ -332,6 +338,8 @@ mod tests {
             offered_to: Some(pk(4)),
             offered_by: None,
             offered_at: Some(5),
+            created_by: None,
+            offered_by_member: None,
             due_at: 99,
             approved_at: None,
             objective_ref: Some("objectives@1#l_1".into()),
@@ -396,6 +404,7 @@ mod tests {
                     label: "Ops".into(),
                 },
             ],
+            socials: vec![],
             open_limit: None,
             updated_at: 1,
             receipt: pk(9),

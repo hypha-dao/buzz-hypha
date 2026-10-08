@@ -58,6 +58,7 @@ export function workItemEvent(input: {
   };
   homeChannel?: string | null;
   createdAt?: number;
+  eventId?: string;
 }): RelayEvent {
   const root = input.root ?? input.id;
   const parent = input.parent ?? null;
@@ -74,7 +75,7 @@ export function workItemEvent(input: {
     tags.push(["due", String(input.dueAt)]);
   }
   return orgEvent({
-    id: hexId(input.id),
+    id: input.eventId ?? hexId(input.id),
     kind: 39101,
     createdAt: input.createdAt ?? 1_700_000_100,
     tags,
@@ -102,6 +103,48 @@ export function workItemEvent(input: {
         : null,
     },
   });
+}
+
+const RELAY_PUBKEY = "f".repeat(64);
+export const PROJECT_SLUG = "weekday-hall";
+export const LINKED_GITHUB = "https://github.com/hypha/weekday";
+
+/** Weekday hall with a home repository and one linked public GitHub repo. */
+export function projectFilesFixture(): {
+  events: RelayEvent[];
+  announcement: RelayEvent;
+} {
+  const repo = `30617:${RELAY_PUBKEY}:${PROJECT_SLUG}`;
+  const project = `30621:${RELAY_PUBKEY}:${PROJECT_SLUG}`;
+  const events = depth3WorkEvents().map((event) => {
+    if (event.kind !== 39101) return event;
+    const content = JSON.parse(event.content) as { id?: string };
+    if (content.id !== ROOT_ID) return event;
+    return {
+      ...event,
+      content: JSON.stringify({
+        ...JSON.parse(event.content),
+        home: {
+          channel: GENERAL_CHANNEL_ID,
+          repo,
+          project,
+        },
+      }),
+    };
+  });
+  const announcement = orgEvent({
+    id: "c".repeat(64),
+    kind: 30621,
+    pubkey: RELAY_PUBKEY,
+    tags: [
+      ["d", PROJECT_SLUG],
+      ["name", "Weekday hall"],
+      ["a", repo],
+      ["a", `30617:${MOCK_VIEWER}:weekday`, LINKED_GITHUB],
+    ],
+    content: "",
+  });
+  return { events, announcement };
 }
 
 export function depth3WorkEvents(): RelayEvent[] {
@@ -214,6 +257,63 @@ export function depth3WorkEvents(): RelayEvent[] {
           },
         ],
       },
+    }),
+  ];
+}
+
+export const PROMPT_TEXT = "Goal\nWrite the note\n\nDone when\n- note filed\n";
+
+export function ticketEventId(itemId: string): string {
+  return hexId(itemId);
+}
+
+export function workPromptEvent(input: {
+  itemId: string;
+  basedOn: string;
+  content?: string;
+  createdAt?: number;
+  commit?: string;
+}): RelayEvent {
+  const based = input.commit
+    ? ["based_on", input.basedOn, input.commit]
+    : ["based_on", input.basedOn];
+  return orgEvent({
+    id: hexId(`prompt-${input.basedOn.slice(0, 12)}`),
+    kind: 50104,
+    createdAt: input.createdAt ?? 1_700_000_800,
+    tags: [["i", input.itemId], based],
+    content: input.content ?? PROMPT_TEXT,
+  });
+}
+
+export function promptCopyEvents(): RelayEvent[] {
+  return [
+    ...depth3WorkEvents(),
+    workPromptEvent({
+      itemId: CHILD_ID,
+      basedOn: ticketEventId(CHILD_ID),
+    }),
+  ];
+}
+
+export function promptStaleEvents(): RelayEvent[] {
+  return [
+    ...depth3WorkEvents(),
+    workItemEvent({
+      id: CHILD_ID,
+      title: "Electrics",
+      brief: "Wire the lighting.",
+      state: "accepted",
+      type: "ticket",
+      parent: ROOT_ID,
+      root: ROOT_ID,
+      dri: MOCK_VIEWER,
+      createdAt: 1_700_000_900,
+      eventId: "cd".repeat(32),
+    }),
+    workPromptEvent({
+      itemId: CHILD_ID,
+      basedOn: ticketEventId(CHILD_ID),
     }),
   ];
 }

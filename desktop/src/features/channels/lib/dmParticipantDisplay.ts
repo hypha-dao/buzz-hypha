@@ -2,6 +2,11 @@ import {
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
+import { isOrgAgentDm, ORG_AGENT_LABEL } from "@/features/org/orgAgent";
+import {
+  ORG_AGENT_OPENING,
+  type OrgAgentOpening,
+} from "@/features/org/orgAgentOpening";
 import type { Channel } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -21,6 +26,8 @@ export type DirectMessageIntroParticipant = {
 export type DirectMessageIntro = {
   displayName: string;
   participants: DirectMessageIntroParticipant[];
+  /** Set only for the member's DM with the org agent. */
+  opening?: OrgAgentOpening;
 };
 
 export function getDmParticipantPreview<T>(participants: readonly T[]) {
@@ -55,14 +62,36 @@ export function formatDmParticipantDisplayName(
 export function buildDirectMessageIntro({
   channel,
   currentPubkey,
+  orgAgentPubkey,
   profiles,
 }: {
   channel: Channel | null;
   currentPubkey?: string;
+  orgAgentPubkey?: string | null;
   profiles?: UserProfileLookup;
 }): DirectMessageIntro | null {
   if (channel?.channelType !== "dm") {
     return null;
+  }
+
+  if (
+    orgAgentPubkey &&
+    isOrgAgentDm(channel, orgAgentPubkey, currentPubkey ?? null)
+  ) {
+    const profile = profiles?.[normalizePubkey(orgAgentPubkey)] ?? null;
+    const displayName = ORG_AGENT_LABEL;
+    return {
+      displayName,
+      opening: ORG_AGENT_OPENING,
+      participants: [
+        {
+          avatarUrl: profile?.avatarUrl ?? null,
+          displayName,
+          isAgent: true,
+          pubkey: orgAgentPubkey,
+        },
+      ],
+    };
   }
 
   const participants = channel.participantPubkeys.map((pubkey, index) => ({

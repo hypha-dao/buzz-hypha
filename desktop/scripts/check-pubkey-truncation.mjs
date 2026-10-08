@@ -30,6 +30,12 @@ const overrides = new Set([
   "src/features/messages/lib/threadPanel.ts:395",
   "src/features/projects/ui/ProjectsView.tsx:166",
   "src/features/projects/ui/ProjectsOverviewPanel.tsx:209",
+  // Holder-prefix match in chat text. An 8-hex token the agent wrote is
+  // replaced with a name when exactly one known profile owns that prefix.
+  // It is never shown as an identity.
+  "src/features/org/chatDraft.ts:962",
+  "src/features/org/chatDraft.ts:969",
+  "src/features/org/chatDraft.ts:971",
 ]);
 
 await runPubkeyTruncationCheck({

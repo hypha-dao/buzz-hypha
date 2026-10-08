@@ -657,18 +657,14 @@ requirements on the schemas:
 - **J2 plans in order.** The `coverage` list is the whole ordered plan for
   the parent brief, not a bag of pieces: each piece carries `order`,
   `after` (the pieces it follows), and `held` when a predecessor is neither
-  live nor done. Only unheld pieces become drafts. A piece is a **gate**
-  when its outcome decides what the later pieces even are — a permit, a
-  pilot, a supplier's yes, a measurement. A gate is drafted first, alone or
-  with the pieces that do not depend on it, and the rest of the plan waits
-  in `coverage` as `held`; when the gate's item goes `done`, the trigger
-  "a child done that unblocks a held piece" re-runs J2 on the parent with
-  the outcome in context, and the next wave is drafted against what was
-  actually learned — not against what the brief guessed. A draft's `after`
-  names the live or done sibling items it follows and carries into the
-  item on promotion (Protocol §4.2). The prompt says this in one line:
-  _draft what can start now; hold what depends on an answer nobody has
-  yet._
+  live nor done. Accepting a project drafts every step, including a step
+  that is `held`. A waiting ticket names what it waits on (`waits_on`).
+  A piece is a **gate** when its outcome decides what the later pieces even
+  are — a permit, a pilot, a supplier's yes, a measurement. The gate is a
+  ticket in that same batch. When the gate's item goes `done`, the tickets
+  that already wait on it are the next work; the trigger does not publish
+  a second copy. A draft's `after` names live sibling items when they
+  already exist and carries into the item on promotion (Protocol §4.2).
 - **J2 names what a piece needs.** Every ticket draft carries `requires`
   — the skills or capability the piece calls for, read from the brief —
   before it looks for a holder. The candidate list is scored against

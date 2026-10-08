@@ -3,8 +3,10 @@ import * as React from "react";
 import {
   classifyContextFromEvents,
   classifyMyWork,
+  memberDisplayName,
 } from "@/features/org/cards";
 import { useMyWorkEvents } from "@/features/org/hooks";
+import { useAcceptAgreedProjectOffers } from "@/features/org/useAgreedOffer";
 import { useOrgCommandE2eBridge } from "@/features/org/useOrgCommands";
 import { ChatHeader } from "@/features/chat/ui/ChatHeader";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
@@ -41,9 +43,10 @@ function collectPubkeys(
   return [...pubkeys];
 }
 
-/** My Work — three columns and the card set (D-2). */
+/** My Work — four columns, projects apart from tickets (D-2). */
 export function MyWorkScreen() {
   const { events } = useMyWorkEvents();
+  useAcceptAgreedProjectOffers(events);
   useOrgCommandE2eBridge();
   const viewer = useIdentityQuery().data?.pubkey ?? null;
   const pubkeys = React.useMemo(() => collectPubkeys(events), [events]);
@@ -51,16 +54,22 @@ export function MyWorkScreen() {
 
   const columns = React.useMemo(() => {
     if (!viewer) {
-      return { needs_answer: [], you_hold: [], you_offered: [] };
+      return {
+        needs_answer: [],
+        you_hold: [],
+        you_offered: [],
+        finished: [],
+      };
     }
     const nameOf = (pubkey: string) =>
       resolveUserLabel({ pubkey, currentPubkey: viewer, profiles });
-    return classifyMyWork(
-      events,
-      classifyContextFromEvents(events, viewer, nameOf),
-    );
+    const displayNameOf = (pubkey: string) =>
+      memberDisplayName(pubkey, viewer, profiles);
+    return classifyMyWork(events, {
+      ...classifyContextFromEvents(events, viewer, nameOf),
+      displayNameOf,
+    });
   }, [events, profiles, viewer]);
-
   return (
     <div
       className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"

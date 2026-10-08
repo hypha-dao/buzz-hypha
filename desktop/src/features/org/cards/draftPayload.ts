@@ -1,11 +1,13 @@
 import type { DirectionSlug } from "@/features/org/commands";
 
+import { parseSocialsTag } from "../profile";
 import { asNumber, asString, parseJsonObject } from "./tags";
 import type { OrgCardModel } from "./types";
 
 const DIRECTION_SLUGS = new Set<DirectionSlug>([
   "mission",
   "vision",
+  "situation",
   "objectives",
   "strategy",
 ]);
@@ -18,6 +20,8 @@ export function projectProposeInput(model: OrgCardModel, title?: string) {
     dueAt: asNumber(content?.due_at) ?? 0,
     objectiveRef: asString(content?.objective_ref) ?? undefined,
     suggestedDri: asString(content?.suggested_dri) ?? undefined,
+    change: content?.change,
+    plan: Array.isArray(content?.plan) ? content.plan : undefined,
     draftId: model.event.id,
     voteAgree: true,
   };
@@ -68,6 +72,7 @@ export function profileSetInput(model: OrgCardModel) {
   return {
     about: asString(content?.about) ?? "",
     skills,
+    socials: parseSocialsTag(JSON.stringify(content?.socials ?? [])),
     openLimit: asNumber(content?.open_limit) ?? undefined,
     draftId: model.event.id,
   };

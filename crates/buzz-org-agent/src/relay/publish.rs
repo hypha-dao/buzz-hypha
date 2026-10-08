@@ -2,7 +2,7 @@
 
 use buzz_core::kind::{
     KIND_AGENT_ENGRAM, KIND_AUTH, KIND_DM_OPEN, KIND_IO_AGENT_NOTE, KIND_IO_DONE, KIND_IO_DRAFT,
-    KIND_IO_HEALTH,
+    KIND_IO_HEALTH, KIND_IO_WORK_PROMPT,
 };
 use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use thiserror::Error;
@@ -17,6 +17,8 @@ pub enum Permitted {
     Health,
     /// `50103`.
     AgentNote,
+    /// `50104`. A work prompt. It does not change state.
+    WorkPrompt,
     /// `kind:9`.
     Chat,
     /// `41010`.
@@ -36,6 +38,7 @@ impl Permitted {
             Self::Draft => KIND_IO_DRAFT,
             Self::Health => KIND_IO_HEALTH,
             Self::AgentNote => KIND_IO_AGENT_NOTE,
+            Self::WorkPrompt => KIND_IO_WORK_PROMPT,
             Self::Chat => 9,
             Self::DmOpen => KIND_DM_OPEN,
             Self::Engram => KIND_AGENT_ENGRAM,
@@ -50,6 +53,7 @@ impl Permitted {
             KIND_IO_DRAFT,
             KIND_IO_HEALTH,
             KIND_IO_AGENT_NOTE,
+            KIND_IO_WORK_PROMPT,
             9,
             KIND_DM_OPEN,
             KIND_AGENT_ENGRAM,
@@ -84,9 +88,25 @@ pub fn sign(
     content: &str,
     tags: Vec<Tag>,
 ) -> Result<Event, PublishError> {
-    EventBuilder::new(Kind::Custom(kind.kind() as u16), content)
+    sign_at(keys, kind, content, tags, None)
+}
+
+/// `sign` at a chosen second. The mission handoff uses the next second so a
+/// client that orders equal timestamps by event id cannot show it first.
+pub fn sign_at(
+    keys: &Keys,
+    kind: Permitted,
+    content: &str,
+    tags: Vec<Tag>,
+    created_at: Option<u64>,
+) -> Result<Event, PublishError> {
+    let mut builder = EventBuilder::new(Kind::Custom(kind.kind() as u16), content)
         .tags(tags)
-        .allow_self_tagging()
+        .allow_self_tagging();
+    if let Some(secs) = created_at {
+        builder = builder.custom_created_at(nostr::Timestamp::from(secs));
+    }
+    builder
         .sign_with_keys(keys)
         .map_err(|e| PublishError::Sign(e.to_string()))
 }
@@ -119,5 +139,12 @@ mod tests {
         let keys = Keys::generate();
         let event = sign(&keys, Permitted::AgentNote, "{}", vec![]).expect("sign");
         assert_eq!(u32::from(event.kind.as_u16()), KIND_IO_AGENT_NOTE);
+    }
+
+    #[test]
+    fn sign_at_stamps_the_given_second() {
+        let keys = Keys::generate();
+        let event = sign_at(&keys, Permitted::Chat, "hi", vec![], Some(50)).expect("sign");
+        assert_eq!(event.created_at.as_secs(), 50);
     }
 }
