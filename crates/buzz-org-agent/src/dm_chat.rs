@@ -2454,6 +2454,7 @@ async fn think_project_steps(
             Ok(text) => text,
             Err(error) => {
                 last = error;
+                tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
         };
@@ -2486,7 +2487,7 @@ async fn steps_completion(prompt: &str) -> Result<String, String> {
         .map_err(|_| "OPENAI_COMPAT_MODEL is not set".to_string())?;
     let url = format!("{}/chat/completions", base.trim_end_matches('/'));
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(120))
         .build()
         .map_err(|error| format!("http: {error}"))?;
     let response = client
@@ -3633,5 +3634,149 @@ mod tests {
         drop(first);
         let again = acquire_run_lock(dir.path());
         assert!(again.is_ok());
+    }
+
+    /// The production step call (`think_project_steps`) against the operator
+    /// model. Run with `--ignored` and `IO_LIVE_PLAN=1`.
+    #[tokio::test]
+    #[ignore = "calls the operator model"]
+    async fn live_planner_publishes_a_full_plan() {
+        if std::env::var("IO_LIVE_PLAN").ok().as_deref() != Some("1") {
+            return;
+        }
+        let case = std::env::var("IO_LIVE_CASE").unwrap_or_else(|_| "all".into());
+        let river = crate::fixtures::load_events(
+            &crate::fixtures::fixtures_dir().join("orgs/river/seed.json"),
+        )
+        .expect("river seed");
+        let org = crate::state::OrgState::from_events(&river).expect("river");
+        let direction = crate::plan::direction_excerpt(&org);
+        if case == "all" || case == "hall" {
+            let hall = think_project_steps(
+            "Weekday hall trial",
+            "Four weekday sessions, then a decision on whether weekday buyers come. The evening licence is not held yet.",
+            &direction,
+        )
+        .await
+        .expect("weekday hall steps");
+            assert!(
+                hall.iter().any(|step| !step.after.is_empty()),
+                "a later step waits: {hall:?}"
+            );
+            publish_live("Weekday hall trial", &hall, None);
+        }
+
+        if case != "all" && case != "code" {
+            return;
+        }
+        let digest: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/eval/digests/buzz.json"))
+                .expect("buzz digest");
+        let files: Vec<String> = digest["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .filter_map(|path| path.as_str().map(str::to_string))
+            .collect();
+        let commit = digest["commit"].as_str().unwrap_or("");
+        let repo = "hypha-dao/buzz-hypha";
+        let block = crate::plan::digest_block(repo, commit, &files);
+        let code = think_project_steps(
+            "Show the next offered task",
+            "The next offered task is visible on My work. Change the work model and the project page. Leave unrelated files alone.",
+            &block,
+        )
+        .await
+        .expect("code steps");
+        assert!(
+            code.iter()
+                .any(|step| step.kind == "code" && !step.files.is_empty()),
+            "a code step names digest files: {code:?}"
+        );
+        publish_live(
+            "Show the next offered task",
+            &code,
+            Some((repo, commit, files.as_slice())),
+        );
+    }
+
+    fn publish_live(
+        title: &str,
+        steps: &[buzz_core::intelligent_org::PlanStep],
+        digest: Option<(&str, &str, &[String])>,
+    ) {
+        use buzz_core::intelligent_org::{
+            DecisionRule, Executed, ProjectHome, Proposal, ProposalKind, ProposalStatus,
+        };
+        let mut root = crate::test_support::root_held(&"aa".repeat(32));
+        root.title = title.into();
+        root.due_at = 1_785_488_400;
+        if let Some((repo, _, _)) = digest {
+            root.home = Some(ProjectHome {
+                channel: "room-1".into(),
+                repo: Some(repo.into()),
+                project: None,
+            });
+        }
+        let mut state = crate::state::OrgState::new();
+        state
+            .item_generations
+            .insert(root.id.clone(), "ab".repeat(32));
+        state.items.insert(root.id.clone(), root);
+        if let Some((repo, commit, files)) = digest {
+            crate::plan::remember_digest(&mut state, repo, commit, files);
+        }
+        state.proposals.insert(
+            "prop-1".into(),
+            Proposal {
+                id: "prop-1".into(),
+                kind: ProposalKind::Project,
+                status: ProposalStatus::Passed,
+                opened_by: "aa".repeat(32),
+                opened_at: 1,
+                expires_at: 2,
+                draft: None,
+                payload: serde_json::json!({
+                    "title": title,
+                    "brief": "The work this project actually does.",
+                    "plan": steps
+                }),
+                rule: DecisionRule::MAJORITY,
+                needed: 1,
+                eligible: vec![],
+                votes: vec![],
+                decided_at: Some(2),
+                executed: Some(Executed {
+                    kind: "work_item".into(),
+                    id: "root-1".into(),
+                }),
+                settlement: None,
+            },
+        );
+        let keys = nostr::Keys::generate();
+        let events = crate::plan::take_due_tickets(&mut state, &keys).expect("publish");
+        let tickets = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50100)
+            .count();
+        let prompts = events
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50104)
+            .count();
+        assert_eq!(tickets, steps.len(), "every step is a ticket");
+        assert_eq!(prompts, steps.len(), "every ticket has a prompt");
+        if let Some((repo, commit, _)) = digest {
+            let needle = format!("{repo}@{commit}");
+            assert!(
+                events.iter().any(|event| {
+                    u32::from(event.kind.as_u16()) == 50104 && event.content.contains(&needle)
+                }),
+                "a code prompt names the digest commit"
+            );
+        }
+        eprintln!(
+            "live plan {title}: {tickets} tickets, {prompts} prompts, steps={}",
+            serde_json::to_string(steps).unwrap_or_default()
+        );
     }
 }

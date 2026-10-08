@@ -6,21 +6,23 @@ score by more than five points, is reverted and marked reverted.
 The live planner is `dm_chat::serve` (`ensure_project_steps`,
 `think_project_steps`, `ensure_held_plans`, `publish_due_tickets`) and the
 job loop's `draft_ready_tickets`. Both now require a code file to be in the
-digest they were given. There is no model key in this environment
-(`OPENAI_COMPAT_API_KEY`, `VENICE_API_KEY`, and `OPENAI_API_KEY` are unset),
-so no wave has a judge score and the corpus counts below are not claimed.
+digest they were given. Wave 4 called `think_project_steps` then
+`take_due_tickets` with `claude-sonnet-4-6` on Venice. The judge was a
+different model, `llama-3.3-70b`. The key is not stored in the repo.
 
 | Wave | Org | Projects | Tickets | Prompts | Hard gates | Judge | System change | Kept |
 | ---- | --- | -------- | ------- | ------- | ---------- | ----- | ------------- | ---- |
 | 1 | — | — | — | — | accept publishes every step, including steps that wait; how and done-when survive a cleared `plans` map | not run | Publish the full step list and a `50104` with each ticket. Recover how-lines from the ticket drafts. | kept |
 | 2 | buzz (digest only) | — | — | — | a code path outside the digest publishes nothing; the buzz digest names 80 tracked files at `132d0d0de6e38e9ac3ea9ba9cd57956a9a9b3360` | not run | Put the home-repo listing and the `39106` file list in the planner prompt. Ground steps before publish. The relay stores `commit` and `files` on a repository. | kept |
 | 3 | — | — | — | — | accept-time code prompts name `repo@commit`; a vacuous title publishes nothing; a missing skill sets `unfilled` and no holder | not run | Keep the digest commit on the accept path. Reject the vacuous-title list in `step_ready`. Parse `requires` and match it to a profile skill. | kept |
+| 4 | river | 1 | 6 | 6 | every step published, including steps that wait; how and done-when present; titles are not the project; Ana, Tomasz, and the Ferreira family are in the mission | 13/14 | `think_project_steps` on the River direction, then `take_due_tickets`. Generator `claude-sonnet-4-6`. | kept |
+| 4 | buzz | 1 | 3 | 3 | code files stayed in `digests/buzz.json`; each prompt names `hypha-dao/buzz-hypha@132d0d0d…` | first six questions already sum to 11; the written total was cut off | Same path with the buzz digest. A dropped connection on the first try; the 120s timeout and a 2s retry then passed. | kept |
 
 ## Still open
 
-The corpus is not started. Do not fill it with handwritten tickets. The next
-session needs a model key, then runs the production planner on seeds and
-scores with a second model.
+Two orgs, two projects, nine tickets. That is not the corpus. Do not fill
+the rest with handwritten tickets. The next session repeats this live path
+on the seeds below and holds eight orgs out of tuning.
 
 Buzz digest the planner may name: `crates/buzz-org-agent/tests/eval/digests/buzz.json`.
 
