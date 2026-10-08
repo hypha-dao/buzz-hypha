@@ -126,6 +126,8 @@ pub fn passing_ticket() -> (TicketDraft, Draft, ContextBundle) {
         done_when: vec![],
         kind: None,
         how: vec![],
+        waits_on: vec![],
+        files: vec![],
     };
     let raw = serde_json::to_value(&ticket).expect("json");
     let draft = Draft {

@@ -21,6 +21,7 @@ import {
   openTicketDrafts,
   parseOfferedTicket,
   projectCoordinate,
+  withDraftDetail,
 } from "../work/model";
 import { ORG_EMPTY_NOT_SET_YET, OrgDoorScreen } from "./OrgDoorScreen";
 import { WorkItemView } from "./work/WorkItemView";
@@ -32,9 +33,10 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
     events.find(
       (event) => event.id === itemId && event.kind === KIND_IO_DRAFT,
     ) ?? null;
-  const item =
+  const parsed =
     itemById(events, itemId) ?? (draft ? parseOfferedTicket(draft) : null);
-  const parentId = item?.parent ?? "";
+  const sourceDraftId = parsed?.sourceDraftId ?? null;
+  const parentId = parsed?.parent ?? "";
   const parentFilters = React.useMemo(
     () =>
       parentId
@@ -61,31 +63,49 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
         : [],
     [itemId],
   );
-  const projectRef = item?.home?.project ?? null;
+  const projectRef = parsed?.home?.project ?? null;
   const projectFilters = React.useMemo(() => {
-    const parsed = projectCoordinate(projectRef);
-    if (!parsed) return [];
+    const coordinate = projectCoordinate(projectRef);
+    if (!coordinate) return [];
     return [
       {
         kinds: [KIND_PROJECT_ANNOUNCEMENT],
-        authors: [parsed.owner],
-        "#d": [parsed.slug],
+        authors: [coordinate.owner],
+        "#d": [coordinate.slug],
         limit: 1,
       },
     ];
   }, [projectRef]);
+  const promptIds = React.useMemo(() => {
+    const ids = [itemId];
+    if (sourceDraftId && sourceDraftId !== itemId) ids.push(sourceDraftId);
+    return ids;
+  }, [itemId, sourceDraftId]);
   const promptFilters = React.useMemo(
     () =>
-      item?.type === "ticket"
+      parsed?.type === "ticket"
         ? [
             {
               kinds: [KIND_IO_WORK_PROMPT],
-              [`#${TAG_ITEM}`]: [itemId],
+              [`#${TAG_ITEM}`]: promptIds,
               limit: ORG_HISTORY_LIMIT,
             },
           ]
         : [],
-    [item?.type, itemId],
+    [parsed?.type, promptIds],
+  );
+  const sourceDraftFilters = React.useMemo(
+    () =>
+      sourceDraftId && sourceDraftId !== itemId
+        ? [
+            {
+              ids: [sourceDraftId],
+              kinds: [KIND_IO_DRAFT],
+              limit: 1,
+            },
+          ]
+        : [],
+    [sourceDraftId, itemId],
   );
   const draftIds = React.useMemo(
     () =>
@@ -112,7 +132,13 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
   const healthEvents = useLiveDoorEvents(healthFilters);
   const projectEvents = useLiveDoorEvents(projectFilters);
   const promptEvents = useLiveDoorEvents(promptFilters);
+  const sourceDraftEvents = useLiveDoorEvents(sourceDraftFilters);
   const outcomeEvents = useLiveDoorEvents(outcomeFilters);
+  const sourceDraft = sourceDraftEvents.events.find(
+    (event) => event.id === sourceDraftId && event.kind === KIND_IO_DRAFT,
+  );
+  const offered = sourceDraft ? parseOfferedTicket(sourceDraft) : null;
+  const item = parsed ? withDraftDetail(parsed, offered) : null;
   const parent = parentId ? itemById(parentEvents.events, parentId) : null;
   const liveKids = childrenOf(events, item?.id ?? itemId);
   const kids = [
@@ -147,7 +173,7 @@ export function WorkItemScreen({ itemId }: { itemId: string }) {
             health={health}
             item={item}
             parent={parent}
-            prompt={latestWorkPrompt(promptEvents.events, itemId)}
+            prompt={latestWorkPrompt(promptEvents.events, promptIds)}
             repositories={repositories}
           />
         ) : null}

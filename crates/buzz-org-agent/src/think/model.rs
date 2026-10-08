@@ -169,6 +169,8 @@ impl ModelClient for BuzzAgentModel {
 /// Harness client: replays taped responses; `EVAL_LIVE=1` is A-2+.
 pub struct Recorded {
     tape: Mutex<Vec<ModelOutput>>,
+    /// The last request `structured` received. Tests read this.
+    last: Mutex<Option<ModelRequest>>,
 }
 
 impl Recorded {
@@ -176,7 +178,13 @@ impl Recorded {
     pub fn new(responses: Vec<ModelOutput>) -> Self {
         Self {
             tape: Mutex::new(responses),
+            last: Mutex::new(None),
         }
+    }
+
+    /// The request from the most recent `structured` call.
+    pub fn last_request(&self) -> Option<ModelRequest> {
+        self.last.lock().ok().and_then(|guard| guard.clone())
     }
 
     /// Push a response onto the end of the tape.
@@ -190,9 +198,12 @@ impl Recorded {
 impl ModelClient for Recorded {
     fn structured<'a>(
         &'a self,
-        _req: ModelRequest,
+        req: ModelRequest,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ModelOutput, ModelError>> + Send + 'a>>
     {
+        if let Ok(mut last) = self.last.lock() {
+            *last = Some(req);
+        }
         Box::pin(async move {
             let mut tape = self
                 .tape

@@ -41,7 +41,7 @@ fn parse_hex32(value: &str, what: &str) -> Result<Vec<u8>, IngestError> {
     hex::decode(value).map_err(|_| invalid(&format!("{what} must be a 64-char lowercase hex id")))
 }
 
-fn draft_marker(event: &Event) -> Result<Option<Vec<u8>>, IngestError> {
+pub(super) fn draft_marker(event: &Event) -> Result<Option<Vec<u8>>, IngestError> {
     for t in event.tags.iter() {
         let parts = t.as_slice();
         if parts.len() >= 4 && parts[0] == "e" && parts[3] == tag::MARKER_DRAFT {

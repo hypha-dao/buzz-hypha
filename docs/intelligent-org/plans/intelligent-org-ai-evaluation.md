@@ -88,7 +88,7 @@ built:
 | Precision — drafts a judge marks "worth this person's minute"                                | 1, 2, 3 | ≥ 0.80               | accept + amend ≥ 0.55                   |
 | Recall — gold gaps the agent found                                                           | 1, 2    | ≥ 0.70               | —                                       |
 | Duplicate rate — two open drafts for one `gap` key                                           | 1, 2    | 0                    | 0                                       |
-| Sequence fit — drafted pieces are the ones that can start now; held pieces match gold        | 2       | ≥ 0.90               | reorder-amend rate ≤ 0.15               |
+| Sequence fit — accepting a project drafts every step, including steps that wait; a waiting step names what it waits on | 2       | ≥ 0.90               | reorder-amend rate ≤ 0.15               |
 | Who-is-needed fit — `requires` matches gold; holder has it, or `unfilled` names the gap      | 1, 2    | ≥ 0.85               | holder-change amend rate ≤ 0.20         |
 | Nag rate — a dismissed key raised again with nothing changed                                 | 1, 2, 3 | 0                    | 0                                       |
 | Silence rate — candidates that correctly produced nothing                                    | 1, 2    | ≥ 0.90 on negatives  | —                                       |
@@ -320,15 +320,14 @@ parent's date.
   prompt's size guidance is wrong.
 - **Sequence.** The coverage list is an ordered plan, not a bag of pieces:
   each piece has `order`, `after`, and is `held` when a predecessor is
-  neither live nor done (Org agent § 8.6). A **gate** — a piece whose
-  outcome decides what the later pieces are (a permit, a pilot, a
-  supplier's yes, a measurement) — is drafted first, alone or with the
-  pieces independent of it; the rest waits. When the gate's item goes done,
-  the "child done unblocks a held piece" trigger re-runs the move with the
-  outcome in context, and the next wave is drafted against what was
-  learned. A DRI should never see a ticket for step four while step one is
-  an open question. The prompt's line: _draft what can start now; hold what
-  depends on an answer nobody has yet._
+  neither live nor done (Org agent § 8.6). Accepting a project publishes
+  a ticket for every step, including a step that waits. A waiting ticket
+  names what it waits on. A **gate** — a piece whose outcome decides what
+  the later pieces are (a permit, a pilot, a supplier's yes, a
+  measurement) — is one of those tickets, not the only one. When the
+  gate's item goes done, the tickets that already name it are the next
+  work; the trigger does not publish a second copy. A batch that omits a
+  waiting step fails sequence fit.
 - **Who is needed, before who is available.** Every draft names `requires`
   — what the piece calls for — read from the brief before the candidate
   list is consulted. The holder suggestion is the candidate whose `matched`
@@ -367,23 +366,21 @@ Positive:
   draft, `origin: talk`, receipt is the message.
 - Gate first: weekday hall's brief names a licence, a rota, insurance, and
   the opening night → `coverage` orders licence first with `gate: true`,
-  insurance independent (drafted now), rota and opening night `held: after
-  licence`; exactly two drafts. Gold names the order and its `why_gold`
-  (no licence, no opening — and the licence conditions may change the
-  rota).
-- Next wave on the gate: the licence ticket goes done with a progress note
-  saying "granted, weekdays only, until 22:00" → J2 re-runs on the hall;
-  the rota draft appears with `after: [licence-uuid]` and a brief that
-  respects 22:00; the opening-night draft appears; nothing already live is
-  re-drafted.
+  insurance independent, rota and opening night `held: after licence`.
+  Accept publishes all four tickets. The rota and the opening night name
+  the licence they wait on. Omitting either fails sequence fit.
+- Next wave on the gate: the licence ticket goes done. The rota and the
+  opening night were already tickets, so the trigger publishes nothing
+  new. Nothing already live is re-drafted.
 - Gate outcome changes the plan: the same licence comes back "refused for
   weekday evenings" → the next wave is not the old held pieces; the draft
   is a re-scoped piece (daytime rota) or a `done`/review nudge to the DRI,
   and the judge fails a rota draft that ignores the refusal.
 - Energy Iberia: "pick the pilot site, sign the landowner, order the
-  inverters, install, commission" → site is the gate; landowner `held:
-  after site`; inverters `held: after landowner` (the quantity depends on
-  the site); one draft now. A six-piece batch fails _sequence fit_.
+  inverters, install, commission" → site is the gate; landowner waits on
+  the site; inverters wait on the landowner (the quantity depends on the
+  site). Accept publishes every step. A batch that drops a waiting step
+  fails _sequence fit_.
 - Who is needed: the "get the electrics certified" piece → `requires:
   ["electrical-certification"]`; no River profile has it → `suggested_holder:
   null`, `unfilled` names the certification. Energy has Tomas with it →
@@ -402,7 +399,8 @@ Negative:
 - A ticket accepted whose brief is met by the ticket itself (no split
   needed).
 - A child goes done that unblocks nothing (an independent piece) → no
-  re-run output; the held pieces stay held.
+  new ticket; the waiting tickets already exist and still name what they
+  wait on.
 - Pieces with no real dependency (three posters for three noticeboards) →
   no `after`, no `held`; inventing an order to look thorough fails
   _sequence fit_ as much as missing one does.

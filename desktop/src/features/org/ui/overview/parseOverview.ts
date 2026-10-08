@@ -73,6 +73,10 @@ export type CodebaseLink = {
   name: string;
   url: string;
   about: string;
+  /** Commit the file list was read from. Absent when the repo was not read. */
+  commit?: string;
+  /** Paths a code step may name. Absent when the repo was not read. */
+  files?: string[];
 };
 
 export type ProjectHold = {
@@ -205,6 +209,19 @@ function parseDirectionHead(event: RelayEvent): DirectionHead | null {
   };
 }
 
+function digestFiles(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const files = value
+    .filter(
+      (path): path is string =>
+        typeof path === "string" &&
+        path.trim().length > 0 &&
+        !path.includes(".."),
+    )
+    .slice(0, 80);
+  return files.length > 0 ? files : undefined;
+}
+
 /** Newest `39106` `d=codebases` list. `null` when the org has not stored one. */
 export function parseCodebases(
   events: readonly Pick<
@@ -228,12 +245,16 @@ export function parseCodebases(
     const row = entry as Record<string, unknown>;
     const kind = asString(row.kind);
     if (kind !== "repository" && kind !== "site") continue;
+    const files = digestFiles(row.files);
+    const commit = asString(row.commit);
     items.push({
       id: asString(row.id) ?? `${kind}-${items.length + 1}`,
       kind,
       name: asString(row.name) ?? "",
       url: asString(row.url) ?? "",
       about: asString(row.about) ?? "",
+      ...(commit ? { commit } : {}),
+      ...(files ? { files } : {}),
     });
   }
   return items;

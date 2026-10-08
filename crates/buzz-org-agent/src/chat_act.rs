@@ -223,12 +223,20 @@ struct PersonProfile {
 }
 
 /// One link on the org codebases list. A landing page uses `kind` = `site`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// `files` is the digest the planner may name. A repository with no files
+/// has not been read.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct CodebaseLink {
     pub kind: String,
     pub name: String,
     pub url: String,
     pub about: String,
+    /// Commit or digest id the file list was read from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub commit: String,
+    /// Paths a code step may name. At most 80. `..` is dropped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// Live org the model can answer from, and that act resolution checks.
@@ -429,6 +437,20 @@ impl Board {
             if kind != "repository" && kind != "site" {
                 continue;
             }
+            let files = row
+                .get("files")
+                .and_then(Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::trim)
+                        .filter(|path| !path.is_empty() && !path.contains(".."))
+                        .take(80)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
             items.push(CodebaseLink {
                 kind,
                 name: row
@@ -449,6 +471,8 @@ impl Board {
                     .unwrap_or("")
                     .trim()
                     .to_string(),
+                commit: text_field(row, "commit").unwrap_or_default(),
+                files,
             });
         }
         if items.is_empty() && !rows.is_empty() {
@@ -634,6 +658,10 @@ impl Board {
         );
         lines.push(direction);
         lines.push(codebases_overview(&self.codebases));
+        let digest = self.planner_digest();
+        if !digest.is_empty() {
+            lines.push(digest);
+        }
         lines.push("Open proposals:".to_string());
         let mut open: Vec<&OpenProposal> = self.proposals.values().collect();
         open.sort_by(|left, right| left.kind.cmp(&right.kind).then(left.id.cmp(&right.id)));
@@ -744,6 +772,26 @@ impl Board {
             ));
         }
         lines.join("\n")
+    }
+
+    /// `Digest files` blocks for repositories whose file list was read.
+    /// The step planner keeps a code path only when it appears here.
+    pub fn planner_digest(&self) -> String {
+        let mut blocks = Vec::new();
+        for item in &self.codebases {
+            if item.kind != "repository" || item.files.is_empty() {
+                continue;
+            }
+            let repo = if !item.url.is_empty() {
+                item.url.as_str()
+            } else if !item.name.is_empty() {
+                item.name.as_str()
+            } else {
+                "repository"
+            };
+            blocks.push(crate::plan::digest_block(repo, &item.commit, &item.files));
+        }
+        blocks.join("\n")
     }
 
     fn label(&self, pubkey: &str) -> String {
@@ -1013,7 +1061,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     body holds only the lines being added. The published lines stay on the draft, where they can edit or drop any. \
     mission and vision stay a single sentence. situation is one paragraph with no line breaks. \
     act is null, or exactly one of: \
-    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null,\"plan\":[{{\"piece\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"]}}]}} \
+    {{\"kind\":\"project\",\"title\":\"...\",\"brief\":\"...\",\"due_days\":14,\"who\":null,\"plan\":[{{\"piece\":\"...\",\"brief\":\"...\",\"kind\":\"code\",\"gate\":false,\"after\":[],\"produces\":[\"...\"],\"how\":[\"...\",\"...\"],\"files\":[]}}]}} \
     {{\"kind\":\"done\",\"item\":\"<exact title from the overview>\"}} \
     {{\"kind\":\"ticket\",\"parent\":\"<title, a description, or empty>\",\"title\":\"...\",\"brief\":\"...\",\"who\":\"me\" or a person's name or null,\"due_days\":14}} \
     {{\"kind\":\"dri\",\"item\":\"<exact title>\",\"who\":\"me\" or a person's name}} \
@@ -1028,7 +1076,7 @@ pub fn system_prompt(place: &str, overview: &str) -> String {
     When they agree to a ticket, done, or a ticket removal — yes, publish it, assign to me, remove it, delete it — set act again and say that you are opening it. A proposal is not opened by yes; they publish the draft. \
     When they name a DRI, set the dri act. It is a draft they publish. When they mark work done, set act and say that it is done. Do not ask them to confirm done. \
     project opens a project proposal. due_days is the review date the Shapers named, in days from today. who is a suggested holder only when they named a person; otherwise who is null. Do not set who to the speaker unless they said the project is for them. A null who is filled from Profiles when someone's about or the work they want matches, and they are under their limit. \
-    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Each step has piece, kind (code, research, writing, outreach, design, or ops), gate, after, and produces. piece is the step itself, never the project title. A step that can start now has an empty after. A later step names the earlier piece in after. produces is the check for that step. \
+    plan is the steps of that project, two to seven, and it is required. A project with no plan is not a draft. Every step becomes a ticket when the project is accepted, including a step that waits on another. Each step has piece, brief, kind (code, research, writing, outreach, design, or ops), gate, after, requires, produces, how, and files. piece is a short specific title, never the project title, and never a title that could sit under any project (Do research, Make a plan, Kick-off, Implement the feature). brief is one sentence of what to do, and it is not the title. how is two to four imperative sentences, and it is not a copy of produces. produces is the check that the step is done. It is not the title and it is not \"the step is done\". A step that can start now has an empty after. A later step names the earlier piece in after. requires is the skill the step needs, or empty when any member could do it. A code step's files are paths from the digest in the overview. Do not invent a path. \
     done marks a ticket they already hold. \
     ticket creates a child under a project or ticket they hold, offered to them (who=me) or to someone else. who null means the same match: the person whose profile fits and who is holding the least. When nobody fits, leave who null and still set the ticket act. The ticket stays open for a match. When they say create the ticket, or put themselves as DRI, that is the yes: set the ticket act again, and set who to me when they named themselves. \
     parent is the overview title when you know it, copied in full. A shorter name is only safe when one live item starts with it. \
@@ -1312,9 +1360,7 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
             who,
             plan,
         } => {
-            let Some(plan) = plan.as_ref() else {
-                return None;
-            };
+            let plan = plan.as_ref()?;
             if is_change_plan(plan) && !project_plan_ok(board, plan) {
                 return None;
             }
@@ -1327,9 +1373,10 @@ pub fn resolve_act(act: &RawAct, board: &Board, speaker: &str, now: u64) -> Opti
                 Some(name) => resolve_who(name, board, &speaker),
                 None => board.suggest_holder(&title, &brief),
             };
+            let allowed = crate::plan::digest_paths_in(&board.planner_digest());
             let steps = plan
                 .get("plan")
-                .and_then(|value| crate::plan::steps_ready(&title, value))
+                .and_then(|value| crate::plan::steps_ready_in(&title, value, &allowed))
                 .and_then(|steps| serde_json::to_value(steps).ok());
             Some(ResolvedAct::Project {
                 title,
@@ -5515,8 +5562,23 @@ mod tests {
                 "moves": ["objectives@1#line-a"]
             },
             "plan": [
-                { "piece": "Evening licence application", "kind": "writing", "gate": true, "produces": ["sessions held"] },
-                { "piece": "Run the first session", "kind": "ops", "gate": false, "after": ["Evening licence application"], "produces": ["one session held"] }
+                {
+                    "piece": "Evening licence application",
+                    "brief": "File the evening licence so a weekday night can be booked.",
+                    "kind": "writing",
+                    "gate": true,
+                    "produces": ["sessions held"],
+                    "how": ["Open the council licence form.", "Write the dates the trial needs."]
+                },
+                {
+                    "piece": "Run the first session",
+                    "brief": "Hold the first Tuesday and count who comes.",
+                    "kind": "ops",
+                    "gate": false,
+                    "after": ["Evening licence application"],
+                    "produces": ["one session held"],
+                    "how": ["Open the hall on the booked Tuesday.", "Count who comes and write it down."]
+                }
             ]
         });
         let (_, _, _, act) =
@@ -5536,6 +5598,87 @@ mod tests {
         bad["options"][1]["kept"] = json!(true);
         let (_, _, _, refused) = parse_model_reply(&json!({ "say": "no", "act": bad }).to_string());
         assert!(resolve_act(refused.as_ref().unwrap(), &board, ME, NOW).is_none());
+    }
+
+    #[test]
+    fn a_code_plan_names_only_files_in_the_codebase_digest() {
+        let mut board = board();
+        board.observe(
+            39106,
+            "relay",
+            30,
+            Some("codebases"),
+            r#"{"items":[{"kind":"repository","name":"buzz","url":"https://example.com/buzz","about":"the app","commit":"abc1234","files":["desktop/src/features/org/work/model.ts","crates/buzz-org-agent/src/plan.rs"]}]}"#,
+        );
+        let overview = board.overview();
+        assert!(overview.contains("desktop/src/features/org/work/model.ts"));
+        assert!(overview.contains("abc1234"));
+        let steps = json!([
+            {
+                "piece": "Render the next task",
+                "brief": "Render the next offered task in the My work column.",
+                "kind": "code",
+                "files": ["desktop/src/features/org/work/model.ts"],
+                "produces": ["the next task is visible on My work"],
+                "how": ["Open the My work column.", "Render the next offered task there."]
+            },
+            {
+                "piece": "Offer the waiting task",
+                "brief": "Offer the task that was waiting when the first one is done.",
+                "kind": "code",
+                "after": ["Render the next task"],
+                "files": ["crates/buzz-org-agent/src/plan.rs"],
+                "produces": ["done work opens the next task"],
+                "how": ["Read the done event.", "Offer the task that names it in after."]
+            }
+        ]);
+        let kept = resolve_act(
+            &RawAct::Project {
+                title: "Show the next task".into(),
+                brief: "The next offered task is visible on My work.".into(),
+                due_days: 14,
+                who: None,
+                plan: Some(json!({ "plan": steps.clone() })),
+            },
+            &board,
+            ME,
+            NOW,
+        )
+        .expect("act");
+        match &kept {
+            ResolvedAct::Project { plan, .. } => {
+                let plan = plan.as_ref().expect("steps kept");
+                assert!(plan.to_string().contains("plan.rs"));
+            }
+            other => panic!("project, got {other:?}"),
+        }
+        let mut dropped_board = board;
+        dropped_board.observe(
+            39106,
+            "relay",
+            31,
+            Some("codebases"),
+            r#"{"items":[{"kind":"repository","name":"buzz","url":"https://example.com/buzz","about":"the app","commit":"abc1234","files":["desktop/src/features/org/work/model.ts"]}]}"#,
+        );
+        let dropped = resolve_act(
+            &RawAct::Project {
+                title: "Show the next task".into(),
+                brief: "The next offered task is visible on My work.".into(),
+                due_days: 14,
+                who: None,
+                plan: Some(json!({ "plan": steps.clone() })),
+            },
+            &dropped_board,
+            ME,
+            NOW,
+        )
+        .expect("act");
+        match dropped {
+            ResolvedAct::Project { plan, .. } => {
+                assert!(plan.is_none(), "plan.rs is not in the digest")
+            }
+            other => panic!("project, got {other:?}"),
+        }
     }
 
     #[test]
@@ -5578,8 +5721,23 @@ mod tests {
                     "brief": "The AI suggests the next task.",
                     "due_days": 14,
                     "plan": [
-                        { "piece": "Show the next task", "kind": "code", "produces": ["the next task is visible"] },
-                        { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task"], "produces": ["done work opens the next task"] }
+                        {
+                            "piece": "Show the next task",
+                            "brief": "Show the next offered task on My work.",
+                            "kind": "code",
+                            "files": ["desktop/src/features/org/work/model.ts"],
+                            "produces": ["the next task is visible"],
+                            "how": ["Open the My work column.", "Render the next offered task."]
+                        },
+                        {
+                            "piece": "Offer the next task when one is done",
+                            "brief": "Offer the waiting task when the one it follows is done.",
+                            "kind": "code",
+                            "files": ["crates/buzz-org-agent/src/plan.rs"],
+                            "after": ["Show the next task"],
+                            "produces": ["done work opens the next task"],
+                            "how": ["Read the done event for the held task.", "Offer the task that names it."]
+                        }
                     ]
                 }
             })

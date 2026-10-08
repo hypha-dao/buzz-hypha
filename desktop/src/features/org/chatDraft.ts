@@ -34,6 +34,10 @@ export type CodebaseItem = {
   name: string;
   url: string;
   about: string;
+  /** Commit the file list was read from. Absent when the repo was not read. */
+  commit?: string;
+  /** Paths a code step may name. Absent when the repo was not read. */
+  files?: string[];
 };
 
 export type ChatDraft =
@@ -189,11 +193,25 @@ function codebaseItemsFromTag(raw: string | undefined): CodebaseItem[] | null {
     const record = row as Record<string, unknown>;
     const kind = record.kind;
     if (kind !== "repository" && kind !== "site") return null;
+    const files = Array.isArray(record.files)
+      ? record.files
+          .filter(
+            (path): path is string =>
+              typeof path === "string" &&
+              path.trim().length > 0 &&
+              !path.includes(".."),
+          )
+          .slice(0, 80)
+      : [];
+    const commit =
+      typeof record.commit === "string" ? record.commit.trim() : "";
     items.push({
       kind,
       name: typeof record.name === "string" ? record.name : "",
       url: typeof record.url === "string" ? record.url : "",
       about: typeof record.about === "string" ? record.about : "",
+      ...(commit ? { commit } : {}),
+      ...(files.length > 0 ? { files } : {}),
     });
   }
   return items;

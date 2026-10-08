@@ -393,12 +393,51 @@ async fn direction_confirmed_publishes_one_project_draft() {
 }
 
 fn five_step_plan() -> serde_json::Value {
+    fn step(piece: &str, kind: &str, after: &[&str], produces: &str) -> serde_json::Value {
+        serde_json::json!({
+            "piece": piece,
+            "brief": format!("Carry out {piece} and record what it found."),
+            "kind": kind,
+            "gate": after.is_empty(),
+            "after": after,
+            "produces": [produces],
+            "how": [
+                format!("Read the notes that {piece} depends on."),
+                format!("Write down the result of {piece}.")
+            ]
+        })
+    }
     serde_json::json!([
-        { "piece": "Evening licence application", "kind": "writing", "gate": true, "after": [], "produces": ["licence filed"] },
-        { "piece": "Hygiene certificate", "kind": "ops", "gate": true, "after": [], "produces": ["certificate held"] },
-        { "piece": "Book four Tuesdays", "kind": "ops", "gate": false, "after": ["Evening licence application"], "held": "after Evening licence application" },
-        { "piece": "Publicity", "kind": "outreach", "gate": false, "after": ["Book four Tuesdays"], "held": "after Book four Tuesdays" },
-        { "piece": "Run four sessions", "kind": "ops", "gate": false, "after": ["Book four Tuesdays", "Hygiene certificate"], "held": "after both gates" }
+        step(
+            "Evening licence application",
+            "writing",
+            &[],
+            "the evening licence application is filed"
+        ),
+        step(
+            "Hygiene certificate",
+            "ops",
+            &[],
+            "one volunteer holds a hygiene certificate"
+        ),
+        step(
+            "Book four Tuesdays",
+            "ops",
+            &["Evening licence application"],
+            "four Tuesdays are booked"
+        ),
+        step(
+            "Publicity",
+            "outreach",
+            &["Book four Tuesdays"],
+            "the mailing list has the four dates"
+        ),
+        step(
+            "Run four sessions",
+            "ops",
+            &["Book four Tuesdays", "Hygiene certificate"],
+            "attendance is counted for four nights"
+        )
     ])
 }
 
@@ -407,16 +446,54 @@ async fn a_held_project_without_a_plan_asks_for_steps() {
     let gen = "ab".repeat(32);
     let mut root = held_root("Continuous task flow");
     root.brief = "The AI suggests the next task.".into();
+    root.home = Some(buzz_core::intelligent_org::ProjectHome {
+        channel: "room-1".into(),
+        repo: Some("30617:aa:buzz".into()),
+        project: Some("30621:aa:buzz".into()),
+    });
     let mut state = OrgState::new();
     state.item_generations.insert(root.id.clone(), gen.clone());
     state.items.insert(root.id.clone(), root);
     let (mut agent, _dir) = agent(state);
+    agent.listings.insert(
+        "30617:aa:buzz".into(),
+        buzz_org_agent::prompt::RepoListing {
+            commit: "abc1234".into(),
+            files: vec![
+                buzz_org_agent::prompt::RepoFile {
+                    path: "desktop/src/features/org/work/model.ts".into(),
+                    bytes: 10,
+                },
+                buzz_org_agent::prompt::RepoFile {
+                    path: "crates/buzz-org-agent/src/plan.rs".into(),
+                    bytes: 10,
+                },
+            ],
+            elapsed: std::time::Duration::ZERO,
+        },
+    );
     agent.link.connect(&Default::default()).expect("connect");
     agent.model.push(ModelOutput {
         value: serde_json::json!({
             "steps": [
-                { "piece": "Show the next task on My work", "kind": "code", "after": [], "produces": ["the next task is visible"] },
-                { "piece": "Offer the next task when one is done", "kind": "code", "after": ["Show the next task on My work"], "produces": ["done work opens the next task"] }
+                {
+                    "piece": "Show the next task on My work",
+                    "brief": "Show the next offered task in the My work column.",
+                    "kind": "code",
+                    "after": [],
+                    "files": ["desktop/src/features/org/work/model.ts"],
+                    "produces": ["the next task is visible on My work"],
+                    "how": ["Open the My work column.", "Render the next offered task there."]
+                },
+                {
+                    "piece": "Offer the next task when one is done",
+                    "brief": "Offer the waiting task when the one it follows is done.",
+                    "kind": "code",
+                    "after": ["Show the next task on My work"],
+                    "files": ["crates/buzz-org-agent/src/plan.rs"],
+                    "produces": ["done work opens the next task"],
+                    "how": ["Read the done event.", "Offer the task that names it in after."]
+                }
             ]
         }),
         usage: Usage::default(),
@@ -434,7 +511,7 @@ async fn a_held_project_without_a_plan_asks_for_steps() {
         )
         .expect("hold");
     let published = agent.run_jobs().await.expect("tickets");
-    assert_eq!(published, 1);
+    assert_eq!(published, 4, "two tickets and two prompts");
     let body: serde_json::Value = agent
         .link
         .io()
@@ -444,14 +521,100 @@ async fn a_held_project_without_a_plan_asks_for_steps() {
         .map(|event| serde_json::from_str(&event.content).expect("ticket json"))
         .expect("draft");
     assert_eq!(body["title"], "Show the next task on My work");
-    assert_eq!(body["brief"], "the next task is visible");
+    assert_eq!(
+        body["brief"],
+        "Show the next offered task in the My work column."
+    );
     assert_ne!(body["title"], "Continuous task flow");
+    assert!(body["how"].as_array().is_some_and(|lines| lines.len() >= 2));
+    let request = agent.model.last_request().expect("the planner was asked");
+    assert!(
+        request
+            .system
+            .contains("desktop/src/features/org/work/model.ts"),
+        "the digest path is in the prompt"
+    );
+    assert!(
+        request.system.contains("abc1234"),
+        "the digest commit is in the prompt"
+    );
     let again = agent.run_jobs().await.expect("quiet");
     assert_eq!(again, 0);
 }
 
 #[tokio::test]
-async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
+async fn a_code_file_outside_the_digest_publishes_nothing() {
+    let gen = "ab".repeat(32);
+    let mut root = held_root("Continuous task flow");
+    root.brief = "The AI suggests the next task.".into();
+    root.home = Some(buzz_core::intelligent_org::ProjectHome {
+        channel: "room-1".into(),
+        repo: Some("30617:aa:buzz".into()),
+        project: Some("30621:aa:buzz".into()),
+    });
+    let mut state = OrgState::new();
+    state.item_generations.insert(root.id.clone(), gen.clone());
+    state.items.insert(root.id.clone(), root);
+    let (mut agent, _dir) = agent(state);
+    agent.listings.insert(
+        "30617:aa:buzz".into(),
+        buzz_org_agent::prompt::RepoListing {
+            commit: "abc1234".into(),
+            files: vec![buzz_org_agent::prompt::RepoFile {
+                path: "desktop/src/features/org/work/model.ts".into(),
+                bytes: 10,
+            }],
+            elapsed: std::time::Duration::ZERO,
+        },
+    );
+    agent.link.connect(&Default::default()).expect("connect");
+    agent.model.push(ModelOutput {
+        value: serde_json::json!({
+            "steps": [
+                {
+                    "piece": "Show the next task on My work",
+                    "brief": "Show the next offered task in the My work column.",
+                    "kind": "code",
+                    "after": [],
+                    "files": ["src/missing.rs"],
+                    "produces": ["the next task is visible on My work"],
+                    "how": ["Open the My work column.", "Render the next offered task there."]
+                },
+                {
+                    "piece": "Offer the next task when one is done",
+                    "brief": "Offer the waiting task when the one it follows is done.",
+                    "kind": "code",
+                    "after": ["Show the next task on My work"],
+                    "files": ["src/also-missing.rs"],
+                    "produces": ["done work opens the next task"],
+                    "how": ["Read the done event.", "Offer the task that names it in after."]
+                }
+            ]
+        }),
+        usage: Usage::default(),
+        model: "taped".into(),
+    });
+    agent
+        .handle(
+            Transition::HolderSet {
+                item: "root-1".into(),
+                dri: "aa".repeat(32),
+                generation: gen,
+            },
+            None,
+            ContextBundle::default(),
+        )
+        .expect("hold");
+    let published = agent.run_jobs().await.expect("tickets");
+    assert_eq!(published, 0, "files outside the digest are not tickets");
+    let request = agent.model.last_request().expect("the planner was asked");
+    assert!(request
+        .system
+        .contains("desktop/src/features/org/work/model.ts"));
+}
+
+#[tokio::test]
+async fn holder_set_drafts_every_step_and_a_prompt() {
     use buzz_core::intelligent_org::{
         ClosedBy, DecisionRule, Executed, Proposal, ProposalKind, ProposalStatus,
     };
@@ -504,7 +667,7 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
         )
         .expect("hold");
     let published = agent.run_jobs().await.expect("tickets");
-    assert_eq!(published, 2);
+    assert_eq!(published, 10, "five tickets and five prompts");
     let titles: Vec<String> = agent
         .link
         .io()
@@ -522,15 +685,22 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
         titles,
         vec![
             "Evening licence application".to_string(),
-            "Hygiene certificate".to_string()
+            "Hygiene certificate".to_string(),
+            "Book four Tuesdays".to_string(),
+            "Publicity".to_string(),
+            "Run four sessions".to_string()
         ]
     );
-    assert!(agent.link.io().published().iter().all(|event| {
-        serde_json::from_str::<serde_json::Value>(&event.content)
-            .ok()
-            .and_then(|value| value.get("gate").and_then(|gate| gate.as_bool()))
-            .unwrap_or(true)
-    }));
+    assert_eq!(
+        agent
+            .link
+            .io()
+            .published()
+            .iter()
+            .filter(|event| u32::from(event.kind.as_u16()) == 50104)
+            .count(),
+        5
+    );
 
     let mut gate = held_root("Evening licence application");
     gate.id = "gate-1".into();
@@ -557,7 +727,7 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
         )
         .expect("done");
     let unblocked = agent.run_jobs().await.expect("unblocked");
-    assert_eq!(unblocked, 1);
+    assert_eq!(unblocked, 0, "waiting steps were already tickets");
     let tickets: Vec<_> = agent
         .link
         .io()
@@ -565,12 +735,10 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
         .iter()
         .filter(|event| u32::from(event.kind.as_u16()) == 50100)
         .collect();
-    assert_eq!(tickets.len(), 3);
+    assert_eq!(tickets.len(), 5);
     assert!(tickets
-        .last()
-        .expect("ticket")
-        .content
-        .contains("Book four Tuesdays"));
+        .iter()
+        .any(|event| event.content.contains("Book four Tuesdays")));
     let again = agent.run_jobs().await.expect("quiet");
     assert_eq!(again, 0);
     assert_eq!(
@@ -581,7 +749,7 @@ async fn holder_set_drafts_gate_tickets_and_done_unblocks_one() {
             .iter()
             .filter(|event| u32::from(event.kind.as_u16()) == 50100)
             .count(),
-        3
+        5
     );
 }
 

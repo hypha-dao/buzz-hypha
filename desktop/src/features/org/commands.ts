@@ -493,6 +493,8 @@ export function buildIoKnowledgeSet(input: {
     name: string;
     url: string;
     about: string;
+    commit?: string;
+    files?: string[];
   }[];
 }): UnsignedOrgCommand {
   return {

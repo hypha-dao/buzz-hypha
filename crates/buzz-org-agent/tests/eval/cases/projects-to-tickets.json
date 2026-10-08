@@ -22,7 +22,7 @@
             "requires": ["council-licensing"],
             "suggested_holder": "Rafi",
             "matched": { "skills": ["council-licensing"] },
-            "draft_now": ["licence", "insurance"],
+            "draft_now": ["licence", "insurance", "rota", "opening"],
             "held": ["rota", "opening"],
             "payload": {
               "parent": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5",
@@ -52,14 +52,32 @@
             "gate": false,
             "requires": ["permits-and-insurance"],
             "suggested_holder": "Rafi"
+          },
+          {
+            "kind": "ticket",
+            "intent": "Weekday rota exists at accept and names the licence it waits on.",
+            "needs": "Lea",
+            "covers": "a weekday rota",
+            "gate": false,
+            "requires": ["printing"],
+            "suggested_holder": "Jun",
+            "held": ["rota"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Opening night exists at accept and names the licence it waits on.",
+            "needs": "Lea",
+            "covers": "the opening night",
+            "gate": false,
+            "requires": ["hosting-events"],
+            "held": ["opening"]
           }
         ],
         "must_not": [
-          { "why": "no licence, no opening", "title": "Opening night" },
-          { "why": "the licence conditions may change the rota", "title": "Weekday rota" }
+          { "why": "a waiting step is still a ticket; omitting it fails sequence fit" }
         ]
       },
-      "why_gold": "No licence, no opening — and the licence conditions (hours, capacity) may change the rota, so the rota waits too. Insurance depends on the address and the days, not the licence, so it starts now. Two drafts, not four. Gold order and why_gold are the E-1 weekday-hall sequence; this case is the J2 trigger on that snapshot."
+      "why_gold": "Accept publishes every step. The licence and the insurance can start. The rota and the opening night are tickets in the same batch, and each names the licence it waits on. Omitting a waiting step fails sequence fit. Gold order is the E-1 weekday-hall sequence."
     },
     {
       "id": "j2-weekday-hall-next-wave-granted",
@@ -70,33 +88,15 @@
       "trigger": { "kind": "child_done_unblocks", "item": "cbdf35a5-6d0e-44b8-baa7-fbb366328ac5" },
       "seed": { "org": "river", "locale": "en", "sequence": "weekday-hall", "snapshot": "outcome_a" },
       "gold": {
-        "silence": false,
-        "must_draft": [
-          {
-            "kind": "ticket",
-            "intent": "Weekday rota after the licence, brief respects 22:00.",
-            "needs": "Lea",
-            "covers": "a weekday rota",
-            "after": ["86d8cb08-5776-41c4-9232-5c6634d9fa89"],
-            "must_mention": ["22:00"],
-            "requires": ["printing"],
-            "suggested_holder": "Jun"
-          },
-          {
-            "kind": "ticket",
-            "intent": "Opening night after the licence, inside 22:00.",
-            "needs": "Lea",
-            "covers": "the opening night",
-            "after": ["86d8cb08-5776-41c4-9232-5c6634d9fa89"],
-            "must_mention": ["22:00"]
-          }
-        ],
+        "silence": true,
         "must_not": [
+          { "why": "the rota was already a ticket at accept", "title": "Weekday rota" },
+          { "why": "the opening night was already a ticket at accept", "title": "Opening night" },
           { "why": "licence is done", "title": "Council licence for weekday use" },
           { "why": "insurance is live", "title": "Hall insurance" }
         ]
       },
-      "why_gold": "The gate answered: weekdays until 22:00. Both held pieces can start, each after the licence, each inside those hours. Insurance is live and the licence is done; neither is drafted again."
+      "why_gold": "The rota and the opening night were tickets when the project was accepted. They already name the licence they wait on. The licence outcome is what those tickets read. This trigger does not publish a second copy."
     },
     {
       "id": "j2-weekday-hall-outcome-changes-plan",
@@ -124,7 +124,7 @@
           { "why": "no opening night before a licence exists", "title": "Opening night" }
         ]
       },
-      "why_gold": "The refusal changes the plan, not just the timing. An evening rota and an opening night no longer follow. The next piece is a re-scoped gate — the daytime application — and the old held pieces stay held behind it."
+      "why_gold": "The refusal changes what the later tickets are for. The evening rota and the opening night already exist from accept, so this wave does not publish a second copy of them. The next piece is a new gate: the daytime application."
     },
     {
       "id": "j2-iberia-site-gate-only",
@@ -139,21 +139,49 @@
         "must_draft": [
           {
             "kind": "ticket",
-            "intent": "Pick the pilot site — the only draft now.",
+            "intent": "Pick the pilot site — the gate — drafted with the steps that wait on it.",
             "needs": "Pedro",
             "covers": "pick the pilot site",
             "gate": true,
-            "draft_now": ["site"],
+            "draft_now": ["site", "landowner", "inverters", "install", "commission"],
             "held": ["landowner", "inverters", "install", "commission"],
             "requires": ["municipal-relations"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Landowner agreement exists at accept and waits on the site.",
+            "needs": "Pedro",
+            "covers": "sign the landowner",
+            "held": ["landowner"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Order the inverters exists at accept and waits on the landowner.",
+            "needs": "Pedro",
+            "covers": "order the inverters",
+            "title": "Order the inverters",
+            "held": ["inverters"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Installation exists at accept and waits on the inverter order.",
+            "needs": "Pedro",
+            "covers": "install",
+            "held": ["install"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Commissioning exists at accept and waits on the installation.",
+            "needs": "Pedro",
+            "covers": "commission with the DSO",
+            "held": ["commission"]
           }
         ],
         "must_not": [
-          { "why": "inverter count depends on the roof", "title": "Order the inverters" },
-          { "why": "six-piece batch fails sequence fit" }
+          { "why": "omitting a waiting step fails sequence fit" }
         ]
       },
-      "why_gold": "The site is the gate: the landowner is whoever owns the chosen roof, the inverter count is the roof's size, the DSO connection is the roof's feeder. One draft now. A five-piece batch orders inverters for a roof nobody has picked."
+      "why_gold": "The site is the gate: the landowner is whoever owns the chosen roof, the inverter count is the roof's size, the DSO connection is the roof's feeder. Accept publishes every step. The landowner, the inverter order, the installation, and commissioning are tickets that name what they wait on. A batch that drops them fails sequence fit."
     },
     {
       "id": "j2-hall-electrics-unfilled",
@@ -174,15 +202,34 @@
             "gate": true,
             "requires": ["electrical-certification"],
             "suggested_holder": null,
-            "unfilled": "nobody here has electrical certification"
+            "unfilled": "nobody here has electrical certification",
+            "draft_now": ["certification", "rewiring", "inspection"],
+            "held": ["rewiring", "inspection"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Rewiring exists at accept, waits on the certification, and says nobody here can hold it.",
+            "needs": "Noor",
+            "covers": "do the rewiring",
+            "requires": ["electrical-work"],
+            "suggested_holder": null,
+            "unfilled": "nobody here is an electrician",
+            "held": ["rewiring"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "Council inspection exists at accept and waits on the rewiring.",
+            "needs": "Noor",
+            "covers": "the council's inspection of the finished work",
+            "title": "Council inspection",
+            "held": ["inspection"]
           }
         ],
         "must_not": [
-          { "why": "rewire waits on the report", "title": "Rewire" },
-          { "why": "inspection is of finished work", "title": "Council inspection" }
+          { "why": "a waiting step is still a ticket" }
         ]
       },
-      "why_gold": "The report is the scope. Until an electrician has certified — or failed — the wiring, nobody knows whether the rewiring is one circuit or the whole hall. One draft, and it names what River lacks. Energy's Tomas case is the same piece with a holder."
+      "why_gold": "The report is the scope. The certification, the rewiring, and the inspection are all tickets at accept. Rewiring waits on the report and says nobody here can hold it. The inspection waits on the rewiring. Energy's Tomas case is the same certification piece with a holder."
     },
     {
       "id": "j2-energy-electrics-tomas",
@@ -283,12 +330,29 @@
             "intent": "Junta reading is the gate even if a brief listed merge first; translation is already live.",
             "needs": "Diego",
             "gate": true,
-            "draft_now": [],
+            "draft_now": ["reading", "annex", "merge"],
             "held": ["annex", "merge"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "The annex exists at accept and waits on the Junta reading.",
+            "needs": "Diego",
+            "covers": "draft the annex",
+            "held": ["annex"]
+          },
+          {
+            "kind": "ticket",
+            "intent": "The merge exists at accept and waits on the annex.",
+            "needs": "Diego",
+            "covers": "fold it into the Spain template",
+            "held": ["merge"]
           }
+        ],
+        "must_not": [
+          { "why": "the translation is already live and is not drafted again" }
         ]
       },
-      "why_gold": "The Andalusia tree already has the translation live. The Junta's reading is the gate for the annex and the merge. Following a brief that listed 'merge, then read' would fail right-next-thing. coverage orders them correctly and why says why."
+      "why_gold": "The Andalusia tree already has the translation live, so it is not drafted again. Accept publishes the Junta reading, the annex, and the merge. The annex waits on the reading. The merge waits on the annex. Following a brief that listed merge before the reading fails right-next-thing. Omitting the waiting tickets fails sequence fit."
     },
     {
       "id": "j2-brief-already-covered",
@@ -379,10 +443,10 @@
       "gold": {
         "silence": true,
         "must_not": [
-          { "why": "rota and opening stay held behind the licence, not the insurance" }
+          { "why": "rota and opening already exist and still wait on the licence, not the insurance" }
         ]
       },
-      "why_gold": "A child done that unblocks nothing — an independent piece — produces no re-run output. The held pieces stay held."
+      "why_gold": "A child done that unblocks nothing produces no new ticket. The rota and the opening night were already tickets at accept, and they still name the licence."
     },
     {
       "id": "j2-sibling-holds-under-other-name",
